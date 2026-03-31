@@ -20,9 +20,9 @@ const INDIA_STATE_LAYER_ID = 'india-admin-state-boundary-line';
 const INDIA_DISTRICT_LAYER_ID = 'india-admin-district-boundary-line';
 const INDIA_STATE_LABEL_LAYER_ID = 'india-admin-state-label';
 const INDIA_DISTRICT_LABEL_LAYER_ID = 'india-admin-district-label';
-const defaultPmtilesUrl = 'pmtiles://http://127.0.0.1:8000/map-assets/india_admin.pmtiles';
-const defaultBasinGeoJsonUrl = 'http://127.0.0.1:8000/map-assets/upper_indus_basin.geojson';
-const defaultGlyphsUrl = 'http://127.0.0.1:8000/map-assets/fonts/{fontstack}/{range}.pbf';
+const defaultPmtilesUrl = 'pmtiles://https://jay9115-himalaya-web-backend.hf.space/map-assets/india_admin.pmtiles';
+const defaultBasinGeoJsonUrl = 'https://jay9115-himalaya-web-backend.hf.space/map-assets/upper_indus_basin.geojson';
+const defaultGlyphsUrl = 'https://jay9115-himalaya-web-backend.hf.space/map-assets/fonts/{fontstack}/{range}.pbf';
 const indiaPmBounds = [68.17751186879357, 6.752782631992444, 97.41289651394189, 37.08834177335065];
 const indiaPmMaxZoom = 12;
 const buildOfflineBaseStyle = (theme, glyphsUrl) => {
