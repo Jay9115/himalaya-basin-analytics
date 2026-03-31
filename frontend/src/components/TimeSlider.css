@@ -1,0 +1,210 @@
+/* Time Slider Component Styles */
+.time-slider {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 10px 0;
+}
+
+.playback-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.control-btn {
+  min-width: 64px;
+  height: 40px;
+  border: none;
+  background: var(--input-bg);
+  color: var(--text);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+}
+
+.control-btn:hover:not(:disabled) {
+  background: var(--hover-bg);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px var(--shadow);
+}
+
+.control-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.play-btn {
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+  color: #ffffff;
+  min-width: 80px;
+}
+
+.play-btn:hover {
+  background: linear-gradient(135deg, var(--accent-strong) 0%, #228be6 100%);
+}
+
+/* Slider Container */
+.slider-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.slider-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.current-date-display {
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.date-slider {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+.date-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(77, 171, 247, 0.5);
+  transition: all 0.2s ease;
+}
+
+.date-slider::-webkit-slider-thumb:hover {
+  width: 20px;
+  height: 20px;
+  box-shadow: 0 4px 12px rgba(77, 171, 247, 0.8);
+}
+
+.date-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(77, 171, 247, 0.5);
+  transition: all 0.2s ease;
+}
+
+.date-slider::-moz-range-thumb:hover {
+  width: 20px;
+  height: 20px;
+  box-shadow: 0 4px 12px rgba(77, 171, 247, 0.8);
+}
+
+.slider-info {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* Speed Controls */
+.speed-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.speed-label {
+  font-size: 13px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.speed-btn {
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.speed-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.speed-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+/* Date Input */
+.date-input-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.date-input-container label {
+  font-size: 13px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.date-input {
+  padding: 8px 12px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.date-input:hover {
+  border-color: var(--accent);
+}
+
+.date-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(77, 171, 247, 0.1);
+}
+
+.date-input::-webkit-calendar-picker-indicator {
+  filter: var(--calendar-filter);
+  cursor: pointer;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+  .time-slider {
+    flex-wrap: wrap;
+  }
+  
+  .slider-container {
+    width: 100%;
+    order: -1;
+  }
+}

@@ -1,0 +1,29 @@
+# Git
+.git
+.gitignore
+
+# Python
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.venv/
+venv/
+env/
+
+# Frontend source is not needed when backend is hosted separately.
+frontend/
+
+# Local tooling/docs
+node_modules/
+*.log
+*.tmp
+*.temp
+.vscode/
+.idea/
+
+# Local scripts and notes not needed at runtime
+PROJECT_SUMMARY.txt
+QUICKSTART.md
+CONFIGURATION.md
+HF_DEPLOYMENT.md
