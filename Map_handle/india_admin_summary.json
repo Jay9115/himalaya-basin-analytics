@@ -1,0 +1,18 @@
+{
+  "output_pmtiles": "D:\\ISRO-SWOT\\Map_handle\\india_admin.pmtiles",
+  "size_mb": 32.47,
+  "total_tiles": 57897,
+  "bounds": {
+    "minLon": 68.17751186879357,
+    "minLat": 6.752782631992444,
+    "maxLon": 97.41289651394189,
+    "maxLat": 37.08834177335065
+  },
+  "max_zoom": 12,
+  "feature_counts": {
+    "state_boundary": 40,
+    "district_boundary": 742,
+    "state_hq": 34,
+    "district_hq": 650
+  }
+}

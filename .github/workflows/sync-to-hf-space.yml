@@ -1,0 +1,26 @@
+name: Sync to Hugging Face Space
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Push to Hugging Face Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_USERNAME: ${{ secrets.HF_USERNAME }}
+          HF_SPACE_NAME: himalaya-basin-analytics
+        run: |
+          git remote add hf https://huggingface.co/spaces/$HF_USERNAME/$HF_SPACE_NAME.git
+          git push https://oauth2:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/$HF_SPACE_NAME.git --all
+          git push https://oauth2:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/$HF_SPACE_NAME.git --tags

@@ -1,0 +1,72 @@
+{
+  "version": 8,
+  "name": "India Admin PMTiles",
+  "sources": {
+    "india_admin": {
+      "type": "vector",
+      "url": "pmtiles://http://127.0.0.1:8080/india_admin.pmtiles"
+    }
+  },
+  "glyphs": "http://127.0.0.1:8000/map-assets/fonts/{fontstack}/{range}.pbf",
+  "layers": [
+    {
+      "id": "state-boundary-line",
+      "type": "line",
+      "source": "india_admin",
+      "source-layer": "state_boundary",
+      "paint": {
+        "line-color": "#0b4f6c",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 3, 1.2, 10, 2.2],
+        "line-opacity": 0.95
+      }
+    },
+    {
+      "id": "district-boundary-line",
+      "type": "line",
+      "source": "india_admin",
+      "source-layer": "district_boundary",
+      "paint": {
+        "line-color": "#5588aa",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 4, 0.3, 10, 1.0],
+        "line-opacity": 0.8
+      }
+    },
+    {
+      "id": "state-labels",
+      "type": "symbol",
+      "source": "india_admin",
+      "source-layer": "state_hq",
+      "layout": {
+        "text-field": ["coalesce", ["get", "state_name"], ""],
+        "text-font": ["Noto Sans Regular"],
+        "text-size": ["interpolate", ["linear"], ["zoom"], 4, 10, 10, 15],
+        "text-variable-anchor": ["center"],
+        "text-allow-overlap": false
+      },
+      "paint": {
+        "text-color": "#12263a",
+        "text-halo-color": "#ffffff",
+        "text-halo-width": 1.2
+      }
+    },
+    {
+      "id": "district-labels",
+      "type": "symbol",
+      "source": "india_admin",
+      "source-layer": "district_hq",
+      "minzoom": 6,
+      "layout": {
+        "text-field": ["coalesce", ["get", "district_name"], ["get", "hq_name"], ""],
+        "text-font": ["Noto Sans Regular"],
+        "text-size": ["interpolate", ["linear"], ["zoom"], 6, 9, 10, 12],
+        "text-variable-anchor": ["center"],
+        "text-allow-overlap": false
+      },
+      "paint": {
+        "text-color": "#1f2d3d",
+        "text-halo-color": "#ffffff",
+        "text-halo-width": 1.0
+      }
+    }
+  ]
+}
