@@ -34,6 +34,12 @@ function App() {
   const [yearRangeLoading, setYearRangeLoading] = useState(false);
   const [yearRangeError, setYearRangeError] = useState('');
   const [selectedYearRange, setSelectedYearRange] = useState({ start: null, end: null });
+  const [ncFile, setNcFile] = useState(null);
+  const [ncDatasetName, setNcDatasetName] = useState('');
+  const [ncUploading, setNcUploading] = useState(false);
+  const [ncUploadError, setNcUploadError] = useState('');
+  const [ncUploadMessage, setNcUploadMessage] = useState('');
+  const [showNcHelp, setShowNcHelp] = useState(false);
   const [dates, setDates] = useState([]);
   const [currentDateIndex, setCurrentDateIndex] = useState(0);
   const [currentDate, setCurrentDate] = useState(null);
@@ -44,6 +50,9 @@ function App() {
   const [regionSelectMode, setRegionSelectMode] = useState(false);
   const [regionBounds, setRegionBounds] = useState(null);
   const [regionPreview, setRegionPreview] = useState(null);
+  const [subregions, setSubregions] = useState([]);
+  const [subregionsLoading, setSubregionsLoading] = useState(false);
+  const [selectedSubregionId, setSelectedSubregionId] = useState('');
   const [regionLatMin, setRegionLatMin] = useState('');
   const [regionLatMax, setRegionLatMax] = useState('');
   const [regionLonMin, setRegionLonMin] = useState('');
@@ -69,6 +78,7 @@ function App() {
   const activeYearRange = selectedYearRange.start !== null && selectedYearRange.end !== null
     ? selectedYearRange
     : null;
+  const selectedSubregion = subregions.find((item) => item.id === selectedSubregionId) || null;
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -106,6 +116,33 @@ function App() {
   }, [regionBounds]);
 
   useEffect(() => {
+    if (!datasetReady) return;
+
+    let isActive = true;
+    const loadSubregions = async () => {
+      try {
+        setSubregionsLoading(true);
+        const response = await apiService.getSubregions();
+        if (!isActive) return;
+        setSubregions(response.subregions || []);
+      } catch (err) {
+        if (!isActive) return;
+        console.warn('Failed to load subregions:', err);
+        setSubregions([]);
+      } finally {
+        if (isActive) {
+          setSubregionsLoading(false);
+        }
+      }
+    };
+
+    loadSubregions();
+    return () => {
+      isActive = false;
+    };
+  }, [datasetReady]);
+
+  useEffect(() => {
     if (!datasetId) {
       setYearOptions([]);
       setSelectedYearRange({ start: null, end: null });
@@ -135,10 +172,12 @@ function App() {
 
         const minYear = Number.isInteger(response.min_year) ? response.min_year : years[0];
         const maxYear = Number.isInteger(response.max_year) ? response.max_year : years[years.length - 1];
+        const defaultEndYear = Math.min(minYear + 1, maxYear);
 
         setSelectedYearRange((prev) => {
-          const currentStart = Number.isInteger(prev.start) ? prev.start : minYear;
-          const currentEnd = Number.isInteger(prev.end) ? prev.end : maxYear;
+          const hasExistingSelection = Number.isInteger(prev.start) && Number.isInteger(prev.end);
+          const currentStart = hasExistingSelection ? prev.start : minYear;
+          const currentEnd = hasExistingSelection ? prev.end : defaultEndYear;
           const nextStart = Math.min(Math.max(currentStart, minYear), maxYear);
           const nextEnd = Math.min(Math.max(currentEnd, minYear), maxYear);
           return {
@@ -240,7 +279,8 @@ function App() {
           selectedVariable,
           datasetId,
           controller.signal,
-          activeYearRange
+          activeYearRange,
+          selectedSubregionId || undefined
         );
         
         setMapData(response.data || []);
@@ -261,7 +301,7 @@ function App() {
     return () => {
       controller.abort();
     };
-  }, [datasetReady, datasetId, currentDate, selectedElevRange, selectedVariable, activeYearRange]);
+  }, [datasetReady, datasetId, currentDate, selectedElevRange, selectedVariable, activeYearRange, selectedSubregionId]);
 
   // Fetch graph data when elevation changes
   useEffect(() => {
@@ -284,7 +324,8 @@ function App() {
             selectedVariable,
             datasetId,
             controller.signal,
-            activeYearRange
+            activeYearRange,
+            selectedSubregionId || undefined
           );
           setGraphData(response.data || []);
         } else {
@@ -299,7 +340,8 @@ function App() {
             selectedVariable,
             datasetId,
             controller.signal,
-            activeYearRange
+            activeYearRange,
+            selectedSubregionId || undefined
           );
           
           setGraphData(response.data || []);
@@ -319,7 +361,7 @@ function App() {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [datasetReady, datasetId, dates, selectedElevRange, selectedVariable, regionBounds, selectedYear, activeYearRange]);
+  }, [datasetReady, datasetId, dates, selectedElevRange, selectedVariable, regionBounds, selectedYear, activeYearRange, selectedSubregionId]);
 
   // Animation control using requestAnimationFrame
   const animate = useCallback(() => {
@@ -441,6 +483,11 @@ function App() {
     }
   }, [regionLatMin, regionLatMax, regionLonMin, regionLonMax, currentDate]);
 
+  const handleSubregionChange = useCallback((value) => {
+    setSelectedSubregionId(value);
+    setRegionInputError('');
+  }, []);
+
   const handleSearch = useCallback(() => {
     const lat = parseFloat(searchLat);
     const lon = parseFloat(searchLon);
@@ -490,6 +537,40 @@ function App() {
     });
   }, [yearOptions]);
 
+  const handleNcUpload = useCallback(async () => {
+    if (!ncFile) {
+      setNcUploadError('Select a .nc file first.');
+      return;
+    }
+
+    setNcUploading(true);
+    setNcUploadError('');
+    setNcUploadMessage('');
+    try {
+      const result = await apiService.uploadNcDataset(ncFile, ncDatasetName);
+      const datasetsResponse = await apiService.getDatasets();
+      const list = datasetsResponse.datasets || [];
+      setDatasets(list);
+
+      const newDatasetId = result.dataset_id;
+      const preferred = list.find((d) => d.id === newDatasetId && d.ready);
+      const fallback = list.find((d) => d.ready) || list[0];
+      const nextId = (preferred || fallback)?.id || '';
+      setDatasetId(nextId);
+
+      setNcUploadMessage(
+        `Upload complete: ${result.dataset_label} (${(result.conversion?.parquet_files || []).length} parquet files)`
+      );
+      setNcFile(null);
+      setNcDatasetName('');
+    } catch (err) {
+      const message = err?.response?.data?.detail || err?.message || 'NC upload failed.';
+      setNcUploadError(message);
+    } finally {
+      setNcUploading(false);
+    }
+  }, [ncFile, ncDatasetName]);
+
   const handleStartDataset = useCallback(() => {
     if (!datasetId) {
       setError('Please select a dataset first.');
@@ -502,6 +583,7 @@ function App() {
     apiService.clearCache();
     setRegionBounds(null);
     setRegionPreview(null);
+    setSelectedSubregionId('');
     setGraphData([]);
     setMapData([]);
     setError(null);
@@ -513,6 +595,8 @@ function App() {
     setIsPlaying(false);
     setRegionSelectMode(false);
     setRegionPreview(null);
+    setRegionBounds(null);
+    setSelectedSubregionId('');
     setFocusLocation(null);
     setError(null);
     setShowDocumentation(false);
@@ -604,6 +688,63 @@ function App() {
                 </div>
               </label>
             ))}
+          </div>
+          <div className="nc-upload-panel">
+            <div className="nc-upload-header">
+              <h3>Upload NetCDF (.nc)</h3>
+              <button
+                type="button"
+                className="nc-help-btn"
+                title="Show accepted NetCDF rules"
+                aria-label="Show accepted NetCDF rules"
+                onClick={() => setShowNcHelp((prev) => !prev)}
+              >
+                ?
+              </button>
+            </div>
+            <p>Convert uploaded satellite NetCDF to parquet and add it as a new dataset.</p>
+            {showNcHelp && (
+              <div className="nc-help-box">
+                <div><strong>Accepted file extensions:</strong> .nc, .nc4, .cdf, .netcdf</div>
+                <div><strong>Time support:</strong> works with standard time coords; if missing, app creates a fallback date.</div>
+                <div><strong>Spatial coords:</strong> latitude/longitude are auto-detected from names or CF metadata.</div>
+                <div><strong>Grid format:</strong> supports 1D/1D, 2D/2D and common model-style lat/lon layouts.</div>
+                <div><strong>Variables:</strong> ingests numeric spatial variables (with or without explicit time dim).</div>
+                <div><strong>Elevation:</strong> optional; if missing, default elevation is used.</div>
+                <div><strong>Behavior:</strong> data is converted to parquet and stored as a new reusable dataset.</div>
+              </div>
+            )}
+            <div className="nc-upload-row">
+              <label htmlFor="nc-dataset-name">Dataset Name (optional)</label>
+              <input
+                id="nc-dataset-name"
+                type="text"
+                value={ncDatasetName}
+                onChange={(e) => setNcDatasetName(e.target.value)}
+                placeholder="e.g. Sentinel Snow 2024"
+                disabled={ncUploading}
+              />
+            </div>
+            <div className="nc-upload-row">
+              <label htmlFor="nc-file-input">NetCDF File</label>
+              <input
+                id="nc-file-input"
+                type="file"
+                accept=".nc,.nc4,.cdf,.netcdf"
+                onChange={(e) => setNcFile(e.target.files?.[0] || null)}
+                disabled={ncUploading}
+              />
+            </div>
+            {ncUploadError && <div className="dataset-error">{ncUploadError}</div>}
+            {ncUploadMessage && <div className="dataset-success">{ncUploadMessage}</div>}
+            <button
+              className="dataset-start-btn nc-upload-btn"
+              type="button"
+              onClick={handleNcUpload}
+              disabled={ncUploading || !ncFile}
+            >
+              {ncUploading ? 'Uploading & Converting...' : 'Upload NC Dataset'}
+            </button>
           </div>
           <div className="year-range-panel">
             <h3>Year Range</h3>
@@ -813,6 +954,25 @@ function App() {
 
           <div className="region-panel">
             <h3>Region Selection</h3>
+            <div className="subregion-picker">
+              <label htmlFor="subregion-select">Sub-Region</label>
+              <select
+                id="subregion-select"
+                value={selectedSubregionId}
+                onChange={(e) => handleSubregionChange(e.target.value)}
+                disabled={subregionsLoading}
+              >
+                <option value="">Custom Rectangle (draw/manual)</option>
+                {subregions.map((region) => (
+                  <option key={region.id} value={region.id}>
+                    {region.label} (ID: {region.id})
+                  </option>
+                ))}
+              </select>
+              {subregionsLoading && (
+                <div className="subregion-loading">Loading sub-regions...</div>
+              )}
+            </div>
             <button
               className={`region-btn mode-${regionAction} ${regionSelectMode ? 'active' : ''}`}
               onClick={handleToggleRegion}
@@ -879,6 +1039,11 @@ function App() {
                 <div className="region-row">
                   Lon: {(regionPreview || regionBounds).minLon.toFixed(3)} to {(regionPreview || regionBounds).maxLon.toFixed(3)}
                 </div>
+                {selectedSubregion && (
+                  <div className="region-row">
+                    Sub-Region: {selectedSubregion.label} (ID: {selectedSubregion.id})
+                  </div>
+                )}
                 {regionBounds && years.length > 0 && (
                   <div className="region-year">
                     <label htmlFor="region-year-select">Year:</label>
@@ -896,7 +1061,7 @@ function App() {
               </div>
             )}
             {!regionBounds && (
-              <div className="region-hint">Draw a rectangle on the map to analyze a specific area.</div>
+              <div className="region-hint">Draw a rectangle or pick a sub-region for faster local analysis.</div>
             )}
           </div>
 
@@ -939,6 +1104,12 @@ function App() {
               <span className="label">Variable:</span>
               <span className="value">{variableLabel}</span>
             </div>
+            {selectedSubregion && (
+              <div className="info-item">
+                <span className="label">Sub-Region:</span>
+                <span className="value">{selectedSubregion.id}</span>
+              </div>
+            )}
             {activeYearRange && (
               <div className="info-item">
                 <span className="label">Year Range:</span>

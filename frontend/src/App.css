@@ -345,6 +345,38 @@
   color: var(--accent);
 }
 
+.subregion-picker {
+  margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.subregion-picker label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.subregion-picker select {
+  padding: 8px 10px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.subregion-picker select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(77, 171, 247, 0.1);
+}
+
+.subregion-loading {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 .region-btn {
   width: 100%;
   display: flex;
@@ -668,6 +700,95 @@
 .dataset-options {
   display: grid;
   gap: 10px;
+}
+
+.dataset-success {
+  margin-top: 10px;
+  font-size: 13px;
+  color: #2f9e44;
+}
+
+.nc-upload-panel {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-panel);
+}
+
+.nc-upload-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.nc-upload-panel h3 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--accent);
+}
+
+.nc-help-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.nc-help-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.nc-upload-panel p {
+  margin: 0 0 12px 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.nc-help-box {
+  margin: 0 0 12px 0;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.nc-upload-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.nc-upload-row label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.nc-upload-row input[type="text"],
+.nc-upload-row input[type="file"] {
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.nc-upload-btn {
+  margin-top: 4px;
 }
 
 .year-range-panel {

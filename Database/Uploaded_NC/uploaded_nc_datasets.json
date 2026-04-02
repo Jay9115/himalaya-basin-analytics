@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "datasets": [
+    {
+      "id": "nc_wrfout-mdl-grd-dly-avg-2_20260403011000",
+      "label": "NC Upload - WRFOUT_MDL_GRD_DLY_AVG (2)",
+      "path": "D:\\ISRO-SWOT\\Webapp\\himalaya-basin-analytics\\Database\\Uploaded_NC\\nc_wrfout-mdl-grd-dly-avg-2_20260403011000",
+      "source_file": "D:\\ISRO-SWOT\\Webapp\\himalaya-basin-analytics\\Database\\Uploaded_NC\\_uploads\\nc_wrfout-mdl-grd-dly-avg-2_20260403011000.nc",
+      "created_at_utc": "2026-04-02T19:40:02+00:00",
+      "kind": "nc_upload",
+      "summary": {
+        "parquet_files": [
+          "NC_wrfout-mdl-grd-dly-avg-2_2026_H1.parquet"
+        ],
+        "rows_total": 9633,
+        "variables": [
+          "emiss",
+          "psfc",
+          "rh2",
+          "t2",
+          "tsk",
+          "ws10"
+        ],
+        "years": [
+          2026
+        ],
+        "date_min": "2026-04-03",
+        "date_max": "2026-04-03",
+        "rows_per_file": {
+          "NC_wrfout-mdl-grd-dly-avg-2_2026_H1.parquet": 9633
+        },
+        "grid_point_count": 9633,
+        "time_coordinate": null,
+        "time_source": "fallback_single_date",
+        "lat_coordinate": "latitude",
+        "lon_coordinate": "longitude"
+      }
+    }
+  ]
+}

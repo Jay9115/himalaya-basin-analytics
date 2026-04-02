@@ -20,11 +20,24 @@ const INDIA_STATE_LAYER_ID = 'india-admin-state-boundary-line';
 const INDIA_DISTRICT_LAYER_ID = 'india-admin-district-boundary-line';
 const INDIA_STATE_LABEL_LAYER_ID = 'india-admin-state-label';
 const INDIA_DISTRICT_LABEL_LAYER_ID = 'india-admin-district-label';
-const defaultPmtilesUrl = 'pmtiles://https://jay9115-himalaya-web-backend.hf.space/map-assets/india_admin.pmtiles';
-const defaultBasinGeoJsonUrl = 'https://jay9115-himalaya-web-backend.hf.space/map-assets/upper_indus_basin.geojson';
-const defaultGlyphsUrl = 'https://jay9115-himalaya-web-backend.hf.space/map-assets/fonts/{fontstack}/{range}.pbf';
 const indiaPmBounds = [68.17751186879357, 6.752782631992444, 97.41289651394189, 37.08834177335065];
-const indiaPmMaxZoom = 12;
+const indiaPmMaxZoom = 13;
+
+const trimTrailingSlash = (value) => value.replace(/\/+$/, '');
+
+const toPmtilesUrl = (value, apiBaseUrl) => {
+  if (!value) {
+    return `pmtiles://${apiBaseUrl}/map-assets/india_admin.pmtiles`;
+  }
+  if (value.startsWith('pmtiles://')) return value;
+  if (value.startsWith('http://') || value.startsWith('https://')) {
+    return `pmtiles://${value}`;
+  }
+  if (value.startsWith('/')) {
+    return `pmtiles://${apiBaseUrl}${value}`;
+  }
+  return `pmtiles://${apiBaseUrl}/${value}`;
+};
 const buildOfflineBaseStyle = (theme, glyphsUrl) => {
   const style = {
     version: 8,
@@ -103,9 +116,27 @@ const getColorForValue = (value, min, max) => {
 function MapView({ data, currentDate, theme, variableLabel, selectionEnabled, onSelectionComplete, onSelectionPreview, selectionBounds, focusLocation }) {
   const lightStyleOverride = import.meta.env.VITE_MAP_STYLE_LIGHT;
   const darkStyleOverride = import.meta.env.VITE_MAP_STYLE_DARK;
-  const pmtilesUrl = import.meta.env.VITE_INDIA_PM_TILES_URL || defaultPmtilesUrl;
-  const basinGeoJsonUrl = import.meta.env.VITE_BASIN_GEOJSON_URL || defaultBasinGeoJsonUrl;
-  const glyphsUrl = import.meta.env.VITE_GLYPHS_URL || defaultGlyphsUrl;
+  const apiBaseUrl = useMemo(() => {
+    const explicitApiUrl = import.meta.env.VITE_API_URL;
+    if (explicitApiUrl) {
+      return trimTrailingSlash(explicitApiUrl);
+    }
+    if (typeof window !== 'undefined' && window.location?.origin) {
+      return trimTrailingSlash(window.location.origin);
+    }
+    return 'http://127.0.0.1:8000';
+  }, []);
+
+  const pmtilesUrl = useMemo(
+    () => toPmtilesUrl(import.meta.env.VITE_INDIA_PM_TILES_URL, apiBaseUrl),
+    [apiBaseUrl]
+  );
+  const basinGeoJsonUrl = import.meta.env.VITE_BASIN_GEOJSON_URL || `${apiBaseUrl}/map-assets/upper_indus_basin.geojson`;
+  const glyphsUrl = import.meta.env.VITE_GLYPHS_URL || `${apiBaseUrl}/map-assets/fonts/{fontstack}/{range}.pbf`;
+  const pmtilesTilesTemplate = useMemo(() => {
+    const normalized = pmtilesUrl.endsWith('/') ? pmtilesUrl.slice(0, -1) : pmtilesUrl;
+    return `${normalized}/{z}/{x}/{y}`;
+  }, [pmtilesUrl]);
 
   const mapStyle = useMemo(() => {
     if (theme === 'light') {
@@ -182,7 +213,10 @@ function MapView({ data, currentDate, theme, variableLabel, selectionEnabled, on
     if (!map.getSource(INDIA_BOUNDARY_SOURCE_ID)) {
       map.addSource(INDIA_BOUNDARY_SOURCE_ID, {
         type: 'vector',
-        url: pmtilesUrl,
+        // Use explicit tiles template instead of `url` TileJSON fetch.
+        // Some PMTiles archives can have invalid header bounds while tile data is valid.
+        // With explicit bounds+tiles we keep India layer visible at all zoom levels.
+        tiles: [pmtilesTilesTemplate],
         minzoom: 0,
         maxzoom: indiaPmMaxZoom,
         bounds: indiaPmBounds,
@@ -288,7 +322,7 @@ function MapView({ data, currentDate, theme, variableLabel, selectionEnabled, on
         map.setPaintProperty(INDIA_DISTRICT_LABEL_LAYER_ID, 'text-halo-color', labelHalo);
       }
     }
-  }, [pmtilesUrl, theme]);
+  }, [pmtilesTilesTemplate, theme]);
 
   const handleMapLoad = useCallback(() => {
     try {
@@ -397,6 +431,13 @@ function MapView({ data, currentDate, theme, variableLabel, selectionEnabled, on
     result.push(scatterLayer);
     return result;
   }, [data, valueRange, basinGeoJson, theme]);
+
+  const deckController = useMemo(() => {
+    if (selectionEnabled) return false;
+    return {
+      maxZoom: indiaPmMaxZoom,
+    };
+  }, [selectionEnabled]);
 
   const getTooltip = ({ object }) => {
     if (!object) return null;
@@ -556,7 +597,7 @@ function MapView({ data, currentDate, theme, variableLabel, selectionEnabled, on
         ref={deckRef}
         viewState={viewState}
         onViewStateChange={({ viewState: next }) => setViewState(next)}
-        controller={!selectionEnabled}
+        controller={deckController}
         layers={layers}
         getTooltip={getTooltip}
         style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
@@ -565,6 +606,7 @@ function MapView({ data, currentDate, theme, variableLabel, selectionEnabled, on
           ref={mapRef}
           mapStyle={mapStyle}
           attributionControl={false}
+          maxZoom={indiaPmMaxZoom}
           onLoad={handleMapLoad}
           onStyleData={handleMapStyleData}
         />

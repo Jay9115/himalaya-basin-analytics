@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'https://jay9115-himalaya-web-backend.hf.space';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://jay9115-himalaya-web-backend.hf.space';
 
 class APIService {
   constructor() {
@@ -63,6 +63,21 @@ class APIService {
     return this.getWithCache('/datasets');
   }
 
+  async uploadNcDataset(file, datasetName) {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (datasetName && datasetName.trim()) {
+      formData.append('dataset_name', datasetName.trim());
+    }
+
+    const response = await this.client.post('/nc/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 0, // NetCDF conversion may take longer than normal query timeout.
+    });
+    this.clearCache();
+    return response.data;
+  }
+
   async getAvailableYears(dataset) {
     return this.getWithCache('/years', this.withDataset({}, dataset));
   }
@@ -79,58 +94,74 @@ class APIService {
     return this.getWithCache('/elevation-range', this.withContext({}, dataset, yearRange));
   }
 
-  async getData(date, elevMin, elevMax, variable, dataset, signal, yearRange) {
+  async getSubregions() {
+    return this.getWithCache('/subregions');
+  }
+
+  async getData(date, elevMin, elevMax, variable, dataset, signal, yearRange, subregionId) {
+    const params = this.withContext(
+      {
+        date,
+        elev_min: elevMin,
+        elev_max: elevMax,
+        variable,
+      },
+      dataset,
+      yearRange
+    );
+    if (subregionId) {
+      params.subregion_id = subregionId;
+    }
     return this.getWithCache(
       '/data',
-      this.withContext(
-        {
-          date,
-          elev_min: elevMin,
-          elev_max: elevMax,
-          variable,
-        },
-        dataset,
-        yearRange
-      ),
+      params,
       { signal }
     );
   }
 
-  async getBasinMean(startDate, endDate, elevMin, elevMax, variable, dataset, signal, yearRange) {
+  async getBasinMean(startDate, endDate, elevMin, elevMax, variable, dataset, signal, yearRange, subregionId) {
+    const params = this.withContext(
+      {
+        start_date: startDate,
+        end_date: endDate,
+        elev_min: elevMin,
+        elev_max: elevMax,
+        variable,
+      },
+      dataset,
+      yearRange
+    );
+    if (subregionId) {
+      params.subregion_id = subregionId;
+    }
     return this.getWithCache(
       '/basin-mean',
-      this.withContext(
-        {
-          start_date: startDate,
-          end_date: endDate,
-          elev_min: elevMin,
-          elev_max: elevMax,
-          variable,
-        },
-        dataset,
-        yearRange
-      ),
+      params,
       { signal }
     );
   }
 
-  async getRegionMean(year, bounds, elevMin, elevMax, variable, dataset, signal, yearRange) {
+  async getRegionMean(year, bounds, elevMin, elevMax, variable, dataset, signal, yearRange, subregionId) {
+    const params = this.withContext(
+      {
+        year,
+        min_lat: bounds.minLat,
+        max_lat: bounds.maxLat,
+        min_lon: bounds.minLon,
+        max_lon: bounds.maxLon,
+        elev_min: elevMin,
+        elev_max: elevMax,
+        variable,
+      },
+      dataset,
+      yearRange
+    );
+    if (subregionId) {
+      params.subregion_id = subregionId;
+    }
     return this.getWithCache(
       '/region-mean',
-      this.withContext(
-        {
-          year,
-          min_lat: bounds.minLat,
-          max_lat: bounds.maxLat,
-          min_lon: bounds.minLon,
-          max_lon: bounds.maxLon,
-          elev_min: elevMin,
-          elev_max: elevMax,
-          variable,
-        },
-        dataset,
-        yearRange
-      ),
+      params,
       { signal }
     );
   }

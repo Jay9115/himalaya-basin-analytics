@@ -3,20 +3,31 @@ FastAPI backend for local geospatial visualization.
 Supports multiple datasets (ERA5 and CMIP6) with lazy indexing.
 """
 from datetime import datetime
+import json
 import mimetypes
+import shutil
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import logging
 import re
 import sys
 
+import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+
+from nc_ingest import (
+    add_uploaded_dataset_entry,
+    convert_nc_to_parquet,
+    generate_dataset_id,
+    list_uploaded_dataset_configs,
+    slugify,
+)
 
 
 logging.basicConfig(level=logging.INFO)
@@ -50,7 +61,7 @@ FRONTEND_DIST_CANDIDATES = [
 ]
 FRONTEND_DIST_DIR = next((p for p in FRONTEND_DIST_CANDIDATES if p.exists()), FRONTEND_DIST_CANDIDATES[0])
 
-DATASET_CONFIGS: Dict[str, Dict] = {
+BASE_DATASET_CONFIGS: Dict[str, Dict] = {
     "era5": {
         "label": "ERA5 Full Shape",
         "paths": [
@@ -64,6 +75,10 @@ DATASET_CONFIGS: Dict[str, Dict] = {
         ],
     },
 }
+UPLOADED_NC_ROOT = DATABASE_DIR / "Uploaded_NC"
+UPLOADED_NC_MANIFEST = UPLOADED_NC_ROOT / "uploaded_nc_datasets.json"
+UPLOADED_NC_FILES_DIR = UPLOADED_NC_ROOT / "_uploads"
+DATASET_CONFIGS: Dict[str, Dict] = {}
 
 DEFAULT_DATASET_ID = "era5"
 EXCLUDE_COLUMNS = {"system:index", ".geo"}
@@ -74,9 +89,24 @@ ELEV_CANDIDATES = ["elevation_m", "elev", "elevation", "Elevation_m"]
 FIXED_ELEV_MIN = 500.0
 FIXED_ELEV_MAX = 9000.0
 YEAR_PATTERN = re.compile(r"(?:19|20)\d{2}")
+SUBREGION_ID_CANDIDATES = ["Subbasin", "subbasin", "GRIDCODE", "HydroID", "OBJECTID", "id", "ID"]
+SUBREGION_LABEL_CANDIDATES = [
+    "Bname",
+    "BasinName",
+    "SubbasinName",
+    "Name",
+    "name",
+    "District",
+]
 
 # Keeps metadata + index cache for each dataset id.
 DATASET_STATE: Dict[str, Dict] = {}
+SUBREGION_STATE: Dict[str, Dict] = {
+    "loaded": False,
+    "source_path": MAP_ASSETS_DIR / "upper_indus_basin.geojson",
+    "index": {},
+    "list": [],
+}
 
 
 def setup_frontend_static_assets() -> None:
@@ -161,6 +191,8 @@ def _iter_file_chunk(file_path: Path, start: int, end: int):
 def _media_type_for_asset(asset_path: Path) -> str:
     if asset_path.suffix.lower() == ".pmtiles":
         return "application/vnd.pmtiles"
+    if asset_path.suffix.lower() == ".pbf":
+        return "application/x-protobuf"
     guessed, _ = mimetypes.guess_type(str(asset_path))
     return guessed or "application/octet-stream"
 
@@ -217,6 +249,250 @@ def serve_map_asset(asset_path: str, request: Request, head_only: bool = False):
     )
 
 
+def _ring_to_numpy(ring_coords: List[List[float]]) -> Optional[np.ndarray]:
+    try:
+        ring = np.asarray(ring_coords, dtype=float)
+    except Exception:
+        return None
+    if ring.ndim != 2 or ring.shape[0] < 3 or ring.shape[1] < 2:
+        return None
+    ring = ring[:, :2]
+    if not np.allclose(ring[0], ring[-1]):
+        ring = np.vstack([ring, ring[0]])
+    if ring.shape[0] < 4:
+        return None
+    return ring
+
+
+def _feature_to_polygons(geometry: Dict[str, Any]) -> List[Dict[str, Any]]:
+    geom_type = geometry.get("type")
+    coords = geometry.get("coordinates")
+    polygons: List[Dict[str, Any]] = []
+
+    if geom_type == "Polygon":
+        coord_sets = [coords]
+    elif geom_type == "MultiPolygon":
+        coord_sets = coords
+    else:
+        return polygons
+
+    for polygon_coords in coord_sets:
+        if not polygon_coords:
+            continue
+        outer = _ring_to_numpy(polygon_coords[0])
+        if outer is None:
+            continue
+        holes = []
+        for hole_coords in polygon_coords[1:]:
+            hole = _ring_to_numpy(hole_coords)
+            if hole is not None:
+                holes.append(hole)
+        polygons.append({"outer": outer, "holes": holes})
+    return polygons
+
+
+def _extract_subregion_id(properties: Dict[str, Any]) -> Optional[str]:
+    for key in SUBREGION_ID_CANDIDATES:
+        if key not in properties:
+            continue
+        value = properties.get(key)
+        if value is None:
+            continue
+        value_str = str(value).strip()
+        if value_str:
+            return value_str
+    return None
+
+
+def _extract_subregion_label(properties: Dict[str, Any], region_id: str) -> str:
+    for key in SUBREGION_LABEL_CANDIDATES:
+        if key not in properties:
+            continue
+        value = properties.get(key)
+        if value is None:
+            continue
+        value_str = str(value).strip()
+        if value_str:
+            return value_str
+    return f"Subbasin {region_id}"
+
+
+def _compute_polygon_bounds(polygons: List[Dict[str, Any]]) -> Optional[Dict[str, float]]:
+    if not polygons:
+        return None
+    min_lon = min(float(np.min(poly["outer"][:, 0])) for poly in polygons)
+    max_lon = max(float(np.max(poly["outer"][:, 0])) for poly in polygons)
+    min_lat = min(float(np.min(poly["outer"][:, 1])) for poly in polygons)
+    max_lat = max(float(np.max(poly["outer"][:, 1])) for poly in polygons)
+    return {
+        "min_lon": min_lon,
+        "max_lon": max_lon,
+        "min_lat": min_lat,
+        "max_lat": max_lat,
+    }
+
+
+def load_subregion_index() -> None:
+    geojson_path = SUBREGION_STATE["source_path"]
+    SUBREGION_STATE["loaded"] = False
+    SUBREGION_STATE["index"] = {}
+    SUBREGION_STATE["list"] = []
+
+    if not geojson_path.exists():
+        logger.warning("Subregion GeoJSON not found: %s", geojson_path)
+        return
+
+    try:
+        geojson = json.loads(geojson_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        logger.error("Failed to read subregion GeoJSON '%s': %s", geojson_path, exc)
+        return
+
+    features = geojson.get("features") or []
+    index: Dict[str, Dict[str, Any]] = {}
+    listing: List[Dict[str, Any]] = []
+
+    for feature in features:
+        geometry = feature.get("geometry") or {}
+        properties = feature.get("properties") or {}
+        polygons = _feature_to_polygons(geometry)
+        if not polygons:
+            continue
+        bounds = _compute_polygon_bounds(polygons)
+        if not bounds:
+            continue
+
+        region_id = _extract_subregion_id(properties)
+        if not region_id:
+            continue
+
+        label = _extract_subregion_label(properties, region_id)
+        try:
+            sort_value = float(region_id)
+        except Exception:
+            sort_value = float("inf")
+
+        payload = {
+            "id": region_id,
+            "label": label,
+            "bounds": bounds,
+            "properties": properties,
+            "polygons": polygons,
+            "sort_value": sort_value,
+        }
+        index[region_id] = payload
+        listing.append(
+            {
+                "id": region_id,
+                "label": label,
+                "bounds": bounds,
+            }
+        )
+
+    listing.sort(key=lambda item: (float(item["id"]) if str(item["id"]).replace(".", "", 1).isdigit() else float("inf"), item["label"]))
+
+    SUBREGION_STATE["index"] = index
+    SUBREGION_STATE["list"] = listing
+    SUBREGION_STATE["loaded"] = True
+    logger.info("Loaded %d subregions from %s", len(listing), geojson_path)
+
+
+def get_subregion(subregion_id: Optional[str]) -> Optional[Dict[str, Any]]:
+    if not subregion_id:
+        return None
+    if not SUBREGION_STATE["loaded"]:
+        load_subregion_index()
+    region_id = str(subregion_id).strip()
+    if not region_id:
+        return None
+    region = SUBREGION_STATE["index"].get(region_id)
+    if region:
+        return region
+    raise HTTPException(status_code=400, detail=f"Invalid subregion_id '{subregion_id}'")
+
+
+def _points_in_ring(lons: np.ndarray, lats: np.ndarray, ring: np.ndarray) -> np.ndarray:
+    inside = np.zeros(lons.shape[0], dtype=bool)
+    x = ring[:, 0]
+    y = ring[:, 1]
+    n = len(ring) - 1
+    eps = 1e-12
+
+    for i in range(n):
+        xi = x[i]
+        yi = y[i]
+        xj = x[i + 1]
+        yj = y[i + 1]
+        intersects = ((yi > lats) != (yj > lats)) & (
+            lons < (xj - xi) * (lats - yi) / ((yj - yi) + eps) + xi
+        )
+        inside ^= intersects
+    return inside
+
+
+def points_in_subregion(lons: np.ndarray, lats: np.ndarray, subregion: Dict[str, Any]) -> np.ndarray:
+    if lons.size == 0:
+        return np.zeros(0, dtype=bool)
+
+    bounds = subregion["bounds"]
+    bbox_mask = (
+        (lons >= bounds["min_lon"])
+        & (lons <= bounds["max_lon"])
+        & (lats >= bounds["min_lat"])
+        & (lats <= bounds["max_lat"])
+    )
+    if not bbox_mask.any():
+        return bbox_mask
+
+    final_mask = np.zeros(lons.shape[0], dtype=bool)
+    candidate_idx = np.where(bbox_mask)[0]
+    cand_lons = lons[candidate_idx]
+    cand_lats = lats[candidate_idx]
+    cand_inside = np.zeros(cand_lons.shape[0], dtype=bool)
+
+    for polygon in subregion["polygons"]:
+        poly_inside = _points_in_ring(cand_lons, cand_lats, polygon["outer"])
+        if polygon["holes"]:
+            hole_mask = np.zeros(cand_lons.shape[0], dtype=bool)
+            for hole in polygon["holes"]:
+                hole_mask |= _points_in_ring(cand_lons, cand_lats, hole)
+            poly_inside &= ~hole_mask
+        cand_inside |= poly_inside
+
+    final_mask[candidate_idx] = cand_inside
+    return final_mask
+
+
+def build_subregion_mask(df: pd.DataFrame, lat_col: str, lon_col: str, subregion: Dict[str, Any]) -> np.ndarray:
+    """Build a row-level subregion mask using unique coordinates for speed."""
+    if df.empty:
+        return np.zeros(0, dtype=bool)
+
+    lons = pd.to_numeric(df[lon_col], errors="coerce").to_numpy(dtype=np.float64, copy=False)
+    lats = pd.to_numeric(df[lat_col], errors="coerce").to_numpy(dtype=np.float64, copy=False)
+    finite = np.isfinite(lons) & np.isfinite(lats)
+    if not finite.any():
+        return np.zeros(df.shape[0], dtype=bool)
+
+    coords = np.column_stack((lons[finite], lats[finite]))
+    unique_coords, inverse = np.unique(coords, axis=0, return_inverse=True)
+    inside_unique = points_in_subregion(unique_coords[:, 0], unique_coords[:, 1], subregion)
+
+    mask = np.zeros(df.shape[0], dtype=bool)
+    mask[finite] = inside_unique[inverse]
+    return mask
+
+
+def ensure_uploaded_nc_dirs() -> None:
+    UPLOADED_NC_ROOT.mkdir(parents=True, exist_ok=True)
+    UPLOADED_NC_FILES_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def build_uploaded_dataset_label(name: str) -> str:
+    cleaned = name.strip()
+    return f"NC Upload - {cleaned or 'Dataset'}"
+
+
 def resolve_dataset_path(paths: List[Path]) -> Path:
     """Prefer an existing path that already has parquet, else first existing path."""
     for path in paths:
@@ -228,13 +504,35 @@ def resolve_dataset_path(paths: List[Path]) -> Path:
     return paths[0]
 
 
+def _normalize_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    raw_paths = config.get("paths", [])
+    paths = [Path(path) if not isinstance(path, Path) else path for path in raw_paths]
+    return {
+        "label": config.get("label", "Dataset"),
+        "paths": paths,
+        "source": config.get("source", "builtin"),
+    }
+
+
+def rebuild_dataset_configs() -> None:
+    DATASET_CONFIGS.clear()
+    for dataset_id, config in BASE_DATASET_CONFIGS.items():
+        DATASET_CONFIGS[dataset_id] = _normalize_config(config)
+
+    uploaded_configs = list_uploaded_dataset_configs(UPLOADED_NC_MANIFEST)
+    for dataset_id, config in uploaded_configs.items():
+        DATASET_CONFIGS[dataset_id] = _normalize_config(config)
+
+
 def init_dataset_state() -> None:
+    rebuild_dataset_configs()
     DATASET_STATE.clear()
     for dataset_id, config in DATASET_CONFIGS.items():
         path = resolve_dataset_path(config["paths"])
         DATASET_STATE[dataset_id] = {
             "id": dataset_id,
             "label": config["label"],
+            "source": config.get("source", "builtin"),
             "path": path,
             "loaded": False,
             "active_index_key": None,
@@ -273,6 +571,7 @@ def get_datasets_summary() -> List[Dict]:
                 "parquet_files": parquet_count,
                 "csv_files": csv_count,
                 "ready": parquet_count > 0,
+                "source": state.get("source", "builtin"),
             }
         )
     return summary
@@ -637,7 +936,14 @@ def validate_variable(state: Dict, variable: Optional[str]) -> str:
     return var_name
 
 
-def query_data(state: Dict, query_date: str, elev_min: float, elev_max: float, variable: str) -> List[Dict]:
+def query_data(
+    state: Dict,
+    query_date: str,
+    elev_min: float,
+    elev_max: float,
+    variable: str,
+    subregion: Optional[Dict[str, Any]] = None,
+) -> List[Dict]:
     if query_date not in state["date_index"]:
         return []
 
@@ -656,6 +962,16 @@ def query_data(state: Dict, query_date: str, elev_min: float, elev_max: float, v
                 (elev_col, ">=", float(elev_min)),
                 (elev_col, "<=", float(elev_max)),
             ]
+            if subregion:
+                bounds = subregion["bounds"]
+                filters.extend(
+                    [
+                        (lat_col, ">=", float(bounds["min_lat"])),
+                        (lat_col, "<=", float(bounds["max_lat"])),
+                        (lon_col, ">=", float(bounds["min_lon"])),
+                        (lon_col, "<=", float(bounds["max_lon"])),
+                    ]
+                )
             df = read_parquet_subset(file_path, columns_key, date_col, filters=filters)
             if df.empty:
                 continue
@@ -664,6 +980,8 @@ def query_data(state: Dict, query_date: str, elev_min: float, elev_max: float, v
                 & (df[elev_col] >= elev_min)
                 & (df[elev_col] <= elev_max)
             )
+            if subregion and mask.any():
+                mask &= build_subregion_mask(df, lat_col, lon_col, subregion)
             if not mask.any():
                 continue
 
@@ -684,12 +1002,15 @@ def calculate_basin_mean(
     elev_min: float,
     elev_max: float,
     variable: str,
+    subregion: Optional[Dict[str, Any]] = None,
 ) -> List[Dict]:
     dates = sorted([d for d in state["date_index"].keys() if start_date <= d <= end_date])
     if not dates:
         return []
 
     date_col = state["date_col"]
+    lat_col = state["lat_col"]
+    lon_col = state["lon_col"]
     elev_col = state["elev_col"]
     files = sorted(set(f for d in dates for f in state["date_index"][d]))
     start_ts = pd.Timestamp(start_date)
@@ -699,12 +1020,24 @@ def calculate_basin_mean(
     for file_path in files:
         try:
             columns_key = (date_col, elev_col, variable)
+            if subregion:
+                columns_key = (date_col, lat_col, lon_col, elev_col, variable)
             filters = [
                 (date_col, ">=", start_ts.to_pydatetime()),
                 (date_col, "<=", end_ts.to_pydatetime()),
                 (elev_col, ">=", float(elev_min)),
                 (elev_col, "<=", float(elev_max)),
             ]
+            if subregion:
+                bounds = subregion["bounds"]
+                filters.extend(
+                    [
+                        (lat_col, ">=", float(bounds["min_lat"])),
+                        (lat_col, "<=", float(bounds["max_lat"])),
+                        (lon_col, ">=", float(bounds["min_lon"])),
+                        (lon_col, "<=", float(bounds["max_lon"])),
+                    ]
+                )
             df = read_parquet_subset(file_path, columns_key, date_col, filters=filters)
             if df.empty:
                 continue
@@ -714,6 +1047,8 @@ def calculate_basin_mean(
                 & (df[elev_col] >= elev_min)
                 & (df[elev_col] <= elev_max)
             )
+            if subregion and mask.any():
+                mask &= build_subregion_mask(df, lat_col, lon_col, subregion)
             if not mask.any():
                 continue
 
@@ -749,6 +1084,7 @@ def calculate_region_mean(
     elev_min: float,
     elev_max: float,
     variable: str,
+    subregion: Optional[Dict[str, Any]] = None,
 ) -> List[Dict]:
     start_date = f"{year}-01-01"
     end_date = f"{year}-12-31"
@@ -778,6 +1114,16 @@ def calculate_region_mean(
                 (elev_col, ">=", float(elev_min)),
                 (elev_col, "<=", float(elev_max)),
             ]
+            if subregion:
+                bounds = subregion["bounds"]
+                filters.extend(
+                    [
+                        (lat_col, ">=", float(bounds["min_lat"])),
+                        (lat_col, "<=", float(bounds["max_lat"])),
+                        (lon_col, ">=", float(bounds["min_lon"])),
+                        (lon_col, "<=", float(bounds["max_lon"])),
+                    ]
+                )
             df = read_parquet_subset(file_path, columns_key, date_col, filters=filters)
             if df.empty:
                 continue
@@ -791,6 +1137,8 @@ def calculate_region_mean(
                 & (df[elev_col] >= elev_min)
                 & (df[elev_col] <= elev_max)
             )
+            if subregion and mask.any():
+                mask &= build_subregion_mask(df, lat_col, lon_col, subregion)
             if not mask.any():
                 continue
 
@@ -818,7 +1166,9 @@ def calculate_region_mean(
 
 @app.on_event("startup")
 async def startup_event() -> None:
+    ensure_uploaded_nc_dirs()
     init_dataset_state()
+    load_subregion_index()
     logger.info("Dataset state initialized")
 
 
@@ -978,12 +1328,97 @@ async def get_elevation_range(
     return {"min_elevation": FIXED_ELEV_MIN, "max_elevation": FIXED_ELEV_MAX}
 
 
+@app.get("/subregions")
+async def get_subregions():
+    if not SUBREGION_STATE["loaded"]:
+        load_subregion_index()
+    return {
+        "count": len(SUBREGION_STATE["list"]),
+        "subregions": SUBREGION_STATE["list"],
+        "source_path": str(SUBREGION_STATE["source_path"]),
+    }
+
+
+@app.post("/nc/upload")
+async def upload_nc_dataset(
+    file: UploadFile = File(...),
+    dataset_name: Optional[str] = Form(None),
+):
+    ensure_uploaded_nc_dirs()
+
+    original_name = file.filename or "uploaded.nc"
+    suffix = Path(original_name).suffix.lower()
+    allowed_suffixes = {".nc", ".nc4", ".cdf", ".netcdf"}
+    if suffix not in allowed_suffixes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type '{suffix}'. Use .nc/.nc4/.cdf/.netcdf",
+        )
+
+    user_name = (dataset_name or Path(original_name).stem).strip()
+    dataset_id = generate_dataset_id(user_name)
+    dataset_label = build_uploaded_dataset_label(user_name)
+    dataset_dir = UPLOADED_NC_ROOT / dataset_id
+    uploaded_copy = UPLOADED_NC_FILES_DIR / f"{dataset_id}{suffix}"
+
+    conversion_summary: Optional[Dict[str, Any]] = None
+    try:
+        dataset_dir.mkdir(parents=True, exist_ok=False)
+        with uploaded_copy.open("wb") as output:
+            shutil.copyfileobj(file.file, output)
+
+        conversion_summary = convert_nc_to_parquet(
+            uploaded_copy,
+            dataset_dir,
+            dataset_prefix=f"NC_{slugify(user_name)}",
+        )
+
+        add_uploaded_dataset_entry(
+            UPLOADED_NC_MANIFEST,
+            dataset_id=dataset_id,
+            label=dataset_label,
+            dataset_path=dataset_dir,
+            source_file=uploaded_copy,
+            conversion_summary=conversion_summary,
+        )
+
+        init_dataset_state()
+        loaded = ensure_dataset_loaded(dataset_id)
+        years = sorted({int(date_key[:4]) for date_key in loaded["date_index"].keys()})
+
+        return {
+            "status": "ok",
+            "dataset_id": dataset_id,
+            "dataset_label": dataset_label,
+            "dataset_path": str(dataset_dir),
+            "source_file": str(uploaded_copy),
+            "years": years,
+            "variables": loaded["variables"],
+            "conversion": conversion_summary,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if dataset_dir.exists():
+            shutil.rmtree(dataset_dir, ignore_errors=True)
+        if uploaded_copy.exists():
+            uploaded_copy.unlink(missing_ok=True)
+        logger.exception("NC upload conversion failed: %s", exc)
+        raise HTTPException(status_code=500, detail=f"NC ingestion failed: {exc}") from exc
+    finally:
+        try:
+            await file.close()
+        except Exception:
+            pass
+
+
 @app.get("/data")
 async def get_data(
     date: str = Query(..., description="Date in YYYY-MM-DD format"),
     elev_min: Optional[float] = Query(None, description="Minimum elevation"),
     elev_max: Optional[float] = Query(None, description="Maximum elevation"),
     variable: Optional[str] = Query(None, description="Variable name"),
+    subregion_id: Optional[str] = Query(None, description="Optional subregion id"),
     dataset: Optional[str] = Query(None, description="Dataset id"),
     year_start: Optional[int] = Query(None, description="Inclusive start year"),
     year_end: Optional[int] = Query(None, description="Inclusive end year"),
@@ -997,14 +1432,16 @@ async def get_data(
     state = ensure_dataset_loaded(dataset, year_start=year_start, year_end=year_end)
     var_name = validate_variable(state, variable)
     elev_min, elev_max = resolve_elevation_bounds(state, elev_min, elev_max)
+    subregion = get_subregion(subregion_id)
 
     start_time = datetime.now()
-    data = query_data(state, date, elev_min, elev_max, var_name)
+    data = query_data(state, date, elev_min, elev_max, var_name, subregion=subregion)
     query_time = (datetime.now() - start_time).total_seconds() * 1000
 
+    subregion_log = f", subregion={subregion['id']}" if subregion else ""
     logger.info(
         f"[{state['id']}] Query {date} [{elev_min}-{elev_max}m] {var_name}: "
-        f"{len(data)} points in {query_time:.0f}ms"
+        f"{len(data)} points in {query_time:.0f}ms{subregion_log}"
     )
     return JSONResponse(
         content={
@@ -1014,6 +1451,8 @@ async def get_data(
             "elev_min": elev_min,
             "elev_max": elev_max,
             "variable": var_name,
+            "subregion_id": subregion["id"] if subregion else None,
+            "subregion_label": subregion["label"] if subregion else None,
             "year_start": year_start,
             "year_end": year_end,
             "data": data,
@@ -1030,6 +1469,7 @@ async def get_basin_mean(
     elev_min: Optional[float] = Query(None, description="Minimum elevation"),
     elev_max: Optional[float] = Query(None, description="Maximum elevation"),
     variable: Optional[str] = Query(None, description="Variable name"),
+    subregion_id: Optional[str] = Query(None, description="Optional subregion id"),
     dataset: Optional[str] = Query(None, description="Dataset id"),
     year_start: Optional[int] = Query(None, description="Inclusive start year"),
     year_end: Optional[int] = Query(None, description="Inclusive end year"),
@@ -1044,14 +1484,24 @@ async def get_basin_mean(
     state = ensure_dataset_loaded(dataset, year_start=year_start, year_end=year_end)
     var_name = validate_variable(state, variable)
     elev_min, elev_max = resolve_elevation_bounds(state, elev_min, elev_max)
+    subregion = get_subregion(subregion_id)
 
     start_time = datetime.now()
-    data = calculate_basin_mean(state, start_date, end_date, elev_min, elev_max, var_name)
+    data = calculate_basin_mean(
+        state,
+        start_date,
+        end_date,
+        elev_min,
+        elev_max,
+        var_name,
+        subregion=subregion,
+    )
     query_time = (datetime.now() - start_time).total_seconds() * 1000
 
+    subregion_log = f", subregion={subregion['id']}" if subregion else ""
     logger.info(
         f"[{state['id']}] Basin mean [{start_date} to {end_date}] [{elev_min}-{elev_max}m] {var_name}: "
-        f"{len(data)} days in {query_time:.0f}ms"
+        f"{len(data)} days in {query_time:.0f}ms{subregion_log}"
     )
     return JSONResponse(
         content={
@@ -1062,6 +1512,8 @@ async def get_basin_mean(
             "elev_min": elev_min,
             "elev_max": elev_max,
             "variable": var_name,
+            "subregion_id": subregion["id"] if subregion else None,
+            "subregion_label": subregion["label"] if subregion else None,
             "year_start": year_start,
             "year_end": year_end,
             "data": data,
@@ -1081,6 +1533,7 @@ async def get_region_mean(
     elev_min: Optional[float] = Query(None, description="Minimum elevation"),
     elev_max: Optional[float] = Query(None, description="Maximum elevation"),
     variable: Optional[str] = Query(None, description="Variable name"),
+    subregion_id: Optional[str] = Query(None, description="Optional subregion id"),
     dataset: Optional[str] = Query(None, description="Dataset id"),
     year_start: Optional[int] = Query(None, description="Inclusive start year"),
     year_end: Optional[int] = Query(None, description="Inclusive end year"),
@@ -1089,18 +1542,29 @@ async def get_region_mean(
     state = ensure_dataset_loaded(dataset, year_start=year_start, year_end=year_end)
     var_name = validate_variable(state, variable)
     elev_min, elev_max = resolve_elevation_bounds(state, elev_min, elev_max)
+    subregion = get_subregion(subregion_id)
     min_lat, max_lat = sorted([min_lat, max_lat])
     min_lon, max_lon = sorted([min_lon, max_lon])
 
     start_time = datetime.now()
     data = calculate_region_mean(
-        state, year, min_lat, max_lat, min_lon, max_lon, elev_min, elev_max, var_name
+        state,
+        year,
+        min_lat,
+        max_lat,
+        min_lon,
+        max_lon,
+        elev_min,
+        elev_max,
+        var_name,
+        subregion=subregion,
     )
     query_time = (datetime.now() - start_time).total_seconds() * 1000
 
+    subregion_log = f", subregion={subregion['id']}" if subregion else ""
     logger.info(
         f"[{state['id']}] Region mean {year} [{min_lat},{max_lat}]x[{min_lon},{max_lon}] "
-        f"[{elev_min}-{elev_max}m] {var_name}: {len(data)} days in {query_time:.0f}ms"
+        f"[{elev_min}-{elev_max}m] {var_name}: {len(data)} days in {query_time:.0f}ms{subregion_log}"
     )
     return JSONResponse(
         content={
@@ -1116,6 +1580,8 @@ async def get_region_mean(
             "elev_min": elev_min,
             "elev_max": elev_max,
             "variable": var_name,
+            "subregion_id": subregion["id"] if subregion else None,
+            "subregion_label": subregion["label"] if subregion else None,
             "year_start": year_start,
             "year_end": year_end,
             "data": data,
