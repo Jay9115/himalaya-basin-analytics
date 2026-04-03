@@ -114,17 +114,18 @@ powershell -ExecutionPolicy Bypass -File "D:\ISRO-SWOT\Webapp\himalaya-basin-ana
 
 What it does:
 - Builds frontend (`npm run build`) unless skipped
-- Mirrors latest backend exe runtime from:
-  - `D:\ISRO-SWOT\Webapp_packed\_build\dist\webapp_backend`
-- Syncs into:
+- Builds backend executable (`webapp_backend.exe`) with PyInstaller in an isolated build venv
+- Syncs portable runtime to:
   - `D:\ISRO-SWOT\Webapp_packed\webapp_backend`
-- Syncs:
+- Mirrors:
   - `frontend\dist` -> `webapp_backend\frontend_dist`
   - `Database` -> `webapp_backend\Database`
   - `Map_handle` -> `webapp_backend\Map_handle`
 - Regenerates:
   - `D:\ISRO-SWOT\Webapp_packed\START_APP.bat`
   - `D:\ISRO-SWOT\Webapp_packed\STOP_APP.bat`
+  - `D:\ISRO-SWOT\Webapp_packed\README_OFFLINE.txt`
+- Removes temporary build artifacts by default (`D:\ISRO-SWOT\Webapp_packed\_build`)
 
 Skip frontend build:
 
@@ -132,10 +133,16 @@ Skip frontend build:
 powershell -ExecutionPolicy Bypass -File "D:\ISRO-SWOT\Webapp\himalaya-basin-analytics\pack_offline.ps1" -SkipFrontendBuild
 ```
 
-Custom runtime source path:
+Skip backend rebuild (reuse an already-built runtime):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "D:\ISRO-SWOT\Webapp\himalaya-basin-analytics\pack_offline.ps1" -BuiltRuntime "D:\YOUR_PATH\dist\webapp_backend"
+powershell -ExecutionPolicy Bypass -File "D:\ISRO-SWOT\Webapp\himalaya-basin-analytics\pack_offline.ps1" -SkipBackendBuild -BuiltRuntime "D:\YOUR_PATH\dist\webapp_backend"
+```
+
+Keep `_build` artifacts for debugging/repeat builds:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "D:\ISRO-SWOT\Webapp\himalaya-basin-analytics\pack_offline.ps1" -KeepBuildArtifacts
 ```
 
 ## Notes
