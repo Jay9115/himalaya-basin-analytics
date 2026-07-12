@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import MapView from './components/MapView';
 import TimeSlider from './components/TimeSlider';
 import ElevationFilter from './components/ElevationFilter';
 import TempGraph from './components/TempGraph';
 import DocumentationPage from './components/DocumentationPage';
+import OutcomeLongTermHotspotPage from './components/OutcomeLongTermHotspotPage';
 import apiService from './services/api';
 import './App.css';
 
@@ -19,6 +20,8 @@ const formatVariableLabel = (name) => {
   return `${prettyLabel} (${unit})`;
 };
 
+const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
 function App() {
   // State management
   const [theme, setTheme] = useState(() => {
@@ -26,8 +29,12 @@ function App() {
     return stored === 'light' || stored === 'dark' ? stored : 'dark';
   });
   const [datasets, setDatasets] = useState([]);
+  const [outcomes, setOutcomes] = useState([]);
+  const [selectedOutcomeId, setSelectedOutcomeId] = useState('long_term_hotspot');
   const [datasetId, setDatasetId] = useState('');
+  const [homeModule, setHomeModule] = useState('dashboard');
   const [datasetReady, setDatasetReady] = useState(false);
+  const [outcomeReady, setOutcomeReady] = useState(false);
   const [datasetLoading, setDatasetLoading] = useState(true);
   const [showDocumentation, setShowDocumentation] = useState(false);
   const [yearOptions, setYearOptions] = useState([]);
@@ -53,6 +60,9 @@ function App() {
   const [subregions, setSubregions] = useState([]);
   const [subregionsLoading, setSubregionsLoading] = useState(false);
   const [selectedSubregionId, setSelectedSubregionId] = useState('');
+  const [selectedSubregionFeature, setSelectedSubregionFeature] = useState(null);
+  const [subregionSearchText, setSubregionSearchText] = useState('');
+  const [subregionDropdownOpen, setSubregionDropdownOpen] = useState(false);
   const [regionLatMin, setRegionLatMin] = useState('');
   const [regionLatMax, setRegionLatMax] = useState('');
   const [regionLonMin, setRegionLonMin] = useState('');
@@ -65,20 +75,72 @@ function App() {
   const [elevationRange, setElevationRange] = useState({ min: 500, max: 9000 });
   const [selectedElevRange, setSelectedElevRange] = useState({ min: 500, max: 9000 });
   const [mapData, setMapData] = useState([]);
+  const [mapViewMode, setMapViewMode] = useState('basin');
+  const [analysisMode, setAnalysisMode] = useState('daily');
+  const [hotspotData, setHotspotData] = useState([]);
+  const [hotspotSummary, setHotspotSummary] = useState(null);
+  const [hotspotLoading, setHotspotLoading] = useState(false);
+  const [hotspotError, setHotspotError] = useState('');
+  const [hotspotMinYears, setHotspotMinYears] = useState(3);
   const [graphData, setGraphData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playSpeed, setPlaySpeed] = useState(500); // ms per frame
   const [error, setError] = useState(null);
   const [stats, setStats] = useState(null);
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const stored = Number(localStorage.getItem('sidebarWidth'));
+    return Number.isFinite(stored) ? clamp(stored, 240, 560) : 320;
+  });
+  const [bottomPanelHeight, setBottomPanelHeight] = useState(() => {
+    const stored = Number(localStorage.getItem('bottomPanelHeight'));
+    return Number.isFinite(stored) ? clamp(stored, 180, 520) : 360;
+  });
   
   const animationRef = useRef(null);
   const mapAbortRef = useRef(null);
+  const hotspotAbortRef = useRef(null);
   const graphAbortRef = useRef(null);
+  const subregionGeometryAbortRef = useRef(null);
+  const appContentRef = useRef(null);
   const activeYearRange = selectedYearRange.start !== null && selectedYearRange.end !== null
     ? selectedYearRange
     : null;
   const selectedSubregion = subregions.find((item) => item.id === selectedSubregionId) || null;
+  const basinSubregions = useMemo(
+    () => subregions.filter((item) => item.kind !== 'glacier'),
+    [subregions]
+  );
+  const glacierSubregions = useMemo(
+    () => subregions.filter((item) => item.kind === 'glacier'),
+    [subregions]
+  );
+  const normalizedSubregionQuery = subregionSearchText.trim().toLowerCase();
+  const filteredBasinSubregions = useMemo(() => {
+    const items = normalizedSubregionQuery
+      ? basinSubregions.filter((item) => {
+          const searchText = `${item.label || ''} ${item.id || ''} basin`.toLowerCase();
+          return searchText.includes(normalizedSubregionQuery);
+        })
+      : basinSubregions;
+    return items.slice(0, normalizedSubregionQuery ? 20 : 8);
+  }, [basinSubregions, normalizedSubregionQuery]);
+  const filteredGlacierSubregions = useMemo(() => {
+    const items = normalizedSubregionQuery
+      ? glacierSubregions.filter((item) => {
+          const searchText = `${item.label || ''} ${item.id || ''} glacier`.toLowerCase();
+          return searchText.includes(normalizedSubregionQuery);
+        })
+      : glacierSubregions;
+    return items.slice(0, normalizedSubregionQuery ? 20 : 12);
+  }, [glacierSubregions, normalizedSubregionQuery]);
+  const isHotspotMode = analysisMode === 'hotspot';
+  const glacierViewEnabled = mapViewMode === 'glacier';
+  const displayedMapData = isHotspotMode ? hotspotData : mapData;
+  const hotspotMinYearsMax = activeYearRange
+    ? Math.max(2, activeYearRange.end - activeYearRange.start + 1)
+    : 2;
+  const mapPointCount = displayedMapData.length;
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -86,13 +148,75 @@ function App() {
   }, [theme]);
 
   useEffect(() => {
-    const loadDatasets = async () => {
+    localStorage.setItem('sidebarWidth', String(sidebarWidth));
+  }, [sidebarWidth]);
+
+  useEffect(() => {
+    localStorage.setItem('bottomPanelHeight', String(bottomPanelHeight));
+  }, [bottomPanelHeight]);
+
+  const handleSidebarResizeStart = useCallback((event) => {
+    event.preventDefault();
+    const contentRect = appContentRef.current?.getBoundingClientRect();
+    const leftOffset = contentRect?.left ?? 0;
+    const maxWidth = contentRect ? Math.min(560, Math.max(280, contentRect.width * 0.45)) : 560;
+
+    const handleMouseMove = (moveEvent) => {
+      setSidebarWidth(clamp(moveEvent.clientX - leftOffset, 240, maxWidth));
+      window.requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+    };
+
+    const handleMouseUp = () => {
+      document.body.classList.remove('is-resizing-sidebar');
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.body.classList.add('is-resizing-sidebar');
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  }, []);
+
+  const handleBottomResizeStart = useCallback((event) => {
+    event.preventDefault();
+
+    const handleMouseMove = (moveEvent) => {
+      const contentRect = appContentRef.current?.getBoundingClientRect();
+      if (!contentRect) return;
+      const availableHeight = contentRect.height;
+      const nextHeight = contentRect.bottom - moveEvent.clientY;
+      setBottomPanelHeight(clamp(nextHeight, 180, Math.max(220, availableHeight - 220)));
+      window.requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+    };
+
+    const handleMouseUp = () => {
+      document.body.classList.remove('is-resizing-bottom');
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.body.classList.add('is-resizing-bottom');
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  }, []);
+
+  useEffect(() => {
+    const loadHomeOptions = async () => {
       try {
         setDatasetLoading(true);
-        const response = await apiService.getDatasets();
-        const list = response.datasets || [];
+        const [datasetsResponse, outcomesResponse] = await Promise.all([
+          apiService.getDatasets(),
+          apiService.getOutcomes().catch(() => ({ outcomes: [] })),
+        ]);
+        const list = datasetsResponse.datasets || [];
+        const outcomeList = outcomesResponse.outcomes || [];
         setDatasets(list);
-        const preferred = list.find((d) => d.id === response.default_dataset && d.ready);
+        setOutcomes(outcomeList);
+        if (outcomeList.length > 0) {
+          const firstOutcome = outcomeList.find((item) => item.ready) || outcomeList[0];
+          setSelectedOutcomeId(firstOutcome.id);
+        }
+        const preferred = list.find((d) => d.id === datasetsResponse.default_dataset && d.ready);
         const firstReady = list.find((d) => d.ready);
         const firstAny = list[0];
         setDatasetId((preferred || firstReady || firstAny)?.id || '');
@@ -104,7 +228,7 @@ function App() {
       }
     };
 
-    loadDatasets();
+    loadHomeOptions();
   }, []);
 
   useEffect(() => {
@@ -114,6 +238,18 @@ function App() {
     setRegionLonMin(regionBounds.minLon.toFixed(4));
     setRegionLonMax(regionBounds.maxLon.toFixed(4));
   }, [regionBounds]);
+
+  useEffect(() => {
+    if (isHotspotMode && isPlaying) {
+      setIsPlaying(false);
+    }
+  }, [isHotspotMode, isPlaying]);
+
+  useEffect(() => {
+    if (!activeYearRange) return;
+    const maxAllowed = Math.max(2, activeYearRange.end - activeYearRange.start + 1);
+    setHotspotMinYears((prev) => Math.min(maxAllowed, Math.max(2, prev)));
+  }, [activeYearRange]);
 
   useEffect(() => {
     if (!datasetReady) return;
@@ -141,6 +277,39 @@ function App() {
       isActive = false;
     };
   }, [datasetReady]);
+
+  useEffect(() => {
+    if (!datasetReady || !selectedSubregionId) {
+      subregionGeometryAbortRef.current?.abort?.();
+      setSelectedSubregionFeature(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    if (subregionGeometryAbortRef.current) {
+      subregionGeometryAbortRef.current.abort();
+    }
+    subregionGeometryAbortRef.current = controller;
+
+    const loadSubregionGeometry = async () => {
+      try {
+        const response = await apiService.getSubregionGeometry(selectedSubregionId, controller.signal);
+        if (!controller.signal.aborted) {
+          setSelectedSubregionFeature(response?.feature || null);
+        }
+      } catch (err) {
+        const isCanceled = err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED';
+        if (isCanceled) return;
+        console.warn('Failed to load subregion geometry:', err);
+        if (!controller.signal.aborted) {
+          setSelectedSubregionFeature(null);
+        }
+      }
+    };
+
+    loadSubregionGeometry();
+    return () => controller.abort();
+  }, [datasetReady, selectedSubregionId]);
 
   useEffect(() => {
     if (!datasetId) {
@@ -262,7 +431,7 @@ function App() {
 
   // Fetch map data when date or elevation changes
   useEffect(() => {
-    if (!datasetReady || !datasetId || !currentDate || !activeYearRange) return;
+    if (!datasetReady || !datasetId || !currentDate || !activeYearRange || isHotspotMode) return;
 
     const controller = new AbortController();
     if (mapAbortRef.current) {
@@ -301,7 +470,64 @@ function App() {
     return () => {
       controller.abort();
     };
-  }, [datasetReady, datasetId, currentDate, selectedElevRange, selectedVariable, activeYearRange, selectedSubregionId]);
+  }, [datasetReady, datasetId, currentDate, selectedElevRange, selectedVariable, activeYearRange, selectedSubregionId, isHotspotMode]);
+
+  // Fetch hotspot trends for long-term change analysis
+  useEffect(() => {
+    if (!datasetReady || !datasetId || !activeYearRange || !selectedVariable || !isHotspotMode) return;
+
+    const controller = new AbortController();
+    if (hotspotAbortRef.current) {
+      hotspotAbortRef.current.abort();
+    }
+    hotspotAbortRef.current = controller;
+
+    const fetchHotspots = async () => {
+      try {
+        setHotspotLoading(true);
+        setHotspotError('');
+
+        const response = await apiService.getHotspotTrends(
+          selectedElevRange.min,
+          selectedElevRange.max,
+          selectedVariable,
+          datasetId,
+          controller.signal,
+          activeYearRange,
+          selectedSubregionId || undefined,
+          hotspotMinYears
+        );
+
+        setHotspotData(response.data || []);
+        setHotspotSummary(response.summary || null);
+      } catch (err) {
+        const isCanceled = err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED';
+        if (isCanceled) return;
+        console.error('Error fetching hotspot trends:', err);
+        setHotspotData([]);
+        setHotspotSummary(null);
+        setHotspotError('Failed to compute hotspot trends for this selection.');
+      } finally {
+        if (!controller.signal.aborted) {
+          setHotspotLoading(false);
+        }
+      }
+    };
+
+    fetchHotspots();
+    return () => {
+      controller.abort();
+    };
+  }, [
+    datasetReady,
+    datasetId,
+    activeYearRange,
+    selectedElevRange,
+    selectedVariable,
+    selectedSubregionId,
+    isHotspotMode,
+    hotspotMinYears,
+  ]);
 
   // Fetch graph data when elevation changes
   useEffect(() => {
@@ -424,6 +650,21 @@ function App() {
     setSelectedElevRange({ min, max });
   }, []);
 
+  const handleAnalysisModeChange = useCallback((mode) => {
+    setAnalysisMode(mode === 'hotspot' ? 'hotspot' : 'daily');
+    setHotspotError('');
+    if (mode === 'hotspot') {
+      setIsPlaying(false);
+    }
+  }, []);
+
+  const handleHotspotMinYearsChange = useCallback((value) => {
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isInteger(parsed)) return;
+    const clamped = Math.min(hotspotMinYearsMax, Math.max(2, parsed));
+    setHotspotMinYears(clamped);
+  }, [hotspotMinYearsMax]);
+
   const variableLabel = formatVariableLabel(selectedVariable);
   const handleToggleRegion = useCallback(() => {
     if (regionSelectMode) {
@@ -485,8 +726,22 @@ function App() {
 
   const handleSubregionChange = useCallback((value) => {
     setSelectedSubregionId(value);
+    setSelectedSubregionFeature(null);
     setRegionInputError('');
-  }, []);
+    const nextLabel = subregions.find((item) => item.id === value)?.label || '';
+    setSubregionSearchText(nextLabel);
+    setSubregionDropdownOpen(false);
+  }, [subregions]);
+
+  useEffect(() => {
+    if (selectedSubregionId) {
+      setSubregionSearchText(selectedSubregion?.label || '');
+      return;
+    }
+    if (!subregionDropdownOpen) {
+      setSubregionSearchText('');
+    }
+  }, [selectedSubregionId, selectedSubregion, subregionDropdownOpen]);
 
   const handleSearch = useCallback(() => {
     const lat = parseFloat(searchLat);
@@ -581,23 +836,70 @@ function App() {
       return;
     }
     apiService.clearCache();
+    mapAbortRef.current?.abort?.();
+    hotspotAbortRef.current?.abort?.();
+    graphAbortRef.current?.abort?.();
+    subregionGeometryAbortRef.current?.abort?.();
     setRegionBounds(null);
     setRegionPreview(null);
     setSelectedSubregionId('');
+    setSelectedSubregionFeature(null);
     setGraphData([]);
     setMapData([]);
+    setHotspotData([]);
+    setHotspotSummary(null);
+    setHotspotLoading(false);
+    setHotspotError('');
+    setHotspotMinYears(3);
+    setAnalysisMode('daily');
+    setMapViewMode('basin');
     setError(null);
     setShowDocumentation(false);
+    setOutcomeReady(false);
     setDatasetReady(true);
   }, [datasetId, activeYearRange]);
 
+  const handleStartOutcome = useCallback(() => {
+    const selectedOutcome = outcomes.find((item) => item.id === selectedOutcomeId);
+    if (!selectedOutcome || !selectedOutcome.ready) {
+      setError('Selected outcome is not ready. Generate outcome outputs first.');
+      return;
+    }
+
+    apiService.clearCache();
+    mapAbortRef.current?.abort?.();
+    hotspotAbortRef.current?.abort?.();
+    graphAbortRef.current?.abort?.();
+    subregionGeometryAbortRef.current?.abort?.();
+    setIsPlaying(false);
+    setShowDocumentation(false);
+    setError(null);
+    setLoading(false);
+    setMapViewMode('basin');
+    setDatasetReady(false);
+    setOutcomeReady(true);
+  }, [outcomes, selectedOutcomeId]);
+
   const handleGoHome = useCallback(() => {
     setIsPlaying(false);
+    mapAbortRef.current?.abort?.();
+    hotspotAbortRef.current?.abort?.();
+    graphAbortRef.current?.abort?.();
+    subregionGeometryAbortRef.current?.abort?.();
     setRegionSelectMode(false);
     setRegionPreview(null);
     setRegionBounds(null);
     setSelectedSubregionId('');
+    setSelectedSubregionFeature(null);
     setFocusLocation(null);
+    setHotspotData([]);
+    setHotspotSummary(null);
+    setHotspotLoading(false);
+    setHotspotError('');
+    setHotspotMinYears(3);
+    setAnalysisMode('daily');
+    setMapViewMode('basin');
+    setOutcomeReady(false);
     setError(null);
     setShowDocumentation(false);
     setDatasetReady(false);
@@ -607,10 +909,20 @@ function App() {
     setShowDocumentation((prev) => !prev);
   }, []);
 
+  const handleHomeModuleChange = useCallback((moduleName) => {
+    const nextModule = moduleName === 'outcomes' ? 'outcomes' : 'dashboard';
+    setHomeModule(nextModule);
+    setError(null);
+    if (nextModule === 'outcomes') {
+      setShowDocumentation(false);
+    }
+  }, []);
+
   const regionAction = regionSelectMode ? 'cancel' : regionBounds ? 'clear' : 'select';
   const regionActionLabel = regionSelectMode ? 'Cancel Selection' : regionBounds ? 'Clear Selection' : 'Select Region';
 
   const selectedDataset = datasets.find((d) => d.id === datasetId);
+  const selectedOutcome = outcomes.find((item) => item.id === selectedOutcomeId) || null;
   const yearMin = yearOptions.length > 0 ? yearOptions[0] : null;
   const yearMax = yearOptions.length > 0 ? yearOptions[yearOptions.length - 1] : null;
 
@@ -623,7 +935,7 @@ function App() {
     );
   }
 
-  if (!datasetReady) {
+  if (!datasetReady && !outcomeReady) {
     if (showDocumentation) {
       return (
         <div className="app" data-theme={theme}>
@@ -663,167 +975,240 @@ function App() {
     return (
       <div className="dataset-screen">
         <div className="dataset-card">
-          <h2>Select Dataset</h2>
-          <p>Choose which dataset to load before opening maps and plots.</p>
+          <h2>Start Here</h2>
+          <p>Select the workflow, then narrow the dataset and year window before loading.</p>
           {error && <div className="dataset-error">{error}</div>}
-          <div className="dataset-options">
-            {datasets.map((dataset) => (
-              <label
-                key={dataset.id}
-                className={`dataset-option ${datasetId === dataset.id ? 'active' : ''} ${!dataset.ready ? 'disabled' : ''}`}
-              >
-                <input
-                  type="radio"
-                  name="dataset"
-                  value={dataset.id}
-                  checked={datasetId === dataset.id}
-                  disabled={!dataset.ready}
-                  onChange={() => setDatasetId(dataset.id)}
-                />
-                <div className="dataset-text">
-                  <div className="dataset-name">{dataset.label}</div>
-                  <div className="dataset-meta">
-                    id: {dataset.id} | parquet: {dataset.parquet_files} | csv: {dataset.csv_files}
-                  </div>
-                </div>
-              </label>
-            ))}
-          </div>
-          <div className="nc-upload-panel">
-            <div className="nc-upload-header">
-              <h3>Upload NetCDF (.nc)</h3>
-              <button
-                type="button"
-                className="nc-help-btn"
-                title="Show accepted NetCDF rules"
-                aria-label="Show accepted NetCDF rules"
-                onClick={() => setShowNcHelp((prev) => !prev)}
-              >
-                ?
-              </button>
-            </div>
-            <p>Convert uploaded satellite NetCDF to parquet and add it as a new dataset.</p>
-            {showNcHelp && (
-              <div className="nc-help-box">
-                <div><strong>Accepted file extensions:</strong> .nc, .nc4, .cdf, .netcdf</div>
-                <div><strong>Time support:</strong> works with standard time coords; if missing, app creates a fallback date.</div>
-                <div><strong>Spatial coords:</strong> latitude/longitude are auto-detected from names or CF metadata.</div>
-                <div><strong>Grid format:</strong> supports 1D/1D, 2D/2D and common model-style lat/lon layouts.</div>
-                <div><strong>Variables:</strong> ingests numeric spatial variables (with or without explicit time dim).</div>
-                <div><strong>Elevation:</strong> optional; if missing, default elevation is used.</div>
-                <div><strong>Behavior:</strong> data is converted to parquet and stored as a new reusable dataset.</div>
+          <div className="home-module-options">
+            <label className={`home-module-option ${homeModule === 'dashboard' ? 'active' : ''}`}>
+              <input
+                type="radio"
+                name="home-module"
+                value="dashboard"
+                checked={homeModule === 'dashboard'}
+                onChange={() => handleHomeModuleChange('dashboard')}
+              />
+              <div className="home-module-text">
+                <div className="home-module-title">Interactive Dashboard</div>
+                <div className="home-module-meta">Live analysis: map, time slider, region tools, and graphs.</div>
               </div>
-            )}
-            <div className="nc-upload-row">
-              <label htmlFor="nc-dataset-name">Dataset Name (optional)</label>
+            </label>
+            <label className={`home-module-option ${homeModule === 'outcomes' ? 'active' : ''}`}>
               <input
-                id="nc-dataset-name"
-                type="text"
-                value={ncDatasetName}
-                onChange={(e) => setNcDatasetName(e.target.value)}
-                placeholder="e.g. Sentinel Snow 2024"
-                disabled={ncUploading}
+                type="radio"
+                name="home-module"
+                value="outcomes"
+                checked={homeModule === 'outcomes'}
+                onChange={() => handleHomeModuleChange('outcomes')}
               />
-            </div>
-            <div className="nc-upload-row">
-              <label htmlFor="nc-file-input">NetCDF File</label>
-              <input
-                id="nc-file-input"
-                type="file"
-                accept=".nc,.nc4,.cdf,.netcdf"
-                onChange={(e) => setNcFile(e.target.files?.[0] || null)}
-                disabled={ncUploading}
-              />
-            </div>
-            {ncUploadError && <div className="dataset-error">{ncUploadError}</div>}
-            {ncUploadMessage && <div className="dataset-success">{ncUploadMessage}</div>}
-            <button
-              className="dataset-start-btn nc-upload-btn"
-              type="button"
-              onClick={handleNcUpload}
-              disabled={ncUploading || !ncFile}
-            >
-              {ncUploading ? 'Uploading & Converting...' : 'Upload NC Dataset'}
-            </button>
+              <div className="home-module-text">
+                <div className="home-module-title">Outcomes</div>
+                <div className="home-module-meta">Precomputed outputs ready for quick comparison and review.</div>
+              </div>
+            </label>
           </div>
-          <div className="year-range-panel">
-            <h3>Year Range</h3>
-            <p>Only this year window will be indexed and loaded.</p>
-            {yearRangeLoading && <div className="year-range-loading">Loading available years...</div>}
-            {yearRangeError && <div className="dataset-error">{yearRangeError}</div>}
-            {!yearRangeLoading && !yearRangeError && yearMin !== null && yearMax !== null && (
-              <>
-                <div className="year-input-grid">
-                  <div className="year-input-group">
-                    <label htmlFor="year-start-input">Start Year</label>
+          {homeModule === 'dashboard' && (
+            <>
+              <div className="dataset-options">
+                {datasets.map((dataset) => (
+                  <label
+                    key={dataset.id}
+                    className={`dataset-option ${datasetId === dataset.id ? 'active' : ''} ${!dataset.ready ? 'disabled' : ''}`}
+                  >
                     <input
-                      id="year-start-input"
-                      type="number"
-                      min={yearMin}
-                      max={yearMax}
-                      value={selectedYearRange.start ?? yearMin}
-                      onChange={(e) => handleYearStartChange(e.target.value)}
+                      type="radio"
+                      name="dataset"
+                      value={dataset.id}
+                      checked={datasetId === dataset.id}
+                      disabled={!dataset.ready}
+                      onChange={() => setDatasetId(dataset.id)}
                     />
-                  </div>
-                  <div className="year-input-group">
-                    <label htmlFor="year-end-input">End Year</label>
-                    <input
-                      id="year-end-input"
-                      type="number"
-                      min={yearMin}
-                      max={yearMax}
-                      value={selectedYearRange.end ?? yearMax}
-                      onChange={(e) => handleYearEndChange(e.target.value)}
-                    />
-                  </div>
-                </div>
-                <div className="year-slider-block">
-                  <label htmlFor="year-start-slider">
-                    Start: <strong>{selectedYearRange.start ?? yearMin}</strong>
+                    <div className="dataset-text">
+                      <div className="dataset-name">{dataset.label}</div>
+                      <div className="dataset-meta">
+                        Source files: parquet {dataset.parquet_files} | geotiff {dataset.geotiff_files || 0} | csv {dataset.csv_files}
+                      </div>
+                    </div>
                   </label>
+                ))}
+              </div>
+              <div className="nc-upload-panel">
+                <div className="nc-upload-header">
+                  <h3>Upload NetCDF (.nc)</h3>
+                  <button
+                    type="button"
+                    className="nc-help-btn"
+                    title="Show accepted NetCDF rules"
+                    aria-label="Show accepted NetCDF rules"
+                    onClick={() => setShowNcHelp((prev) => !prev)}
+                  >
+                    ?
+                  </button>
+                </div>
+                <p>Add a satellite NetCDF and convert it into a local parquet dataset without changing the existing ones.</p>
+                {showNcHelp && (
+                  <div className="nc-help-box">
+                    <div><strong>Accepted file extensions:</strong> .nc, .nc4, .cdf, .netcdf</div>
+                    <div><strong>Time support:</strong> works with standard time coords; if missing, app creates a fallback date.</div>
+                    <div><strong>Spatial coords:</strong> latitude/longitude are auto-detected from names or CF metadata.</div>
+                    <div><strong>Grid format:</strong> supports 1D/1D, 2D/2D and common model-style lat/lon layouts.</div>
+                    <div><strong>Variables:</strong> ingests numeric spatial variables (with or without explicit time dim).</div>
+                    <div><strong>Elevation:</strong> optional; if missing, default elevation is used.</div>
+                    <div><strong>Behavior:</strong> data is converted to parquet and stored as a new reusable dataset.</div>
+                  </div>
+                )}
+                <div className="nc-upload-row">
+                  <label htmlFor="nc-dataset-name">Dataset Name (optional)</label>
                   <input
-                    id="year-start-slider"
-                    type="range"
-                    min={yearMin}
-                    max={yearMax}
-                    step="1"
-                    value={selectedYearRange.start ?? yearMin}
-                    onChange={(e) => handleYearStartChange(e.target.value)}
+                    id="nc-dataset-name"
+                    type="text"
+                    value={ncDatasetName}
+                    onChange={(e) => setNcDatasetName(e.target.value)}
+                    placeholder="e.g. Sentinel Snow 2024"
+                    disabled={ncUploading}
                   />
                 </div>
-                <div className="year-slider-block">
-                  <label htmlFor="year-end-slider">
-                    End: <strong>{selectedYearRange.end ?? yearMax}</strong>
-                  </label>
+                <div className="nc-upload-row">
+                  <label htmlFor="nc-file-input">NetCDF File</label>
                   <input
-                    id="year-end-slider"
-                    type="range"
-                    min={yearMin}
-                    max={yearMax}
-                    step="1"
-                    value={selectedYearRange.end ?? yearMax}
-                    onChange={(e) => handleYearEndChange(e.target.value)}
+                    id="nc-file-input"
+                    type="file"
+                    accept=".nc,.nc4,.cdf,.netcdf"
+                    onChange={(e) => setNcFile(e.target.files?.[0] || null)}
+                    disabled={ncUploading}
                   />
                 </div>
-                <div className="year-range-summary">
-                  Selected: {selectedYearRange.start ?? yearMin} to {selectedYearRange.end ?? yearMax}
-                </div>
-              </>
-            )}
-          </div>
-          <button
-            className="dataset-start-btn"
-            type="button"
-            onClick={handleStartDataset}
-            disabled={
-              !selectedDataset ||
-              !selectedDataset.ready ||
-              yearRangeLoading ||
-              !activeYearRange
-            }
-          >
-            Start With Selected Dataset
-          </button>
+                {ncUploadError && <div className="dataset-error">{ncUploadError}</div>}
+                {ncUploadMessage && <div className="dataset-success">{ncUploadMessage}</div>}
+                <button
+                  className="dataset-start-btn nc-upload-btn"
+                  type="button"
+                  onClick={handleNcUpload}
+                  disabled={ncUploading || !ncFile}
+                >
+                  {ncUploading ? 'Uploading & Converting...' : 'Upload NC Dataset'}
+                </button>
+              </div>
+              <div className="year-range-panel">
+                <h3>Year Range</h3>
+                <p>Choose a smaller time window first to keep indexing and loading fast.</p>
+                {yearRangeLoading && <div className="year-range-loading">Loading available years...</div>}
+                {yearRangeError && <div className="dataset-error">{yearRangeError}</div>}
+                {!yearRangeLoading && !yearRangeError && yearMin !== null && yearMax !== null && (
+                  <>
+                    <div className="year-input-grid">
+                      <div className="year-input-group">
+                        <label htmlFor="year-start-input">Start Year</label>
+                        <input
+                          id="year-start-input"
+                          type="number"
+                          min={yearMin}
+                          max={yearMax}
+                          value={selectedYearRange.start ?? yearMin}
+                          onChange={(e) => handleYearStartChange(e.target.value)}
+                        />
+                      </div>
+                      <div className="year-input-group">
+                        <label htmlFor="year-end-input">End Year</label>
+                        <input
+                          id="year-end-input"
+                          type="number"
+                          min={yearMin}
+                          max={yearMax}
+                          value={selectedYearRange.end ?? yearMax}
+                          onChange={(e) => handleYearEndChange(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="year-slider-block">
+                      <label htmlFor="year-start-slider">
+                        Start: <strong>{selectedYearRange.start ?? yearMin}</strong>
+                      </label>
+                      <input
+                        id="year-start-slider"
+                        type="range"
+                        min={yearMin}
+                        max={yearMax}
+                        step="1"
+                        value={selectedYearRange.start ?? yearMin}
+                        onChange={(e) => handleYearStartChange(e.target.value)}
+                      />
+                    </div>
+                    <div className="year-slider-block">
+                      <label htmlFor="year-end-slider">
+                        End: <strong>{selectedYearRange.end ?? yearMax}</strong>
+                      </label>
+                      <input
+                        id="year-end-slider"
+                        type="range"
+                        min={yearMin}
+                        max={yearMax}
+                        step="1"
+                        value={selectedYearRange.end ?? yearMax}
+                        onChange={(e) => handleYearEndChange(e.target.value)}
+                      />
+                    </div>
+                    <div className="year-range-summary">
+                      Selected: {selectedYearRange.start ?? yearMin} to {selectedYearRange.end ?? yearMax}
+                    </div>
+                  </>
+                )}
+              </div>
+              <button
+                className="dataset-start-btn"
+                type="button"
+                onClick={handleStartDataset}
+                disabled={
+                  !selectedDataset ||
+                  !selectedDataset.ready ||
+                  yearRangeLoading ||
+                  !activeYearRange
+                }
+              >
+                Open Dashboard
+              </button>
+            </>
+          )}
+          {homeModule === 'outcomes' && (
+            <>
+              <div className="dataset-options">
+                {outcomes.map((outcome) => (
+                  <label
+                    key={outcome.id}
+                    className={`dataset-option ${selectedOutcomeId === outcome.id ? 'active' : ''} ${!outcome.ready ? 'disabled' : ''}`}
+                  >
+                    <input
+                      type="radio"
+                      name="outcome"
+                      value={outcome.id}
+                      checked={selectedOutcomeId === outcome.id}
+                      disabled={!outcome.ready}
+                      onChange={() => setSelectedOutcomeId(outcome.id)}
+                    />
+                    <div className="dataset-text">
+                      <div className="dataset-name">{outcome.label}</div>
+                      <div className="dataset-meta">
+                        {outcome.description}
+                      </div>
+                      <div className="dataset-meta">
+                        dataset: {String(outcome.dataset || '').toUpperCase()} | status: {outcome.ready ? 'ready' : 'missing outputs'}
+                      </div>
+                    </div>
+                  </label>
+                ))}
+                {outcomes.length === 0 && (
+                  <div className="dataset-meta">No outcome modules found from backend.</div>
+                )}
+              </div>
+              <button
+                className="dataset-start-btn"
+                type="button"
+                onClick={handleStartOutcome}
+                disabled={!selectedOutcome || !selectedOutcome.ready}
+              >
+                Open Outcome View
+              </button>
+            </>
+          )}
           <button
             className="dataset-docs-btn"
             type="button"
@@ -837,7 +1222,7 @@ function App() {
   }
 
   // Loading screen
-  if (loading) {
+  if (!outcomeReady && loading) {
     return (
       <div className="loading-screen">
         <div className="loading-spinner"></div>
@@ -860,6 +1245,40 @@ function App() {
             <li>Install dependencies: <code>pip install -r requirements.txt</code></li>
             <li>Run server: <code>python main.py</code></li>
           </ol>
+        </div>
+      </div>
+    );
+  }
+
+  if (outcomeReady) {
+    return (
+      <div className="app" data-theme={theme}>
+        <header className="app-header">
+          <h1>Himalayan Basin Visualization</h1>
+          <div className="header-controls">
+            <button
+              className="home-btn"
+              onClick={handleGoHome}
+              type="button"
+              title="Back to module selection"
+            >
+              Home
+            </button>
+            <div className="dataset-badge">
+              Outcome: Long Term Hotspot Analysis
+            </div>
+            <button
+              className="theme-toggle"
+              onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
+              aria-label="Toggle theme"
+              title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+            >
+              {theme === 'dark' ? 'Light Theme' : 'Dark Theme'}
+            </button>
+          </div>
+        </header>
+        <div className="app-content">
+          <OutcomeLongTermHotspotPage theme={theme} />
         </div>
       </div>
     );
@@ -910,7 +1329,10 @@ function App() {
       </header>
 
       {/* Main content */}
-      <div className={`app-content ${showDocumentation ? 'docs-only-content' : ''}`}>
+      <div
+        ref={appContentRef}
+        className={`app-content ${showDocumentation ? 'docs-only-content' : ''}`}
+      >
         {showDocumentation ? (
           <DocumentationPage
             selectedDataset={selectedDataset}
@@ -921,9 +1343,12 @@ function App() {
         ) : (
           <>
         {/* Left sidebar */}
-        <aside className="sidebar">
+        <aside
+          className="sidebar"
+          style={{ width: `${sidebarWidth}px`, flexBasis: `${sidebarWidth}px` }}
+        >
           <div className="search-panel">
-            <h3>Go To Coordinate</h3>
+            <h3>Jump to Coordinates</h3>
             <div className="search-row">
               <label htmlFor="search-lat">Latitude</label>
               <input
@@ -954,25 +1379,113 @@ function App() {
 
           <div className="region-panel">
             <h3>Region Selection</h3>
+            <div className="map-mode-picker">
+              <label>Map View</label>
+              <div className="map-mode-switch">
+                <button
+                  type="button"
+                  className={`map-mode-btn ${!glacierViewEnabled ? 'active' : ''}`}
+                  onClick={() => setMapViewMode('basin')}
+                >
+                  Basin View
+                </button>
+                <button
+                  type="button"
+                  className={`map-mode-btn ${glacierViewEnabled ? 'active' : ''}`}
+                  onClick={() => setMapViewMode('glacier')}
+                >
+                  Glacier View
+                </button>
+              </div>
+            </div>
             <div className="subregion-picker">
               <label htmlFor="subregion-select">Sub-Region</label>
-              <select
-                id="subregion-select"
-                value={selectedSubregionId}
-                onChange={(e) => handleSubregionChange(e.target.value)}
-                disabled={subregionsLoading}
-              >
-                <option value="">Custom Rectangle (draw/manual)</option>
-                {subregions.map((region) => (
-                  <option key={region.id} value={region.id}>
-                    {region.label} (ID: {region.id})
-                  </option>
-                ))}
-              </select>
+              <div className="subregion-combobox">
+                <input
+                  id="subregion-select"
+                  type="text"
+                  value={subregionSearchText}
+                  onChange={(e) => {
+                    setSubregionSearchText(e.target.value);
+                    setSubregionDropdownOpen(true);
+                    if (selectedSubregionId) {
+                      setSelectedSubregionId('');
+                      setSelectedSubregionFeature(null);
+                    }
+                  }}
+                  onFocus={() => setSubregionDropdownOpen(true)}
+                  onBlur={() => {
+                    window.setTimeout(() => setSubregionDropdownOpen(false), 120);
+                  }}
+                  placeholder="Type to search basins or glaciers"
+                  disabled={subregionsLoading}
+                  autoComplete="off"
+                />
+                {subregionDropdownOpen && !subregionsLoading && (
+                  <div className="subregion-dropdown" role="listbox" aria-label="Sub-region suggestions">
+                    <button
+                      type="button"
+                      className={`subregion-option ${selectedSubregionId === '' ? 'selected' : ''}`}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => handleSubregionChange('')}
+                    >
+                      <span className="subregion-option-label">Custom Rectangle (draw/manual)</span>
+                      <span className="subregion-option-meta">No preset selection</span>
+                    </button>
+
+                    {(filteredBasinSubregions.length > 0 || filteredGlacierSubregions.length > 0) ? (
+                      <>
+                        {filteredBasinSubregions.length > 0 && (
+                          <div className="subregion-group">
+                            <div className="subregion-group-label">
+                              Basin Sub-Regions ({filteredBasinSubregions.length})
+                            </div>
+                            {filteredBasinSubregions.map((region) => (
+                              <button
+                                key={region.id}
+                                type="button"
+                                className={`subregion-option ${selectedSubregionId === region.id ? 'selected' : ''}`}
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => handleSubregionChange(region.id)}
+                              >
+                                <span className="subregion-option-label">{region.label}</span>
+                                <span className="subregion-option-meta">Basin | ID: {region.id}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {filteredGlacierSubregions.length > 0 && (
+                          <div className="subregion-group">
+                            <div className="subregion-group-label">
+                              Glacier Results ({filteredGlacierSubregions.length})
+                            </div>
+                            {filteredGlacierSubregions.map((region) => (
+                              <button
+                                key={region.id}
+                                type="button"
+                                className={`subregion-option ${selectedSubregionId === region.id ? 'selected' : ''}`}
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => handleSubregionChange(region.id)}
+                              >
+                                <span className="subregion-option-label">{region.label}</span>
+                                <span className="subregion-option-meta">Glacier | ID: {region.id}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="subregion-empty">No matches found.</div>
+                    )}
+                  </div>
+                )}
+              </div>
               {subregionsLoading && (
                 <div className="subregion-loading">Loading sub-regions...</div>
               )}
             </div>
+            <div className="region-panel-note">Draw a rectangle, enter coordinates, or choose a sub-region.</div>
             <button
               className={`region-btn mode-${regionAction} ${regionSelectMode ? 'active' : ''}`}
               onClick={handleToggleRegion}
@@ -1041,7 +1554,8 @@ function App() {
                 </div>
                 {selectedSubregion && (
                   <div className="region-row">
-                    Sub-Region: {selectedSubregion.label} (ID: {selectedSubregion.id})
+                    Sub-Region: {selectedSubregion.label}
+                    {selectedSubregion.kind === 'glacier' ? '' : ` (ID: ${selectedSubregion.id})`}
                   </div>
                 )}
                 {regionBounds && years.length > 0 && (
@@ -1066,7 +1580,7 @@ function App() {
           </div>
 
           <div className="variable-panel">
-            <h3>Variable</h3>
+            <h3>Variable Selection</h3>
             {variables.length === 0 && (
               <div className="variable-empty">No variables available</div>
             )}
@@ -1086,6 +1600,87 @@ function App() {
             )}
           </div>
 
+          <div className="hotspot-panel">
+            <h3>Long-Term Hotspots</h3>
+            <p>Identify where the selected variable changed the fastest across the chosen years.</p>
+            <div className="hotspot-mode-switch">
+              <button
+                type="button"
+                className={`hotspot-mode-btn ${!isHotspotMode ? 'active' : ''}`}
+                onClick={() => handleAnalysisModeChange('daily')}
+              >
+                Daily Map
+              </button>
+              <button
+                type="button"
+                className={`hotspot-mode-btn ${isHotspotMode ? 'active' : ''}`}
+                onClick={() => handleAnalysisModeChange('hotspot')}
+              >
+                Trend Hotspots
+              </button>
+            </div>
+            {isHotspotMode && (
+              <>
+                <div className="hotspot-control">
+                  <label htmlFor="hotspot-min-years">
+                    Minimum yearly coverage: <strong>{hotspotMinYears}</strong>
+                  </label>
+                  <input
+                    id="hotspot-min-years"
+                    type="range"
+                    min="2"
+                    max={hotspotMinYearsMax}
+                    step="1"
+                    value={hotspotMinYears}
+                    onChange={(e) => handleHotspotMinYearsChange(e.target.value)}
+                  />
+                  <div className="hotspot-note">
+                    Uses years with at least {hotspotMinYears} annual observations per grid point.
+                  </div>
+                </div>
+                {hotspotLoading && (
+                  <div className="hotspot-loading">Computing hotspot trends...</div>
+                )}
+                {hotspotError && (
+                  <div className="hotspot-error">{hotspotError}</div>
+                )}
+                {!hotspotLoading && !hotspotError && hotspotSummary && (
+                  <div className="hotspot-summary">
+                    <div className="hotspot-summary-row">
+                      <span>Points analyzed</span>
+                      <strong>{Number(hotspotSummary.points_analyzed || 0).toLocaleString()}</strong>
+                    </div>
+                    <div className="hotspot-summary-row">
+                      <span>High / extreme hotspots</span>
+                      <strong>{Number(hotspotSummary.hotspots_identified || 0).toLocaleString()}</strong>
+                    </div>
+                    <div className="hotspot-summary-row">
+                      <span>Mean trend strength</span>
+                      <strong>{Number.isFinite(hotspotSummary.mean_strength) ? hotspotSummary.mean_strength.toFixed(4) : 'N/A'}</strong>
+                    </div>
+                    <div className="hotspot-summary-row">
+                      <span>Max trend strength</span>
+                      <strong>{Number.isFinite(hotspotSummary.max_strength) ? hotspotSummary.max_strength.toFixed(4) : 'N/A'}</strong>
+                    </div>
+                    <div className="hotspot-summary-row">
+                      <span>Strength P95</span>
+                      <strong>
+                        {Number.isFinite(hotspotSummary?.strength_percentiles?.p95)
+                          ? hotspotSummary.strength_percentiles.p95.toFixed(4)
+                          : 'N/A'}
+                      </strong>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+            {!isHotspotMode && (
+              <div className="hotspot-hint">
+                Daily map mode shows date-wise values. Switch to hotspot mode for long-term trend intensity.
+              </div>
+            )}
+          </div>
+
           <ElevationFilter
             min={elevationRange.min}
             max={elevationRange.max}
@@ -1095,7 +1690,7 @@ function App() {
           />
           
           <div className="info-panel">
-            <h3>Current Selection</h3>
+            <h3>Live Summary</h3>
             <div className="info-item">
               <span className="label">Date:</span>
               <span className="value">{currentDate}</span>
@@ -1107,7 +1702,10 @@ function App() {
             {selectedSubregion && (
               <div className="info-item">
                 <span className="label">Sub-Region:</span>
-                <span className="value">{selectedSubregion.id}</span>
+                <span className="value">
+                  {selectedSubregion.label}
+                  {selectedSubregion.kind === 'glacier' ? '' : ` (ID: ${selectedSubregion.id})`}
+                </span>
               </div>
             )}
             {activeYearRange && (
@@ -1125,18 +1723,26 @@ function App() {
               </span>
             </div>
             <div className="info-item">
-              <span className="label">Data Points:</span>
-              <span className="value">{mapData.length.toLocaleString()}</span>
+              <span className="label">{isHotspotMode ? 'Trend Points:' : 'Data Points:'}</span>
+              <span className="value">{mapPointCount.toLocaleString()}</span>
             </div>
           </div>
         </aside>
+        <div
+          className="sidebar-resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+          title="Drag to resize sidebar"
+          onMouseDown={handleSidebarResizeStart}
+        />
 
         {/* Main visualization area */}
         <main className="main-content">
           {/* Map */}
           <div className="map-container">
             <MapView
-              data={mapData}
+              data={displayedMapData}
               currentDate={currentDate}
               theme={theme}
               variableLabel={variableLabel}
@@ -1144,32 +1750,54 @@ function App() {
               onSelectionComplete={handleRegionSelect}
               onSelectionPreview={handleRegionPreview}
               selectionBounds={regionBounds}
+              selectedSubregionFeature={selectedSubregionFeature}
+              glacierViewEnabled={glacierViewEnabled}
               focusLocation={focusLocation}
+              analysisMode={analysisMode}
+              hotspotSummary={hotspotSummary}
             />
           </div>
 
-          {/* Controls */}
-          <div className="controls-container">
-            <TimeSlider
-              dates={dates}
-              currentIndex={currentDateIndex}
-              isPlaying={isPlaying}
-              playSpeed={playSpeed}
-              onDateChange={handleDateChange}
-              onPlayPause={handlePlayPause}
-              onSpeedChange={handleSpeedChange}
+          <div
+            className="bottom-analysis-panel"
+            style={{ height: `${bottomPanelHeight}px` }}
+          >
+            <div
+              className="bottom-resize-handle"
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label="Resize bottom analysis panel"
+              title="Drag to resize bottom panel"
+              onMouseDown={handleBottomResizeStart}
             />
-          </div>
+            {/* Controls */}
+            <div className="controls-container">
+              {isHotspotMode && (
+                <div className="hotspot-time-note">
+                  Hotspot mode uses the full selected year range for trend fitting. The time slider only moves the graph marker.
+                </div>
+              )}
+              <TimeSlider
+                dates={dates}
+                currentIndex={currentDateIndex}
+                isPlaying={isPlaying}
+                playSpeed={playSpeed}
+                onDateChange={handleDateChange}
+                onPlayPause={handlePlayPause}
+                onSpeedChange={handleSpeedChange}
+              />
+            </div>
 
-          {/* Graph */}
-          <div className="graph-container">
-            <TempGraph
-              data={graphData}
-              currentDate={currentDate}
-              variableLabel={variableLabel}
-              showPointStats={Boolean(regionBounds)}
-              pointStatsLabel="Region points/day"
-            />
+            {/* Graph */}
+            <div className="graph-container">
+              <TempGraph
+                data={graphData}
+                currentDate={currentDate}
+                variableLabel={variableLabel}
+                showPointStats={Boolean(regionBounds)}
+                pointStatsLabel="Region points/day"
+              />
+            </div>
           </div>
         </main>
           </>
@@ -1180,3 +1808,4 @@ function App() {
 }
 
 export default App;
+

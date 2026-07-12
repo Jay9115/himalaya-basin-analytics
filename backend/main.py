@@ -1,8 +1,10 @@
 """
 FastAPI backend for local geospatial visualization.
-Supports multiple datasets (ERA5 and CMIP6) with lazy indexing.
+Supports multiple datasets with lazy indexing.
 """
 from datetime import datetime
+from collections import OrderedDict
+import csv
 import json
 import mimetypes
 import shutil
@@ -11,6 +13,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import logging
 import re
 import sys
+import warnings
+from contextlib import asynccontextmanager
 
 import numpy as np
 import pandas as pd
@@ -33,7 +37,21 @@ from nc_ingest import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Temperature Data Visualization API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup actions
+    ensure_uploaded_nc_dirs()
+    init_dataset_state()
+    load_subregion_index()
+    logger.info("Dataset state initialized")
+    try:
+        yield
+    finally:
+        # Place for graceful shutdown actions if needed
+        pass
+
+
+app = FastAPI(title="Temperature Data Visualization API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -74,6 +92,22 @@ BASE_DATASET_CONFIGS: Dict[str, Dict] = {
             DATABASE_DIR / "Full_shape_CMIP6",
         ],
     },
+    "sphy_model": {
+        "label": "SPHY Model",
+        "paths": [
+            DATABASE_DIR / "SPHY_Model",
+        ],
+    },
+    "mod10a1_monthly": {
+        "label": "MOD10A1 Monthly Snow/Albedo",
+        "paths": [
+            DATABASE_DIR / "MOD10A1_Monthly_GeoTIFF",
+        ],
+        "storage": "geotiff",
+        "file_pattern": "MOD10A1_*.tif",
+        "default_elevation": 500.0,
+        "map_max_points": 75000,
+    },
 }
 UPLOADED_NC_ROOT = DATABASE_DIR / "Uploaded_NC"
 UPLOADED_NC_MANIFEST = UPLOADED_NC_ROOT / "uploaded_nc_datasets.json"
@@ -89,6 +123,15 @@ ELEV_CANDIDATES = ["elevation_m", "elev", "elevation", "Elevation_m"]
 FIXED_ELEV_MIN = 500.0
 FIXED_ELEV_MAX = 9000.0
 YEAR_PATTERN = re.compile(r"(?:19|20)\d{2}")
+PARQUET_STORAGE = "parquet"
+GEOTIFF_STORAGE = "geotiff"
+GEOTIFF_DATE_PATTERN = re.compile(r"MOD10A1_(\d{4})_(\d{2})$", re.IGNORECASE)
+GEOTIFF_DATE_COL = "date"
+GEOTIFF_LAT_COL = "latitude"
+GEOTIFF_LON_COL = "longitude"
+GEOTIFF_ELEV_COL = "elevation_m"
+GEOTIFF_DEFAULT_ELEVATION = 500.0
+GEOTIFF_DEFAULT_MAP_MAX_POINTS = 75000
 SUBREGION_ID_CANDIDATES = ["Subbasin", "subbasin", "GRIDCODE", "HydroID", "OBJECTID", "id", "ID"]
 SUBREGION_LABEL_CANDIDATES = [
     "Bname",
@@ -107,6 +150,78 @@ SUBREGION_STATE: Dict[str, Dict] = {
     "index": {},
     "list": [],
 }
+GLACIER_SHAPE_ROOT = WEBAPP_DIR / "Glacier_shp"
+GLACIER_ID_PREFIX = "glacier:"
+GLACIER_REGION_FOLDER_PATTERN = "RGI2000-v7.0-G-*"
+GLACIER_ID_COL = "rgi_id"
+GLACIER_NAME_COL = "glac_name"
+GLACIER_CENLAT_COL = "cenlat"
+GLACIER_CENLON_COL = "cenlon"
+GLACIER_AREA_COL = "area_km2"
+GLIMS_FOLDER_PATTERN = "glims_download_*"
+GLIMS_POLYGON_FILE = "glims_polygons.shp"
+GLIMS_ID_COL = "glac_id"
+GLIMS_NAME_COL = "glac_name"
+GLIMS_AREA_COL = "db_area"
+GLIMS_DATE_COL = "src_date"
+GLIMS_LINE_TYPE_COL = "line_type"
+GLIMS_GLACIER_BOUNDARY_VALUE = "glac_bound"
+GLACIER_OVERVIEW_DEFAULT_MAX_FEATURES = 3500
+GLACIER_OVERVIEW_MAX_FEATURES_LIMIT = 15000
+GLACIER_OVERVIEW_READ_MULTIPLIER = 2
+GLACIER_OVERVIEW_READ_MAX_ROWS = 6000
+GLACIER_OVERVIEW_CACHE_MAX_ENTRIES = 12
+
+try:
+    import pyogrio  # type: ignore
+except Exception:
+    pyogrio = None
+
+try:
+    import rasterio  # type: ignore
+except Exception:
+    rasterio = None
+
+try:
+    import geopandas as gpd  # type: ignore
+except Exception:
+    gpd = None
+
+try:
+    from shapely import contains_xy as shapely_contains_xy  # type: ignore
+    from shapely.geometry import shape as shapely_shape  # type: ignore
+except Exception:
+    shapely_contains_xy = None
+    shapely_shape = None
+
+OUTCOMES_DIR = WEBAPP_DIR / "Outcomes"
+LONG_TERM_HOTSPOT_DIR = OUTCOMES_DIR / "Long_term_hotspot"
+LONG_TERM_HOTSPOT_OUTPUTS_DIR = LONG_TERM_HOTSPOT_DIR / "Outputs"
+LONG_TERM_HOTSPOT_PARQUET = LONG_TERM_HOTSPOT_OUTPUTS_DIR / "long_term_hotspot_band_means.parquet"
+LONG_TERM_HOTSPOT_META = LONG_TERM_HOTSPOT_OUTPUTS_DIR / "long_term_hotspot_metadata.json"
+LONG_TERM_HOTSPOT_DIFF_PARQUET = LONG_TERM_HOTSPOT_OUTPUTS_DIR / "long_term_hotspot_band_differences.parquet"
+LONG_TERM_HOTSPOT_DIFF_META = LONG_TERM_HOTSPOT_OUTPUTS_DIR / "long_term_hotspot_band_differences_metadata.json"
+
+OUTCOME_STATE: Dict[str, Dict[str, Any]] = {
+    "long_term_hotspot": {
+        "loaded": False,
+        "parquet_mtime": None,
+        "meta_mtime": None,
+        "df": pd.DataFrame(),
+        "diff_df": pd.DataFrame(),
+        "meta": {},
+        "diff_meta": {},
+        "variables": [],
+        "bands": [],
+        "comparisons": [],
+    }
+}
+
+GLACIER_SOURCE_STATE: Dict[str, Any] = {
+    "signature": None,
+    "sources": [],
+}
+GLACIER_OVERVIEW_CACHE: "OrderedDict[Tuple[Any, ...], Dict[str, Any]]" = OrderedDict()
 
 
 def setup_frontend_static_assets() -> None:
@@ -332,6 +447,557 @@ def _compute_polygon_bounds(polygons: List[Dict[str, Any]]) -> Optional[Dict[str
     }
 
 
+def _safe_float(value: Any) -> Optional[float]:
+    try:
+        if value is None:
+            return None
+        value_float = float(value)
+        if np.isfinite(value_float):
+            return value_float
+    except Exception:
+        return None
+    return None
+
+
+def _escape_sql_literal(value: str) -> str:
+    return value.replace("'", "''")
+
+
+def _ensure_glacier_vector_reader() -> str:
+    global pyogrio
+    global gpd
+
+    if pyogrio is None:
+        try:
+            import pyogrio as _pyogrio  # type: ignore
+            pyogrio = _pyogrio
+        except Exception:
+            pyogrio = None
+
+    if pyogrio is not None:
+        return "pyogrio"
+
+    if gpd is None:
+        try:
+            import geopandas as _gpd  # type: ignore
+            gpd = _gpd
+        except Exception:
+            gpd = None
+
+    if gpd is not None:
+        return "geopandas"
+
+    raise HTTPException(
+        status_code=500,
+        detail="Glacier geometry support requires pyogrio or geopandas in backend environment.",
+    )
+
+
+def _read_glacier_dataframe(
+    shapefile_path: Path,
+    *,
+    columns: Optional[List[str]] = None,
+    where: Optional[str] = None,
+    bbox: Optional[Tuple[float, float, float, float]] = None,
+    max_features: Optional[int] = None,
+):
+    reader = _ensure_glacier_vector_reader()
+
+    if reader == "pyogrio":
+        kwargs: Dict[str, Any] = {}
+        if columns:
+            kwargs["columns"] = columns
+        if where:
+            kwargs["where"] = where
+        if bbox:
+            kwargs["bbox"] = bbox
+        if max_features is not None:
+            kwargs["max_features"] = int(max_features)
+
+        try:
+            return pyogrio.read_dataframe(shapefile_path, **kwargs)
+        except TypeError:
+            # Older builds may not accept bbox; apply bbox client-side as fallback.
+            fallback_kwargs = dict(kwargs)
+            fallback_kwargs.pop("bbox", None)
+            frame = pyogrio.read_dataframe(shapefile_path, **fallback_kwargs)
+            if bbox and hasattr(frame, "cx"):
+                frame = frame.cx[bbox[0]:bbox[2], bbox[1]:bbox[3]]
+            return frame
+
+    read_kwargs: Dict[str, Any] = {}
+    if bbox:
+        read_kwargs["bbox"] = bbox
+    if columns:
+        read_kwargs["columns"] = columns
+    if max_features is not None:
+        read_kwargs["rows"] = slice(0, int(max_features))
+
+    try:
+        frame = gpd.read_file(shapefile_path, **read_kwargs)
+    except TypeError:
+        fallback_kwargs = {}
+        if bbox:
+            fallback_kwargs["bbox"] = bbox
+        if max_features is not None:
+            fallback_kwargs["rows"] = slice(0, int(max_features))
+        frame = gpd.read_file(shapefile_path, **fallback_kwargs)
+
+    if columns:
+        keep_columns = [column for column in columns if column in frame.columns]
+        if "geometry" in frame.columns and "geometry" not in keep_columns:
+            keep_columns.append("geometry")
+        if keep_columns:
+            frame = frame[keep_columns]
+
+    if where:
+        match = re.match(r"^\s*([A-Za-z0-9_]+)\s*=\s*'(.*)'\s*$", where)
+        if match:
+            where_col = match.group(1)
+            where_value = match.group(2).replace("''", "'")
+            if where_col in frame.columns:
+                frame = frame[frame[where_col].astype(str).str.strip() == where_value]
+
+    return frame
+
+
+def _glacier_simplify_tolerance(zoom: float) -> float:
+    zoom = float(max(0.0, min(zoom, 22.0)))
+    if zoom >= 10.0:
+        return 0.0
+    if zoom >= 8.0:
+        return 0.00025
+    if zoom >= 7.0:
+        return 0.0006
+    if zoom >= 6.0:
+        return 0.0012
+    if zoom >= 5.0:
+        return 0.0025
+    return 0.0045
+
+
+def _normalize_glacier_text(value: Any) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if not text:
+        return ""
+    if text.lower() in {"none", "null", "nan", "n/a", "na", "-"}:
+        return ""
+    return text
+
+
+def _discover_glacier_polygon_sources() -> Tuple[Tuple[Any, ...], List[Dict[str, Any]]]:
+    if not GLACIER_SHAPE_ROOT.exists():
+        GLACIER_SOURCE_STATE["signature"] = tuple()
+        GLACIER_SOURCE_STATE["sources"] = []
+        GLACIER_OVERVIEW_CACHE.clear()
+        return tuple(), []
+
+    sources: List[Dict[str, Any]] = []
+    for region_dir in sorted(GLACIER_SHAPE_ROOT.glob(GLACIER_REGION_FOLDER_PATTERN)):
+        if not region_dir.is_dir():
+            continue
+        shp_files = sorted(region_dir.glob("*.shp"))
+        if not shp_files:
+            continue
+        sources.append(
+            {
+                "kind": "rgi",
+                "path": shp_files[0].resolve(),
+                "id_col": GLACIER_ID_COL,
+                "name_col": GLACIER_NAME_COL,
+                "area_col": GLACIER_AREA_COL,
+                "date_col": None,
+                "line_type_col": None,
+                "line_type_value": None,
+            }
+        )
+
+    for glims_dir in sorted(GLACIER_SHAPE_ROOT.glob(GLIMS_FOLDER_PATTERN)):
+        if not glims_dir.is_dir():
+            continue
+        shp_path = (glims_dir / GLIMS_POLYGON_FILE).resolve()
+        if not shp_path.exists():
+            continue
+        sources.append(
+            {
+                "kind": "glims",
+                "path": shp_path,
+                "id_col": GLIMS_ID_COL,
+                "name_col": GLIMS_NAME_COL,
+                "area_col": GLIMS_AREA_COL,
+                "date_col": GLIMS_DATE_COL,
+                "line_type_col": GLIMS_LINE_TYPE_COL,
+                "line_type_value": GLIMS_GLACIER_BOUNDARY_VALUE,
+            }
+        )
+
+    signature_parts: List[Any] = []
+    for source in sources:
+        source_path = Path(source["path"])
+        try:
+            stat = source_path.stat()
+            signature_parts.append((str(source_path), stat.st_mtime_ns, stat.st_size))
+        except Exception:
+            signature_parts.append((str(source_path), None, None))
+    signature = tuple(signature_parts)
+
+    if GLACIER_SOURCE_STATE.get("signature") != signature:
+        GLACIER_SOURCE_STATE["signature"] = signature
+        GLACIER_SOURCE_STATE["sources"] = sources
+        GLACIER_OVERVIEW_CACHE.clear()
+    else:
+        sources = GLACIER_SOURCE_STATE.get("sources", [])
+
+    return signature, sources
+
+
+def _glacier_cache_quantum(zoom: float) -> float:
+    if zoom < 5.0:
+        return 0.5
+    if zoom < 6.5:
+        return 0.25
+    if zoom < 8.0:
+        return 0.1
+    return 0.05
+
+
+def _make_glacier_overview_cache_key(
+    source_signature: Tuple[Any, ...],
+    bbox: Optional[Tuple[float, float, float, float]],
+    zoom: float,
+    max_features: int,
+    simplify_tolerance: float,
+) -> Tuple[Any, ...]:
+    quantized_bbox = None
+    if bbox:
+        quantum = _glacier_cache_quantum(zoom)
+        quantized_bbox = tuple(round(round(value / quantum) * quantum, 5) for value in bbox)
+    return (
+        source_signature,
+        quantized_bbox,
+        round(float(zoom), 2),
+        int(max_features),
+        round(float(simplify_tolerance), 6),
+    )
+
+
+def _build_glacier_source_lookup() -> Dict[Path, Dict[str, Any]]:
+    if not SUBREGION_STATE["loaded"]:
+        load_subregion_index()
+
+    lookup: Dict[Path, Dict[str, Any]] = {}
+    for item in SUBREGION_STATE["index"].values():
+        if item.get("kind") != "glacier":
+            continue
+
+        native_id = str(item.get("native_id") or "").strip()
+        shapefile_path_raw = item.get("shapefile_path")
+        if not native_id or not shapefile_path_raw:
+            continue
+
+        shapefile_path = Path(shapefile_path_raw)
+        source = lookup.setdefault(shapefile_path, {"ids": set(), "name_by_id": {}})
+        source["ids"].add(native_id)
+
+        properties = item.get("properties") or {}
+        glacier_name = str(properties.get("glacier_name") or "").strip()
+        if glacier_name:
+            source["name_by_id"][native_id] = glacier_name
+
+    return lookup
+
+
+def _validate_glacier_bbox(
+    min_lat: Optional[float],
+    max_lat: Optional[float],
+    min_lon: Optional[float],
+    max_lon: Optional[float],
+) -> Optional[Tuple[float, float, float, float]]:
+    provided = [min_lat, max_lat, min_lon, max_lon]
+    if not any(value is not None for value in provided):
+        return None
+
+    if not all(value is not None for value in provided):
+        raise HTTPException(
+            status_code=400,
+            detail="Provide all bbox values together: min_lat, max_lat, min_lon, max_lon.",
+        )
+
+    assert min_lat is not None and max_lat is not None and min_lon is not None and max_lon is not None
+    min_lat = float(min_lat)
+    max_lat = float(max_lat)
+    min_lon = float(min_lon)
+    max_lon = float(max_lon)
+
+    if min_lat < -90 or max_lat > 90 or min_lon < -180 or max_lon > 180:
+        raise HTTPException(status_code=400, detail="BBox coordinates are out of WGS84 bounds.")
+
+    south = min(min_lat, max_lat)
+    north = max(min_lat, max_lat)
+    west = min(min_lon, max_lon)
+    east = max(min_lon, max_lon)
+    return (west, south, east, north)
+
+
+def _load_glacier_geometry(subregion: Dict[str, Any]) -> None:
+    if subregion.get("polygons") and subregion.get("bounds") and subregion.get("geometry"):
+        return
+
+    shapefile_path_raw = subregion.get("shapefile_path")
+    rgi_id = str(subregion.get("native_id") or "").strip()
+    if not shapefile_path_raw or not rgi_id:
+        raise HTTPException(status_code=500, detail="Glacier subregion metadata is incomplete.")
+
+    shapefile_path = Path(shapefile_path_raw)
+    if not shapefile_path.exists():
+        raise HTTPException(status_code=500, detail=f"Glacier shapefile missing: {shapefile_path}")
+
+    source_id_col = str(subregion.get("source_id_col") or GLACIER_ID_COL).strip() or GLACIER_ID_COL
+    where = f"{source_id_col} = '{_escape_sql_literal(rgi_id)}'"
+    try:
+        frame = _read_glacier_dataframe(shapefile_path, where=where)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to read glacier geometry for '{rgi_id}'.",
+        ) from exc
+
+    if frame.empty:
+        raise HTTPException(status_code=404, detail=f"Glacier geometry not found for '{rgi_id}'.")
+
+    geometry_obj = frame.geometry.iloc[0]
+    if geometry_obj is None or geometry_obj.is_empty:
+        raise HTTPException(status_code=500, detail=f"Glacier geometry is empty for '{rgi_id}'.")
+
+    geometry = geometry_obj.__geo_interface__
+    polygons = _feature_to_polygons(geometry)
+    bounds = _compute_polygon_bounds(polygons)
+    if not polygons or not bounds:
+        raise HTTPException(status_code=500, detail=f"Glacier polygon parsing failed for '{rgi_id}'.")
+
+    subregion["geometry"] = geometry
+    subregion["polygons"] = polygons
+    subregion["bounds"] = bounds
+
+
+def _append_glacier_subregions(
+    index: Dict[str, Dict[str, Any]],
+    listing: List[Dict[str, Any]],
+    basin_mask_subregion: Optional[Dict[str, Any]],
+) -> int:
+    if not GLACIER_SHAPE_ROOT.exists():
+        logger.info("Glacier shape root not found: %s", GLACIER_SHAPE_ROOT)
+        return 0
+
+    region_dirs = sorted([path for path in GLACIER_SHAPE_ROOT.glob(GLACIER_REGION_FOLDER_PATTERN) if path.is_dir()])
+    if not region_dirs:
+        logger.info("No glacier region folders found in %s", GLACIER_SHAPE_ROOT)
+
+    added = 0
+    for region_dir in region_dirs:
+        attr_files = sorted(region_dir.glob("*-attributes.csv"))
+        shp_files = sorted(region_dir.glob("*.shp"))
+        if not attr_files or not shp_files:
+            logger.warning("Skipping glacier folder '%s': missing attributes CSV or SHP.", region_dir)
+            continue
+
+        attr_path = attr_files[0]
+        shp_path = shp_files[0]
+        region_label = region_dir.name.replace("RGI2000-v7.0-G-", "").replace("_", " ").title()
+
+        try:
+            with attr_path.open("r", encoding="utf-8-sig", newline="") as handle:
+                reader = csv.DictReader(handle)
+                for row in reader:
+                    native_id = str(row.get(GLACIER_ID_COL) or "").strip()
+                    if not native_id:
+                        continue
+
+                    glacier_name = str(row.get(GLACIER_NAME_COL) or "").strip()
+                    # Keep dropdown practical: include only named glaciers.
+                    if not glacier_name:
+                        continue
+
+                    center_lat = _safe_float(row.get(GLACIER_CENLAT_COL))
+                    center_lon = _safe_float(row.get(GLACIER_CENLON_COL))
+                    if (
+                        basin_mask_subregion
+                        and center_lat is not None
+                        and center_lon is not None
+                    ):
+                        bounds = basin_mask_subregion["bounds"]
+                        if (
+                            center_lon < bounds["min_lon"]
+                            or center_lon > bounds["max_lon"]
+                            or center_lat < bounds["min_lat"]
+                            or center_lat > bounds["max_lat"]
+                        ):
+                            continue
+
+                    subregion_id = f"{GLACIER_ID_PREFIX}{native_id}"
+                    area_km2 = _safe_float(row.get(GLACIER_AREA_COL))
+                    label = f"{glacier_name} ({native_id})"
+                    properties = {
+                        "rgi_id": native_id,
+                        "glacier_name": glacier_name,
+                        "region": region_label,
+                        "area_km2": area_km2,
+                    }
+                    if center_lat is not None:
+                        properties["center_lat"] = center_lat
+                    if center_lon is not None:
+                        properties["center_lon"] = center_lon
+
+                    entry = {
+                        "id": subregion_id,
+                        "native_id": native_id,
+                        "label": label,
+                        "kind": "glacier",
+                        "source_folder": str(region_dir),
+                        "source_file": attr_path.name,
+                        "shapefile_path": str(shp_path),
+                        "source_id_col": GLACIER_ID_COL,
+                        "properties": properties,
+                        "geometry": None,
+                        "polygons": None,
+                        "bounds": None,
+                    }
+                    index[subregion_id] = entry
+                    listing.append(
+                        {
+                            "id": subregion_id,
+                            "label": label,
+                            "kind": "glacier",
+                            "bounds": None,
+                        }
+                    )
+                    added += 1
+        except Exception as exc:
+            logger.warning("Failed to parse glacier metadata '%s': %s", attr_path, exc)
+
+    if added > 0:
+        return added
+
+    glims_dirs = sorted([path for path in GLACIER_SHAPE_ROOT.glob(GLIMS_FOLDER_PATTERN) if path.is_dir()])
+    if not glims_dirs:
+        return added
+
+    for glims_dir in glims_dirs:
+        shp_path = (glims_dir / GLIMS_POLYGON_FILE).resolve()
+        if not shp_path.exists():
+            logger.warning("Skipping GLIMS glacier folder '%s': missing polygon SHP.", glims_dir)
+            continue
+
+        region_label = glims_dir.name.replace("glims_download_", "GLIMS ").replace("_", " ").title()
+
+        try:
+            frame = _read_glacier_dataframe(
+                shp_path,
+                columns=[GLIMS_ID_COL, GLIMS_NAME_COL, GLIMS_AREA_COL],
+            )
+        except Exception as exc:
+            logger.warning("Failed to parse GLIMS glacier metadata '%s': %s", shp_path, exc)
+            continue
+
+        if frame.empty or GLIMS_ID_COL not in frame.columns:
+            continue
+
+        frame = frame.copy()
+        frame = frame[frame.geometry.notna() & ~frame.geometry.is_empty]
+        if frame.empty:
+            continue
+
+        if basin_mask_subregion and frame.geometry is not None:
+            bounds = basin_mask_subregion["bounds"]
+            centroids = frame.geometry.representative_point()
+            frame = frame[
+                (centroids.x >= bounds["min_lon"])
+                & (centroids.x <= bounds["max_lon"])
+                & (centroids.y >= bounds["min_lat"])
+                & (centroids.y <= bounds["max_lat"])
+            ]
+            if frame.empty:
+                continue
+
+        frame[GLIMS_ID_COL] = frame[GLIMS_ID_COL].astype(str).str.strip()
+        frame = frame[frame[GLIMS_ID_COL] != ""]
+        if frame.empty:
+            continue
+
+        if GLIMS_NAME_COL in frame.columns:
+            frame["_normalized_glacier_name"] = frame[GLIMS_NAME_COL].map(_normalize_glacier_text)
+            frame = frame[frame["_normalized_glacier_name"] != ""]
+        else:
+            frame["_normalized_glacier_name"] = ""
+        if frame.empty:
+            continue
+
+        if GLIMS_AREA_COL in frame.columns:
+            frame["_area_km2"] = pd.to_numeric(frame[GLIMS_AREA_COL], errors="coerce")
+        else:
+            frame["_area_km2"] = np.nan
+
+        frame = frame.sort_values(by=["_area_km2"], ascending=[False], na_position="last")
+        frame = frame.drop_duplicates(subset=[GLIMS_ID_COL], keep="first")
+
+        for _, row in frame.iterrows():
+            native_id = str(row.get(GLIMS_ID_COL) or "").strip()
+            if not native_id:
+                continue
+
+            glacier_name = _normalize_glacier_text(row.get("_normalized_glacier_name")) or native_id
+            area_km2 = _safe_float(row.get("_area_km2"))
+            label = f"{glacier_name} ({native_id})"
+            properties = {
+                "rgi_id": native_id,
+                "glacier_name": glacier_name,
+                "region": region_label,
+                "area_km2": area_km2,
+            }
+
+            entry = {
+                "id": f"{GLACIER_ID_PREFIX}{native_id}",
+                "native_id": native_id,
+                "label": label,
+                "kind": "glacier",
+                "source_folder": str(glims_dir),
+                "source_file": shp_path.name,
+                "shapefile_path": str(shp_path),
+                "source_id_col": GLIMS_ID_COL,
+                "properties": properties,
+                "geometry": None,
+                "polygons": None,
+                "bounds": None,
+            }
+            index[entry["id"]] = entry
+            listing.append(
+                {
+                    "id": entry["id"],
+                    "label": label,
+                    "kind": "glacier",
+                    "bounds": None,
+                }
+            )
+            added += 1
+
+    return added
+
+
+def _subregion_sort_key(item: Dict[str, Any]) -> Tuple[int, float, str]:
+    item_id = str(item.get("id") or "")
+    kind = str(item.get("kind") or "subregion")
+
+    if kind == "subregion":
+        try:
+            return (0, float(item_id), str(item.get("label") or item_id))
+        except Exception:
+            return (0, float("inf"), str(item.get("label") or item_id))
+
+    return (1, float("inf"), str(item.get("label") or item_id).lower())
+
+
 def load_subregion_index() -> None:
     geojson_path = SUBREGION_STATE["source_path"]
     SUBREGION_STATE["loaded"] = False
@@ -352,6 +1018,7 @@ def load_subregion_index() -> None:
     index: Dict[str, Dict[str, Any]] = {}
     listing: List[Dict[str, Any]] = []
 
+    basin_polygons: List[Dict[str, Any]] = []
     for feature in features:
         geometry = feature.get("geometry") or {}
         properties = feature.get("properties") or {}
@@ -367,34 +1034,47 @@ def load_subregion_index() -> None:
             continue
 
         label = _extract_subregion_label(properties, region_id)
-        try:
-            sort_value = float(region_id)
-        except Exception:
-            sort_value = float("inf")
 
         payload = {
             "id": region_id,
             "label": label,
+            "kind": "subregion",
             "bounds": bounds,
             "properties": properties,
+            "geometry": geometry,
             "polygons": polygons,
-            "sort_value": sort_value,
         }
         index[region_id] = payload
+        basin_polygons.extend(polygons)
         listing.append(
             {
                 "id": region_id,
                 "label": label,
+                "kind": "subregion",
                 "bounds": bounds,
             }
         )
 
-    listing.sort(key=lambda item: (float(item["id"]) if str(item["id"]).replace(".", "", 1).isdigit() else float("inf"), item["label"]))
+    basin_mask_subregion: Optional[Dict[str, Any]] = None
+    basin_bounds = _compute_polygon_bounds(basin_polygons)
+    if basin_polygons and basin_bounds:
+        basin_mask_subregion = {
+            "bounds": basin_bounds,
+            "polygons": basin_polygons,
+        }
+
+    glacier_added = _append_glacier_subregions(index, listing, basin_mask_subregion)
+    listing.sort(key=_subregion_sort_key)
 
     SUBREGION_STATE["index"] = index
     SUBREGION_STATE["list"] = listing
     SUBREGION_STATE["loaded"] = True
-    logger.info("Loaded %d subregions from %s", len(listing), geojson_path)
+    logger.info(
+        "Loaded %d subregions (%d glacier selections) from %s",
+        len(listing),
+        glacier_added,
+        geojson_path,
+    )
 
 
 def get_subregion(subregion_id: Optional[str]) -> Optional[Dict[str, Any]]:
@@ -407,6 +1087,8 @@ def get_subregion(subregion_id: Optional[str]) -> Optional[Dict[str, Any]]:
         return None
     region = SUBREGION_STATE["index"].get(region_id)
     if region:
+        if region.get("kind") == "glacier":
+            _load_glacier_geometry(region)
         return region
     raise HTTPException(status_code=400, detail=f"Invalid subregion_id '{subregion_id}'")
 
@@ -463,6 +1145,27 @@ def points_in_subregion(lons: np.ndarray, lats: np.ndarray, subregion: Dict[str,
     return final_mask
 
 
+def _get_subregion_shapely_geometry(subregion: Dict[str, Any]):
+    if shapely_shape is None:
+        return None
+
+    cached = subregion.get("_shapely_geometry")
+    if cached is not None:
+        return cached
+
+    geometry = subregion.get("geometry")
+    if not geometry:
+        return None
+
+    try:
+        shapely_geometry = shapely_shape(geometry)
+    except Exception:
+        return None
+
+    subregion["_shapely_geometry"] = shapely_geometry
+    return shapely_geometry
+
+
 def build_subregion_mask(df: pd.DataFrame, lat_col: str, lon_col: str, subregion: Dict[str, Any]) -> np.ndarray:
     """Build a row-level subregion mask using unique coordinates for speed."""
     if df.empty:
@@ -476,7 +1179,14 @@ def build_subregion_mask(df: pd.DataFrame, lat_col: str, lon_col: str, subregion
 
     coords = np.column_stack((lons[finite], lats[finite]))
     unique_coords, inverse = np.unique(coords, axis=0, return_inverse=True)
-    inside_unique = points_in_subregion(unique_coords[:, 0], unique_coords[:, 1], subregion)
+    shapely_geometry = _get_subregion_shapely_geometry(subregion)
+    if shapely_geometry is not None and shapely_contains_xy is not None:
+        inside_unique = np.asarray(
+            shapely_contains_xy(shapely_geometry, unique_coords[:, 0], unique_coords[:, 1]),
+            dtype=bool,
+        )
+    else:
+        inside_unique = points_in_subregion(unique_coords[:, 0], unique_coords[:, 1], subregion)
 
     mask = np.zeros(df.shape[0], dtype=bool)
     mask[finite] = inside_unique[inverse]
@@ -511,6 +1221,10 @@ def _normalize_config(config: Dict[str, Any]) -> Dict[str, Any]:
         "label": config.get("label", "Dataset"),
         "paths": paths,
         "source": config.get("source", "builtin"),
+        "storage": config.get("storage", PARQUET_STORAGE),
+        "file_pattern": config.get("file_pattern", "*.parquet"),
+        "default_elevation": float(config.get("default_elevation", GEOTIFF_DEFAULT_ELEVATION)),
+        "map_max_points": int(config.get("map_max_points", GEOTIFF_DEFAULT_MAP_MAX_POINTS)),
     }
 
 
@@ -533,6 +1247,10 @@ def init_dataset_state() -> None:
             "id": dataset_id,
             "label": config["label"],
             "source": config.get("source", "builtin"),
+            "storage": config.get("storage", PARQUET_STORAGE),
+            "file_pattern": config.get("file_pattern", "*.parquet"),
+            "default_elevation": config.get("default_elevation", GEOTIFF_DEFAULT_ELEVATION),
+            "map_max_points": config.get("map_max_points", GEOTIFF_DEFAULT_MAP_MAX_POINTS),
             "path": path,
             "loaded": False,
             "active_index_key": None,
@@ -548,6 +1266,8 @@ def init_dataset_state() -> None:
             "elev_col": None,
             "all_columns": [],
             "elevation_range": None,
+            "band_map": {},
+            "geotiff_profile": {},
         }
 
 
@@ -561,20 +1281,241 @@ def get_datasets_summary() -> List[Dict]:
     summary = []
     for dataset_id, state in DATASET_STATE.items():
         path = state["path"]
+        storage = state.get("storage", PARQUET_STORAGE)
         parquet_count = count_files(path, "*.parquet")
+        geotiff_count = count_files(path, "*.tif") + count_files(path, "*.tiff")
         csv_count = count_files(path, "*.csv")
+        ready = geotiff_count > 0 if storage == GEOTIFF_STORAGE else parquet_count > 0
         summary.append(
             {
                 "id": dataset_id,
                 "label": state["label"],
                 "path": str(path),
+                "storage": storage,
                 "parquet_files": parquet_count,
+                "geotiff_files": geotiff_count,
                 "csv_files": csv_count,
-                "ready": parquet_count > 0,
+                "ready": ready,
                 "source": state.get("source", "builtin"),
             }
         )
     return summary
+
+
+def _build_long_term_hotspot_summary() -> Dict[str, Any]:
+    state = OUTCOME_STATE["long_term_hotspot"]
+    ready = LONG_TERM_HOTSPOT_PARQUET.exists()
+    differences_ready = LONG_TERM_HOTSPOT_DIFF_PARQUET.exists()
+    return {
+        "id": "long_term_hotspot",
+        "label": "Long Term Hotspot Analysis",
+        "description": "Precomputed 25-year ERA5 spatial means and later-minus-earlier change maps",
+        "dataset": "era5",
+        "ready": ready,
+        "differences_ready": differences_ready,
+        "parquet_path": str(LONG_TERM_HOTSPOT_PARQUET),
+        "difference_parquet_path": str(LONG_TERM_HOTSPOT_DIFF_PARQUET),
+        "metadata_path": str(LONG_TERM_HOTSPOT_META),
+        "variables": state.get("variables", []),
+        "bands": state.get("bands", []),
+        "comparisons": state.get("comparisons", []),
+        "row_count": int(state.get("meta", {}).get("row_count", 0)) if state.get("meta") else 0,
+        "difference_row_count": int(state.get("diff_meta", {}).get("row_count", 0)) if state.get("diff_meta") else 0,
+    }
+
+
+def get_outcomes_summary() -> List[Dict[str, Any]]:
+    return [_build_long_term_hotspot_summary()]
+
+
+def _load_long_term_hotspot_outcome(force_reload: bool = False) -> Dict[str, Any]:
+    state = OUTCOME_STATE["long_term_hotspot"]
+    if not LONG_TERM_HOTSPOT_PARQUET.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Long-term hotspot output parquet not found. "
+                f"Expected file: {LONG_TERM_HOTSPOT_PARQUET}"
+            ),
+        )
+
+    parquet_mtime = LONG_TERM_HOTSPOT_PARQUET.stat().st_mtime
+    meta_mtime = LONG_TERM_HOTSPOT_META.stat().st_mtime if LONG_TERM_HOTSPOT_META.exists() else None
+    diff_parquet_mtime = LONG_TERM_HOTSPOT_DIFF_PARQUET.stat().st_mtime if LONG_TERM_HOTSPOT_DIFF_PARQUET.exists() else None
+    diff_meta_mtime = LONG_TERM_HOTSPOT_DIFF_META.stat().st_mtime if LONG_TERM_HOTSPOT_DIFF_META.exists() else None
+
+    if (
+        state["loaded"]
+        and not force_reload
+        and state.get("parquet_mtime") == parquet_mtime
+        and state.get("meta_mtime") == meta_mtime
+        and state.get("diff_parquet_mtime") == diff_parquet_mtime
+        and state.get("diff_meta_mtime") == diff_meta_mtime
+    ):
+        return state
+
+    df = pd.read_parquet(LONG_TERM_HOTSPOT_PARQUET)
+    required_columns = {
+        "band_id",
+        "band_label",
+        "start_year",
+        "end_year",
+        "variable",
+        "lat",
+        "lon",
+        "elev",
+        "value",
+        "sample_count",
+    }
+    missing = required_columns - set(df.columns)
+    if missing:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Invalid long-term hotspot output schema. "
+                f"Missing columns: {sorted(missing)}"
+            ),
+        )
+
+    for col in ("lat", "lon", "elev", "value"):
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    df["sample_count"] = pd.to_numeric(df["sample_count"], errors="coerce").fillna(0).astype(int)
+    df["start_year"] = pd.to_numeric(df["start_year"], errors="coerce").fillna(0).astype(int)
+    df["end_year"] = pd.to_numeric(df["end_year"], errors="coerce").fillna(0).astype(int)
+
+    df = df.dropna(subset=["lat", "lon", "value"]).copy()
+
+    meta: Dict[str, Any] = {}
+    if LONG_TERM_HOTSPOT_META.exists():
+        try:
+            meta = json.loads(LONG_TERM_HOTSPOT_META.read_text(encoding="utf-8"))
+        except Exception as exc:
+            logger.warning("Could not parse long-term hotspot metadata JSON: %s", exc)
+            meta = {}
+
+    variables = sorted(meta.get("variables", [])) if meta.get("variables") else sorted(df["variable"].dropna().astype(str).unique().tolist())
+    if meta.get("bands"):
+        bands = meta["bands"]
+    else:
+        band_rows = (
+            df[["band_id", "band_label", "start_year", "end_year"]]
+            .drop_duplicates()
+            .sort_values(["start_year", "end_year", "band_id"])
+        )
+        bands = [
+            {
+                "id": str(row.band_id),
+                "label": str(row.band_label),
+                "start_year": int(row.start_year),
+                "end_year": int(row.end_year),
+            }
+            for row in band_rows.itertuples(index=False)
+        ]
+
+    diff_df = pd.DataFrame()
+    diff_meta: Dict[str, Any] = {}
+    comparisons: List[Dict[str, Any]] = []
+    if LONG_TERM_HOTSPOT_DIFF_PARQUET.exists():
+        try:
+            diff_df = pd.read_parquet(LONG_TERM_HOTSPOT_DIFF_PARQUET)
+            required_diff_columns = {
+                "id",
+                "label",
+                "earlier_band_id",
+                "earlier_band_label",
+                "later_band_id",
+                "later_band_label",
+                "variable",
+                "lat",
+                "lon",
+                "elev",
+                "earlier_value",
+                "later_value",
+                "change_value",
+                "abs_change_value",
+                "earlier_sample_count",
+                "later_sample_count",
+            }
+            missing_diff = required_diff_columns - set(diff_df.columns)
+            if missing_diff:
+                logger.warning(
+                    "Ignoring invalid long-term hotspot difference parquet. Missing columns: %s",
+                    sorted(missing_diff),
+                )
+                diff_df = pd.DataFrame()
+            else:
+                for col in (
+                    "lat",
+                    "lon",
+                    "elev",
+                    "earlier_value",
+                    "later_value",
+                    "change_value",
+                    "abs_change_value",
+                    "pct_change_value",
+                ):
+                    if col in diff_df.columns:
+                        diff_df[col] = pd.to_numeric(diff_df[col], errors="coerce")
+                for col in ("earlier_sample_count", "later_sample_count"):
+                    diff_df[col] = pd.to_numeric(diff_df[col], errors="coerce").fillna(0).astype(int)
+                diff_df = diff_df.dropna(subset=["lat", "lon", "change_value"]).copy()
+        except Exception as exc:
+            logger.warning("Could not load long-term hotspot difference parquet: %s", exc)
+            diff_df = pd.DataFrame()
+
+    if LONG_TERM_HOTSPOT_DIFF_META.exists():
+        try:
+            diff_meta = json.loads(LONG_TERM_HOTSPOT_DIFF_META.read_text(encoding="utf-8"))
+        except Exception as exc:
+            logger.warning("Could not parse long-term hotspot difference metadata JSON: %s", exc)
+            diff_meta = {}
+
+    if diff_meta.get("comparisons"):
+        comparisons = diff_meta["comparisons"]
+    elif not diff_df.empty:
+        comparison_rows = (
+            diff_df[
+                [
+                    "id",
+                    "label",
+                    "earlier_band_id",
+                    "earlier_band_label",
+                    "later_band_id",
+                    "later_band_label",
+                ]
+            ]
+            .drop_duplicates()
+            .sort_values(["id"])
+        )
+        comparisons = [
+            {
+                "id": str(row.id),
+                "label": str(row.label),
+                "earlier_band_id": str(row.earlier_band_id),
+                "earlier_band_label": str(row.earlier_band_label),
+                "later_band_id": str(row.later_band_id),
+                "later_band_label": str(row.later_band_label),
+            }
+            for row in comparison_rows.itertuples(index=False)
+        ]
+
+    state.update(
+        {
+            "loaded": True,
+            "parquet_mtime": parquet_mtime,
+            "meta_mtime": meta_mtime,
+            "diff_parquet_mtime": diff_parquet_mtime,
+            "diff_meta_mtime": diff_meta_mtime,
+            "df": df,
+            "diff_df": diff_df,
+            "meta": meta,
+            "diff_meta": diff_meta,
+            "variables": variables,
+            "bands": bands,
+            "comparisons": comparisons,
+        }
+    )
+    return state
 
 
 def ensure_dataset(dataset: Optional[str]) -> Dict:
@@ -593,7 +1534,14 @@ def pick_column(columns: List[str], candidates: List[str], field_name: str) -> s
 
 
 def choose_default_variable(variables: List[str]) -> Optional[str]:
-    preferred = ["temperature_C", "temp_mean_C", "temp_C", "temperature"]
+    preferred = [
+        "temperature_C",
+        "temp_mean_C",
+        "temp_C",
+        "temperature",
+        "Snow_Albedo_Daily_Tile",
+        "NDSI_Snow_Cover",
+    ]
     for name in preferred:
         if name in variables:
             return name
@@ -652,6 +1600,536 @@ def select_files_for_year_range(
     return selected
 
 
+def is_geotiff_dataset(state: Dict[str, Any]) -> bool:
+    return state.get("storage") == GEOTIFF_STORAGE
+
+
+def ensure_rasterio_available() -> None:
+    if rasterio is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Rasterio is required to read GeoTIFF datasets. Install backend dependency 'rasterio'.",
+        )
+
+
+def get_geotiff_files(state: Dict[str, Any]) -> List[Path]:
+    path = state["path"]
+    if not path.exists():
+        return []
+    pattern = state.get("file_pattern") or "*.tif"
+    files = sorted(path.glob(pattern))
+    if pattern.lower().endswith(".tif"):
+        files.extend(sorted(path.glob(pattern[:-4] + ".tiff")))
+    # Preserve ordering while removing duplicates.
+    return list(dict.fromkeys(files))
+
+
+def parse_geotiff_date_from_path(file_path: Path) -> Optional[str]:
+    match = GEOTIFF_DATE_PATTERN.match(file_path.stem)
+    if not match:
+        years = extract_years_from_filename(file_path)
+        if not years:
+            return None
+        return f"{years[0]}-01-01"
+
+    year = int(match.group(1))
+    month = int(match.group(2))
+    if month < 1 or month > 12:
+        return None
+    return datetime(year, month, 1).strftime("%Y-%m-%d")
+
+
+def geotiff_file_in_year_range(
+    file_path: Path,
+    year_start: Optional[int],
+    year_end: Optional[int],
+) -> bool:
+    date_str = parse_geotiff_date_from_path(file_path)
+    if not date_str:
+        return False
+    year = int(date_str[:4])
+    if year_start is not None and year < year_start:
+        return False
+    if year_end is not None and year > year_end:
+        return False
+    return True
+
+
+def select_geotiff_files_for_year_range(
+    geotiff_files: List[Path],
+    year_start: Optional[int],
+    year_end: Optional[int],
+) -> List[Path]:
+    if year_start is None and year_end is None:
+        return [file_path for file_path in geotiff_files if parse_geotiff_date_from_path(file_path)]
+    return [
+        file_path
+        for file_path in geotiff_files
+        if geotiff_file_in_year_range(file_path, year_start, year_end)
+    ]
+
+
+def sanitize_geotiff_variable_name(raw_name: Optional[str], band_index: int, used_names: set[str]) -> str:
+    cleaned = (raw_name or "").strip() or f"band_{band_index}"
+    cleaned = re.sub(r"[^A-Za-z0-9_]+", "_", cleaned).strip("_") or f"band_{band_index}"
+    if cleaned[0].isdigit():
+        cleaned = f"band_{band_index}_{cleaned}"
+
+    candidate = cleaned
+    suffix = 2
+    while candidate in used_names:
+        candidate = f"{cleaned}_{suffix}"
+        suffix += 1
+    used_names.add(candidate)
+    return candidate
+
+
+def load_geotiff_schema(state: Dict[str, Any], geotiff_files: List[Path]) -> None:
+    if not geotiff_files:
+        state["variables"] = []
+        state["all_columns"] = []
+        state["default_variable"] = None
+        state["band_map"] = {}
+        state["geotiff_profile"] = {}
+        return
+
+    ensure_rasterio_available()
+
+    sample_file = geotiff_files[0]
+    try:
+        with rasterio.open(sample_file) as src:  # type: ignore[union-attr]
+            descriptions = list(src.descriptions or [])
+            used_names: set[str] = set()
+            variables: List[str] = []
+            band_map: Dict[str, int] = {}
+            for band_index in range(1, src.count + 1):
+                raw_name = descriptions[band_index - 1] if band_index - 1 < len(descriptions) else None
+                variable_name = sanitize_geotiff_variable_name(raw_name, band_index, used_names)
+                variables.append(variable_name)
+                band_map[variable_name] = band_index
+
+            bounds = src.bounds
+            crs_text = src.crs.to_string() if src.crs else None
+            state["geotiff_profile"] = {
+                "sample_file": sample_file.name,
+                "width": int(src.width),
+                "height": int(src.height),
+                "band_count": int(src.count),
+                "crs": crs_text,
+                "bounds": {
+                    "min_lon": float(bounds.left),
+                    "min_lat": float(bounds.bottom),
+                    "max_lon": float(bounds.right),
+                    "max_lat": float(bounds.top),
+                },
+                "dtype": str(src.dtypes[0]) if src.dtypes else None,
+            }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not read GeoTIFF schema from {sample_file.name}: {exc}",
+        ) from exc
+
+    state["date_col"] = GEOTIFF_DATE_COL
+    state["lat_col"] = GEOTIFF_LAT_COL
+    state["lon_col"] = GEOTIFF_LON_COL
+    state["elev_col"] = GEOTIFF_ELEV_COL
+    state["variables"] = variables
+    state["default_variable"] = choose_default_variable(variables)
+    state["all_columns"] = [GEOTIFF_DATE_COL, GEOTIFF_LAT_COL, GEOTIFF_LON_COL, GEOTIFF_ELEV_COL] + variables
+    state["band_map"] = band_map
+
+
+def load_geotiff_dataset_index(
+    state: Dict[str, Any],
+    force_reload: bool = False,
+    year_start: Optional[int] = None,
+    year_end: Optional[int] = None,
+) -> None:
+    cache_key = build_index_cache_key(year_start, year_end)
+    if state["loaded"] and not force_reload and state.get("active_index_key") == cache_key:
+        return
+
+    if force_reload:
+        state["index_cache"] = {}
+
+    geotiff_files = get_geotiff_files(state)
+    if not geotiff_files:
+        state["loaded"] = False
+        state["active_index_key"] = None
+        state["active_year_start"] = None
+        state["active_year_end"] = None
+        state["date_index"] = {}
+        state["variables"] = []
+        state["all_columns"] = []
+        state["default_variable"] = None
+        state["band_map"] = {}
+        state["geotiff_profile"] = {}
+        state["elevation_range"] = {
+            "min": float(state.get("default_elevation", GEOTIFF_DEFAULT_ELEVATION)),
+            "max": float(state.get("default_elevation", GEOTIFF_DEFAULT_ELEVATION)),
+        }
+        logger.warning("No GeoTIFF files found for dataset '%s' in %s", state["id"], state["path"])
+        return
+
+    if force_reload or not state["all_columns"]:
+        load_geotiff_schema(state, geotiff_files)
+
+    cached = state["index_cache"].get(cache_key)
+    if cached and not force_reload:
+        state["date_index"] = cached["date_index"]
+        state["loaded"] = True
+        state["active_index_key"] = cache_key
+        state["active_year_start"] = year_start
+        state["active_year_end"] = year_end
+        return
+
+    candidate_files = select_geotiff_files_for_year_range(geotiff_files, year_start, year_end)
+    year_tag = f"{year_start or '*'}-{year_end or '*'}"
+    logger.info(
+        "Loading GeoTIFF index for dataset '%s' from %s (years %s, files %d/%d)",
+        state["id"],
+        state["path"],
+        year_tag,
+        len(candidate_files),
+        len(geotiff_files),
+    )
+
+    date_index: Dict[str, List[str]] = {}
+    for file_path in candidate_files:
+        date_str = parse_geotiff_date_from_path(file_path)
+        if not date_str:
+            logger.warning("[%s] Skipping GeoTIFF with unknown date: %s", state["id"], file_path.name)
+            continue
+        date_index.setdefault(date_str, []).append(str(file_path))
+
+    state["date_index"] = date_index
+    state["loaded"] = True
+    state["active_index_key"] = cache_key
+    state["active_year_start"] = year_start
+    state["active_year_end"] = year_end
+    default_elevation = float(state.get("default_elevation", GEOTIFF_DEFAULT_ELEVATION))
+    state["elevation_range"] = {"min": default_elevation, "max": default_elevation}
+    state["index_cache"][cache_key] = {"date_index": date_index}
+    while len(state["index_cache"]) > 6:
+        oldest = next(iter(state["index_cache"]))
+        del state["index_cache"][oldest]
+
+    logger.info("[%s] Total indexed GeoTIFF dates (%s): %d", state["id"], year_tag, len(date_index))
+
+
+def geotiff_elevation_allowed(state: Dict[str, Any], elev_min: float, elev_max: float) -> bool:
+    default_elevation = float(state.get("default_elevation", GEOTIFF_DEFAULT_ELEVATION))
+    return float(elev_min) <= default_elevation <= float(elev_max)
+
+
+def read_geotiff_band(file_path: str, band_index: int) -> Tuple[np.ndarray, np.ndarray, Any]:
+    ensure_rasterio_available()
+    with rasterio.open(file_path) as src:  # type: ignore[union-attr]
+        if band_index < 1 or band_index > src.count:
+            raise ValueError(f"Band {band_index} is outside GeoTIFF band range 1-{src.count}")
+        band = src.read(band_index, masked=True)
+        if np.ma.isMaskedArray(band):
+            values = np.asarray(band.filled(np.nan), dtype=np.float64)
+            valid_mask = ~np.ma.getmaskarray(band)
+        else:
+            values = np.asarray(band, dtype=np.float64)
+            valid_mask = np.ones(values.shape, dtype=bool)
+        valid_mask &= np.isfinite(values)
+        return values, valid_mask, src.transform
+
+
+def geotiff_pixel_coordinates(transform: Any, rows: np.ndarray, cols: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    col_centers = cols.astype(np.float64, copy=False) + 0.5
+    row_centers = rows.astype(np.float64, copy=False) + 0.5
+    lons = transform.c + transform.a * col_centers + transform.b * row_centers
+    lats = transform.f + transform.d * col_centers + transform.e * row_centers
+    return lats, lons
+
+
+def build_subregion_mask_for_points(
+    lats: np.ndarray,
+    lons: np.ndarray,
+    subregion: Dict[str, Any],
+) -> np.ndarray:
+    if lats.size == 0:
+        return np.zeros(0, dtype=bool)
+
+    finite = np.isfinite(lats) & np.isfinite(lons)
+    if not finite.any():
+        return np.zeros(lats.shape[0], dtype=bool)
+
+    bounds = subregion["bounds"]
+    bbox_mask = (
+        finite
+        & (lons >= float(bounds["min_lon"]))
+        & (lons <= float(bounds["max_lon"]))
+        & (lats >= float(bounds["min_lat"]))
+        & (lats <= float(bounds["max_lat"]))
+    )
+    if not bbox_mask.any():
+        return bbox_mask
+
+    final_mask = np.zeros(lats.shape[0], dtype=bool)
+    candidate_idx = np.where(bbox_mask)[0]
+    shapely_geometry = _get_subregion_shapely_geometry(subregion)
+    if shapely_geometry is not None and shapely_contains_xy is not None:
+        final_mask[candidate_idx] = np.asarray(
+            shapely_contains_xy(shapely_geometry, lons[candidate_idx], lats[candidate_idx]),
+            dtype=bool,
+        )
+    else:
+        final_mask[candidate_idx] = points_in_subregion(
+            lons[candidate_idx],
+            lats[candidate_idx],
+            subregion,
+        )
+    return final_mask
+
+
+def get_geotiff_band_index(state: Dict[str, Any], variable: str) -> int:
+    band_map = state.get("band_map") or {}
+    band_index = band_map.get(variable)
+    if not band_index:
+        raise HTTPException(status_code=400, detail=f"Variable '{variable}' is not mapped to a GeoTIFF band")
+    return int(band_index)
+
+
+def query_geotiff_data(
+    state: Dict[str, Any],
+    query_date: str,
+    elev_min: float,
+    elev_max: float,
+    variable: str,
+    subregion: Optional[Dict[str, Any]] = None,
+) -> List[Dict]:
+    if query_date not in state["date_index"] or not geotiff_elevation_allowed(state, elev_min, elev_max):
+        return []
+
+    band_index = get_geotiff_band_index(state, variable)
+    default_elevation = float(state.get("default_elevation", GEOTIFF_DEFAULT_ELEVATION))
+    max_points = max(1000, int(state.get("map_max_points", GEOTIFF_DEFAULT_MAP_MAX_POINTS)))
+    results: List[Dict] = []
+
+    for file_path in state["date_index"][query_date]:
+        try:
+            values, valid_mask, transform = read_geotiff_band(file_path, band_index)
+            rows, cols = np.nonzero(valid_mask)
+            if rows.size == 0:
+                continue
+            point_values = values[rows, cols]
+            lats, lons = geotiff_pixel_coordinates(transform, rows, cols)
+            if subregion:
+                mask = build_subregion_mask_for_points(lats, lons, subregion)
+                if not mask.any():
+                    continue
+                point_values = point_values[mask]
+                lats = lats[mask]
+                lons = lons[mask]
+
+            if point_values.size > max_points:
+                step = int(np.ceil(point_values.size / max_points))
+                keep_idx = np.arange(0, point_values.size, step, dtype=np.int64)[:max_points]
+                point_values = point_values[keep_idx]
+                lats = lats[keep_idx]
+                lons = lons[keep_idx]
+
+            results.extend(
+                {
+                    "lat": float(lat),
+                    "lon": float(lon),
+                    "elev": default_elevation,
+                    "value": float(value),
+                }
+                for lat, lon, value in zip(lats, lons, point_values)
+            )
+        except Exception as exc:
+            logger.error("[%s] Error querying GeoTIFF %s: %s", state["id"], file_path, exc)
+
+    return results
+
+
+def calculate_geotiff_basin_mean(
+    state: Dict[str, Any],
+    start_date: str,
+    end_date: str,
+    elev_min: float,
+    elev_max: float,
+    variable: str,
+    subregion: Optional[Dict[str, Any]] = None,
+) -> List[Dict]:
+    if not geotiff_elevation_allowed(state, elev_min, elev_max):
+        return []
+
+    dates = sorted([d for d in state["date_index"].keys() if start_date <= d <= end_date])
+    if not dates:
+        return []
+
+    band_index = get_geotiff_band_index(state, variable)
+    results: List[Dict] = []
+    for date_str in dates:
+        value_sum = 0.0
+        value_count = 0
+        for file_path in state["date_index"][date_str]:
+            try:
+                values, valid_mask, transform = read_geotiff_band(file_path, band_index)
+                if subregion:
+                    rows, cols = np.nonzero(valid_mask)
+                    if rows.size == 0:
+                        continue
+                    point_values = values[rows, cols]
+                    lats, lons = geotiff_pixel_coordinates(transform, rows, cols)
+                    mask = build_subregion_mask_for_points(lats, lons, subregion)
+                    if not mask.any():
+                        continue
+                    point_values = point_values[mask]
+                else:
+                    point_values = values[valid_mask]
+
+                if point_values.size == 0:
+                    continue
+                value_sum += float(np.nansum(point_values))
+                value_count += int(np.isfinite(point_values).sum())
+            except Exception as exc:
+                logger.error("[%s] Error in GeoTIFF basin mean for %s: %s", state["id"], file_path, exc)
+
+        if value_count > 0:
+            results.append(
+                {
+                    "date": date_str,
+                    "mean_value": value_sum / value_count,
+                    "pixel_count": value_count,
+                }
+            )
+
+    return results
+
+
+def calculate_geotiff_region_mean(
+    state: Dict[str, Any],
+    year: int,
+    min_lat: float,
+    max_lat: float,
+    min_lon: float,
+    max_lon: float,
+    elev_min: float,
+    elev_max: float,
+    variable: str,
+    subregion: Optional[Dict[str, Any]] = None,
+) -> List[Dict]:
+    if not geotiff_elevation_allowed(state, elev_min, elev_max):
+        return []
+
+    start_date = f"{year}-01-01"
+    end_date = f"{year}-12-31"
+    dates = sorted([d for d in state["date_index"].keys() if start_date <= d <= end_date])
+    if not dates:
+        return []
+
+    band_index = get_geotiff_band_index(state, variable)
+    results: List[Dict] = []
+    for date_str in dates:
+        value_sum = 0.0
+        value_count = 0
+        for file_path in state["date_index"][date_str]:
+            try:
+                values, valid_mask, transform = read_geotiff_band(file_path, band_index)
+                rows, cols = np.nonzero(valid_mask)
+                if rows.size == 0:
+                    continue
+                point_values = values[rows, cols]
+                lats, lons = geotiff_pixel_coordinates(transform, rows, cols)
+                mask = (
+                    (lats >= min_lat)
+                    & (lats <= max_lat)
+                    & (lons >= min_lon)
+                    & (lons <= max_lon)
+                )
+                if subregion and mask.any():
+                    subregion_mask = build_subregion_mask_for_points(lats, lons, subregion)
+                    mask &= subregion_mask
+                if not mask.any():
+                    continue
+                point_values = point_values[mask]
+                if point_values.size == 0:
+                    continue
+                value_sum += float(np.nansum(point_values))
+                value_count += int(np.isfinite(point_values).sum())
+            except Exception as exc:
+                logger.error("[%s] Error in GeoTIFF region mean for %s: %s", state["id"], file_path, exc)
+
+        if value_count > 0:
+            results.append(
+                {
+                    "date": date_str,
+                    "mean_value": value_sum / value_count,
+                    "pixel_count": value_count,
+                }
+            )
+
+    return results
+
+
+def empty_hotspot_result_for_dataset(
+    state: Dict[str, Any],
+    year_start: int,
+    year_end: int,
+    min_years: int,
+) -> Dict[str, Any]:
+    return {
+        "summary": {
+            "points_analyzed": 0,
+            "hotspots_identified": 0,
+            "year_start": year_start,
+            "year_end": year_end,
+            "min_years": min_years,
+            "mean_strength": None,
+            "max_strength": None,
+            "strength_percentiles": {"p70": None, "p85": None, "p95": None},
+            "note": f"Trend hotspot analysis is not enabled for GeoTIFF-backed dataset '{state['id']}'.",
+        },
+        "data": [],
+        "top_hotspots": [],
+    }
+
+
+def get_geotiff_stats_payload(
+    state: Dict[str, Any],
+    year_start: Optional[int],
+    year_end: Optional[int],
+) -> Dict[str, Any]:
+    geotiff_files = get_geotiff_files(state)
+    if not geotiff_files:
+        raise HTTPException(status_code=404, detail=f"No GeoTIFF files found for dataset '{state['id']}'")
+
+    filtered_files = select_geotiff_files_for_year_range(geotiff_files, year_start, year_end)
+    total_size = sum(file_path.stat().st_size for file_path in filtered_files)
+    sample_file = filtered_files[0] if filtered_files else geotiff_files[0]
+    band_index = get_geotiff_band_index(state, state["default_variable"] or state["variables"][0])
+    values, valid_mask, _ = read_geotiff_band(str(sample_file), band_index)
+
+    return {
+        "dataset": state["id"],
+        "dataset_label": state["label"],
+        "dataset_path": str(state["path"]),
+        "storage": GEOTIFF_STORAGE,
+        "total_files": len(filtered_files),
+        "total_size_mb": round(total_size / (1024 * 1024), 2),
+        "total_dates": len(state["date_index"]),
+        "year_start": year_start,
+        "year_end": year_end,
+        "variables": state["variables"],
+        "geotiff_profile": state.get("geotiff_profile", {}),
+        "sample_stats": {
+            "columns": state["all_columns"],
+            "sample_file": sample_file.name,
+            "sample_records": int(valid_mask.sum()),
+            "sample_min": float(np.nanmin(values[valid_mask])) if valid_mask.any() else None,
+            "sample_max": float(np.nanmax(values[valid_mask])) if valid_mask.any() else None,
+        },
+    }
+
+
 def _parse_non_empty_dates(values: pd.Series, context: str) -> pd.Series:
     """Parse non-empty date values and fail loudly on invalid formats."""
     try:
@@ -685,6 +2163,11 @@ def parse_datetime_series(series: pd.Series, context: str) -> pd.Series:
 
 def compute_dataset_elevation_range(state: Dict) -> Tuple[float, float]:
     """Compute elevation bounds across all parquet files in the dataset."""
+    if is_geotiff_dataset(state):
+        default_elevation = float(state.get("default_elevation", GEOTIFF_DEFAULT_ELEVATION))
+        state["elevation_range"] = {"min": default_elevation, "max": default_elevation}
+        return default_elevation, default_elevation
+
     cached = state.get("elevation_range")
     if cached:
         return cached["min"], cached["max"]
@@ -784,6 +2267,15 @@ def load_dataset_index(
     year_start: Optional[int] = None,
     year_end: Optional[int] = None,
 ) -> None:
+    if is_geotiff_dataset(state):
+        load_geotiff_dataset_index(
+            state,
+            force_reload=force_reload,
+            year_start=year_start,
+            year_end=year_end,
+        )
+        return
+
     cache_key = build_index_cache_key(year_start, year_end)
     if state["loaded"] and not force_reload and state.get("active_index_key") == cache_key:
         return
@@ -886,11 +2378,18 @@ def ensure_dataset_loaded(
     state = ensure_dataset(dataset)
     load_dataset_index(state, year_start=year_start, year_end=year_end)
     if not state["loaded"]:
+        storage = state.get("storage", PARQUET_STORAGE)
+        expected_files = "GeoTIFF files" if storage == GEOTIFF_STORAGE else "parquet files"
+        conversion_hint = (
+            f"Place MOD10A1 .tif/.tiff files in {state['path']}."
+            if storage == GEOTIFF_STORAGE
+            else f"Convert CSV files first in {state['path']}."
+        )
         raise HTTPException(
             status_code=404,
             detail=(
-                f"No parquet files found for dataset '{state['id']}'. "
-                f"Convert CSV files first in {state['path']}."
+                f"No {expected_files} found for dataset '{state['id']}'. "
+                f"{conversion_hint}"
             ),
         )
     return state
@@ -909,7 +2408,13 @@ def read_parquet_subset(
     columns = list(dict.fromkeys(columns_key))
     try:
         table = pq.read_table(file_path, columns=columns, filters=filters)
-        df = table.to_pandas()
+        # pandas 4+ emits a deprecation warning from pyarrow internals for BlockManager.
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="Passing a BlockManager to DataFrame is deprecated.*",
+            )
+            df = table.to_pandas()
     except Exception as exc:
         logger.debug(
             "Filtered parquet read fallback for %s due to: %s",
@@ -944,6 +2449,16 @@ def query_data(
     variable: str,
     subregion: Optional[Dict[str, Any]] = None,
 ) -> List[Dict]:
+    if is_geotiff_dataset(state):
+        return query_geotiff_data(
+            state,
+            query_date,
+            elev_min,
+            elev_max,
+            variable,
+            subregion=subregion,
+        )
+
     if query_date not in state["date_index"]:
         return []
 
@@ -1004,6 +2519,17 @@ def calculate_basin_mean(
     variable: str,
     subregion: Optional[Dict[str, Any]] = None,
 ) -> List[Dict]:
+    if is_geotiff_dataset(state):
+        return calculate_geotiff_basin_mean(
+            state,
+            start_date,
+            end_date,
+            elev_min,
+            elev_max,
+            variable,
+            subregion=subregion,
+        )
+
     dates = sorted([d for d in state["date_index"].keys() if start_date <= d <= end_date])
     if not dates:
         return []
@@ -1086,6 +2612,20 @@ def calculate_region_mean(
     variable: str,
     subregion: Optional[Dict[str, Any]] = None,
 ) -> List[Dict]:
+    if is_geotiff_dataset(state):
+        return calculate_geotiff_region_mean(
+            state,
+            year,
+            min_lat,
+            max_lat,
+            min_lon,
+            max_lon,
+            elev_min,
+            elev_max,
+            variable,
+            subregion=subregion,
+        )
+
     start_date = f"{year}-01-01"
     end_date = f"{year}-12-31"
     dates = sorted([d for d in state["date_index"].keys() if start_date <= d <= end_date])
@@ -1164,12 +2704,231 @@ def calculate_region_mean(
     return results
 
 
-@app.on_event("startup")
-async def startup_event() -> None:
-    ensure_uploaded_nc_dirs()
-    init_dataset_state()
-    load_subregion_index()
-    logger.info("Dataset state initialized")
+def calculate_hotspot_trends(
+    state: Dict,
+    year_start: int,
+    year_end: int,
+    elev_min: float,
+    elev_max: float,
+    variable: str,
+    subregion: Optional[Dict[str, Any]] = None,
+    min_years: int = 3,
+) -> Dict[str, Any]:
+    """
+    Compute long-term change hotspots by fitting a linear trend (value/year)
+    at each grid point from annual mean series.
+    """
+    if is_geotiff_dataset(state):
+        return empty_hotspot_result_for_dataset(state, year_start, year_end, min_years)
+
+    date_col = state["date_col"]
+    lat_col = state["lat_col"]
+    lon_col = state["lon_col"]
+    elev_col = state["elev_col"]
+
+    start_ts = pd.Timestamp(f"{year_start}-01-01")
+    end_ts = pd.Timestamp(f"{year_end}-12-31")
+    dates = sorted([d for d in state["date_index"].keys() if f"{year_start}-01-01" <= d <= f"{year_end}-12-31"])
+    if not dates:
+        return {
+            "summary": {
+                "points_analyzed": 0,
+                "hotspots_identified": 0,
+                "year_start": year_start,
+                "year_end": year_end,
+                "min_years": min_years,
+            },
+            "data": [],
+            "top_hotspots": [],
+        }
+
+    files = sorted(set(file_path for date_key in dates for file_path in state["date_index"][date_key]))
+    grouped_chunks: List[pd.DataFrame] = []
+
+    for file_path in files:
+        columns_key = (date_col, lat_col, lon_col, elev_col, variable)
+        filters = [
+            (date_col, ">=", start_ts.to_pydatetime()),
+            (date_col, "<=", end_ts.to_pydatetime()),
+            (elev_col, ">=", float(elev_min)),
+            (elev_col, "<=", float(elev_max)),
+        ]
+        if subregion:
+            bounds = subregion["bounds"]
+            filters.extend(
+                [
+                    (lat_col, ">=", float(bounds["min_lat"])),
+                    (lat_col, "<=", float(bounds["max_lat"])),
+                    (lon_col, ">=", float(bounds["min_lon"])),
+                    (lon_col, "<=", float(bounds["max_lon"])),
+                ]
+            )
+
+        try:
+            df = read_parquet_subset(file_path, columns_key, date_col, filters=filters)
+        except Exception as exc:
+            logger.error(f"[{state['id']}] Error in hotspot read for {file_path}: {exc}")
+            continue
+
+        if df.empty:
+            continue
+
+        mask = (
+            (df[date_col] >= start_ts)
+            & (df[date_col] <= end_ts)
+            & (df[elev_col] >= elev_min)
+            & (df[elev_col] <= elev_max)
+        )
+        if subregion and mask.any():
+            mask &= build_subregion_mask(df, lat_col, lon_col, subregion)
+        if not mask.any():
+            continue
+
+        scoped = df.loc[mask, [date_col, lat_col, lon_col, elev_col, variable]].copy()
+        if scoped.empty:
+            continue
+
+        scoped["year"] = scoped[date_col].dt.year.astype(int)
+        grouped = (
+            scoped
+            .groupby([lat_col, lon_col, "year"], as_index=False)
+            .agg(
+                value_sum=(variable, "sum"),
+                value_count=(variable, "count"),
+                elev_sum=(elev_col, "sum"),
+                elev_count=(elev_col, "count"),
+            )
+        )
+        if not grouped.empty:
+            grouped_chunks.append(grouped)
+
+    if not grouped_chunks:
+        return {
+            "summary": {
+                "points_analyzed": 0,
+                "hotspots_identified": 0,
+                "year_start": year_start,
+                "year_end": year_end,
+                "min_years": min_years,
+            },
+            "data": [],
+            "top_hotspots": [],
+        }
+
+    combined = pd.concat(grouped_chunks, ignore_index=True)
+    combined = (
+        combined
+        .groupby([lat_col, lon_col, "year"], as_index=False)
+        .agg(
+            value_sum=("value_sum", "sum"),
+            value_count=("value_count", "sum"),
+            elev_sum=("elev_sum", "sum"),
+            elev_count=("elev_count", "sum"),
+        )
+    )
+    combined["annual_mean"] = combined["value_sum"] / combined["value_count"]
+
+    hotspot_rows: List[Dict[str, Any]] = []
+    grouped_points = combined.groupby([lat_col, lon_col], sort=False)
+    for (lat_value, lon_value), point_df in grouped_points:
+        ordered = point_df.sort_values("year")
+        years_arr = ordered["year"].to_numpy(dtype=float)
+        annual_means = ordered["annual_mean"].to_numpy(dtype=float)
+        if years_arr.size < max(2, min_years):
+            continue
+        finite_mask = np.isfinite(annual_means) & np.isfinite(years_arr)
+        if finite_mask.sum() < max(2, min_years):
+            continue
+
+        years_arr = years_arr[finite_mask]
+        annual_means = annual_means[finite_mask]
+        if np.unique(years_arr).size < 2:
+            continue
+
+        slope, intercept = np.polyfit(years_arr, annual_means, 1)
+        start_year_point = int(years_arr.min())
+        end_year_point = int(years_arr.max())
+        start_value = float(intercept + slope * start_year_point)
+        end_value = float(intercept + slope * end_year_point)
+        total_change = end_value - start_value
+
+        elev_total = float(ordered["elev_sum"].sum())
+        elev_count_total = float(ordered["elev_count"].sum())
+        elev_mean = elev_total / elev_count_total if elev_count_total > 0 else np.nan
+
+        hotspot_rows.append(
+            {
+                "lat": float(lat_value),
+                "lon": float(lon_value),
+                "elev": float(elev_mean) if np.isfinite(elev_mean) else None,
+                "slope_per_year": float(slope),
+                "trend_strength": float(abs(slope)),
+                "total_change": float(total_change),
+                "start_year": start_year_point,
+                "end_year": end_year_point,
+                "coverage_years": int(len(years_arr)),
+                "annual_mean": float(np.nanmean(annual_means)),
+                "annual_std": float(np.nanstd(annual_means)),
+                "direction": "increase" if slope >= 0 else "decrease",
+            }
+        )
+
+    if not hotspot_rows:
+        return {
+            "summary": {
+                "points_analyzed": 0,
+                "hotspots_identified": 0,
+                "year_start": year_start,
+                "year_end": year_end,
+                "min_years": min_years,
+            },
+            "data": [],
+            "top_hotspots": [],
+        }
+
+    strengths = np.array([row["trend_strength"] for row in hotspot_rows], dtype=float)
+    p70 = float(np.percentile(strengths, 70))
+    p85 = float(np.percentile(strengths, 85))
+    p95 = float(np.percentile(strengths, 95))
+
+    for row in hotspot_rows:
+        value = row["trend_strength"]
+        if value >= p95:
+            row["hotspot_level"] = "extreme"
+        elif value >= p85:
+            row["hotspot_level"] = "high"
+        elif value >= p70:
+            row["hotspot_level"] = "moderate"
+        else:
+            row["hotspot_level"] = "low"
+
+    hotspot_rows.sort(key=lambda item: item["trend_strength"], reverse=True)
+    top_hotspots = hotspot_rows[:20]
+    hotspots_identified = len([row for row in hotspot_rows if row["hotspot_level"] in {"high", "extreme"}])
+
+    summary = {
+        "points_analyzed": len(hotspot_rows),
+        "hotspots_identified": hotspots_identified,
+        "year_start": year_start,
+        "year_end": year_end,
+        "min_years": min_years,
+        "strength_percentiles": {
+            "p70": p70,
+            "p85": p85,
+            "p95": p95,
+        },
+        "max_strength": float(strengths.max()) if strengths.size else 0.0,
+        "mean_strength": float(strengths.mean()) if strengths.size else 0.0,
+    }
+
+    return {
+        "summary": summary,
+        "data": hotspot_rows,
+        "top_hotspots": top_hotspots,
+    }
+
+
+
 
 
 @app.get("/")
@@ -1226,9 +2985,273 @@ async def get_datasets():
     )
 
 
+@app.get("/outcomes")
+async def get_outcomes():
+    try:
+        _load_long_term_hotspot_outcome()
+    except HTTPException:
+        pass
+    return JSONResponse(content={"outcomes": get_outcomes_summary()})
+
+
+@app.get("/outcomes/long-term-hotspot/meta")
+async def get_long_term_hotspot_meta():
+    state = _load_long_term_hotspot_outcome()
+    row_count = int(state["df"].shape[0])
+    point_count = int(state["df"][["lat", "lon"]].drop_duplicates().shape[0]) if row_count else 0
+    return JSONResponse(
+        content={
+            "outcome_id": "long_term_hotspot",
+            "label": "Long Term Hotspot Analysis",
+            "dataset": "era5",
+            "variables": state["variables"],
+            "bands": state["bands"],
+            "comparisons": state.get("comparisons", []),
+            "row_count": row_count,
+            "difference_row_count": int(state.get("diff_df", pd.DataFrame()).shape[0]),
+            "point_count": point_count,
+            "generated_at": state.get("meta", {}).get("generated_at"),
+            "differences_generated_at": state.get("diff_meta", {}).get("generated_at"),
+            "parquet_path": str(LONG_TERM_HOTSPOT_PARQUET),
+            "difference_parquet_path": str(LONG_TERM_HOTSPOT_DIFF_PARQUET),
+        }
+    )
+
+
+@app.get("/outcomes/long-term-hotspot/data")
+async def get_long_term_hotspot_data(
+    variable: Optional[str] = Query(None, description="Variable name"),
+    band_id: Optional[str] = Query(None, description="Band id"),
+):
+    state = _load_long_term_hotspot_outcome()
+    variables = state["variables"]
+    if not variables:
+        raise HTTPException(status_code=404, detail="No variables available in long-term hotspot output")
+
+    selected_variable = variable or variables[0]
+    if selected_variable not in variables:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid variable '{selected_variable}'. Choose from: {variables}",
+        )
+
+    bands = state["bands"]
+    if not bands:
+        raise HTTPException(status_code=404, detail="No bands available in long-term hotspot output")
+
+    band_lookup = {str(band["id"]): band for band in bands}
+    selected_band_id = str(band_id) if band_id else str(bands[0]["id"])
+    if selected_band_id not in band_lookup:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid band_id '{selected_band_id}'. Choose from: {sorted(band_lookup.keys())}",
+        )
+
+    df = state["df"]
+    filtered = df[(df["variable"] == selected_variable) & (df["band_id"] == selected_band_id)].copy()
+    if filtered.empty:
+        return JSONResponse(
+            content={
+                "outcome_id": "long_term_hotspot",
+                "dataset": "era5",
+                "variable": selected_variable,
+                "band": band_lookup[selected_band_id],
+                "data": [],
+                "count": 0,
+                "stats": {"min": None, "max": None, "mean": None},
+            }
+        )
+
+    filtered = filtered.sort_values(["lat", "lon"], ignore_index=True)
+    data = [
+        {
+            "lat": float(row.lat),
+            "lon": float(row.lon),
+            "elev": float(row.elev) if pd.notna(row.elev) else None,
+            "value": float(row.value),
+            "sample_count": int(row.sample_count),
+            "band_id": str(row.band_id),
+            "band_label": str(row.band_label),
+            "start_year": int(row.start_year),
+            "end_year": int(row.end_year),
+            "variable": str(row.variable),
+        }
+        for row in filtered.itertuples(index=False)
+    ]
+
+    value_series = filtered["value"]
+    stats = {
+        "min": float(value_series.min()),
+        "max": float(value_series.max()),
+        "mean": float(value_series.mean()),
+    }
+
+    return JSONResponse(
+        content={
+            "outcome_id": "long_term_hotspot",
+            "dataset": "era5",
+            "variable": selected_variable,
+            "band": band_lookup[selected_band_id],
+            "data": data,
+            "count": len(data),
+            "stats": stats,
+        }
+    )
+
+
+@app.get("/outcomes/long-term-hotspot/difference")
+async def get_long_term_hotspot_difference(
+    variable: Optional[str] = Query(None, description="Variable name"),
+    comparison_id: Optional[str] = Query(None, description="Saved comparison id"),
+    earlier_band_id: Optional[str] = Query(None, description="Earlier/base band id"),
+    later_band_id: Optional[str] = Query(None, description="Later/comparison band id"),
+):
+    state = _load_long_term_hotspot_outcome()
+    variables = state["variables"]
+    if not variables:
+        raise HTTPException(status_code=404, detail="No variables available in long-term hotspot output")
+
+    selected_variable = variable or variables[0]
+    if selected_variable not in variables:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid variable '{selected_variable}'. Choose from: {variables}",
+        )
+
+    diff_df = state.get("diff_df", pd.DataFrame())
+    comparisons = state.get("comparisons", [])
+    if diff_df.empty or not comparisons:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Long-term band difference output not found. "
+                "Run Outcomes/Long_term_hotspot/Scripts/compute_band_differences.py"
+            ),
+        )
+
+    comparison_lookup = {str(comparison["id"]): comparison for comparison in comparisons}
+    selected_comparison_id = str(comparison_id).strip() if comparison_id else ""
+
+    if not selected_comparison_id and earlier_band_id and later_band_id:
+        earlier_key = str(earlier_band_id)
+        later_key = str(later_band_id)
+        for comparison in comparisons:
+            if (
+                str(comparison.get("earlier_band_id")) == earlier_key
+                and str(comparison.get("later_band_id")) == later_key
+            ):
+                selected_comparison_id = str(comparison["id"])
+                break
+
+    if not selected_comparison_id:
+        selected_comparison_id = str(comparisons[0]["id"])
+
+    if selected_comparison_id not in comparison_lookup:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid comparison_id '{selected_comparison_id}'. Choose from: {sorted(comparison_lookup.keys())}",
+        )
+
+    comparison = comparison_lookup[selected_comparison_id]
+    filtered = diff_df[
+        (diff_df["variable"] == selected_variable)
+        & (diff_df["id"].astype(str) == selected_comparison_id)
+    ].copy()
+
+    if filtered.empty:
+        return JSONResponse(
+            content={
+                "outcome_id": "long_term_hotspot",
+                "dataset": "era5",
+                "variable": selected_variable,
+                "comparison": comparison,
+                "data": [],
+                "count": 0,
+                "stats": {
+                    "min_change": None,
+                    "max_change": None,
+                    "mean_change": None,
+                    "mean_abs_change": None,
+                    "positive_points": 0,
+                    "negative_points": 0,
+                },
+            }
+        )
+
+    filtered = filtered.sort_values(["lat", "lon"], ignore_index=True)
+    data = [
+        {
+            "lat": float(row.lat),
+            "lon": float(row.lon),
+            "elev": float(row.elev) if pd.notna(row.elev) else None,
+            "value": float(row.change_value),
+            "change_value": float(row.change_value),
+            "abs_change_value": float(row.abs_change_value),
+            "pct_change_value": float(row.pct_change_value) if hasattr(row, "pct_change_value") and pd.notna(row.pct_change_value) else None,
+            "earlier_value": float(row.earlier_value),
+            "later_value": float(row.later_value),
+            "earlier_sample_count": int(row.earlier_sample_count),
+            "later_sample_count": int(row.later_sample_count),
+            "comparison_id": str(row.id),
+            "comparison_label": str(row.label),
+            "earlier_band_id": str(row.earlier_band_id),
+            "earlier_band_label": str(row.earlier_band_label),
+            "later_band_id": str(row.later_band_id),
+            "later_band_label": str(row.later_band_label),
+            "variable": str(row.variable),
+        }
+        for row in filtered.itertuples(index=False)
+    ]
+
+    change_series = filtered["change_value"]
+    stats = {
+        "min_change": float(change_series.min()),
+        "max_change": float(change_series.max()),
+        "mean_change": float(change_series.mean()),
+        "mean_abs_change": float(filtered["abs_change_value"].mean()),
+        "positive_points": int((change_series > 0).sum()),
+        "negative_points": int((change_series < 0).sum()),
+        "zero_points": int((change_series == 0).sum()),
+        # Keep min/max/mean aliases so generic map/info components can reuse the values.
+        "min": float(change_series.min()),
+        "max": float(change_series.max()),
+        "mean": float(change_series.mean()),
+    }
+
+    return JSONResponse(
+        content={
+            "outcome_id": "long_term_hotspot",
+            "dataset": "era5",
+            "variable": selected_variable,
+            "comparison": comparison,
+            "data": data,
+            "count": len(data),
+            "stats": stats,
+        }
+    )
+
+
 @app.get("/years")
 async def get_available_years(dataset: Optional[str] = Query(None, description="Dataset id")):
     state = ensure_dataset(dataset)
+    if is_geotiff_dataset(state):
+        geotiff_files = get_geotiff_files(state)
+        years = {
+            int(date_str[:4])
+            for file_path in geotiff_files
+            if (date_str := parse_geotiff_date_from_path(file_path))
+        }
+        years_list = sorted(years)
+        return JSONResponse(
+            content={
+                "dataset": state["id"],
+                "dataset_label": state["label"],
+                "years": years_list,
+                "min_year": years_list[0] if years_list else None,
+                "max_year": years_list[-1] if years_list else None,
+            }
+        )
+
     parquet_files = sorted(state["path"].glob("*.parquet")) if state["path"].exists() else []
     if not parquet_files:
         return JSONResponse(
@@ -1337,6 +3360,273 @@ async def get_subregions():
         "subregions": SUBREGION_STATE["list"],
         "source_path": str(SUBREGION_STATE["source_path"]),
     }
+
+
+@app.get("/subregions/{subregion_id}/geometry")
+async def get_subregion_geometry(subregion_id: str):
+    subregion = get_subregion(subregion_id)
+    if not subregion:
+        raise HTTPException(status_code=404, detail="Subregion not found.")
+
+    geometry = subregion.get("geometry")
+    if not geometry:
+        raise HTTPException(status_code=404, detail=f"No geometry found for '{subregion_id}'.")
+
+    return {
+        "id": subregion["id"],
+        "label": subregion["label"],
+        "kind": subregion.get("kind", "subregion"),
+        "bounds": subregion.get("bounds"),
+        "feature": {
+            "type": "Feature",
+            "properties": {
+                "id": subregion["id"],
+                "label": subregion["label"],
+                "kind": subregion.get("kind", "subregion"),
+                **(subregion.get("properties") or {}),
+            },
+            "geometry": geometry,
+        },
+    }
+
+
+@app.get("/glaciers/overview")
+async def get_glacier_overview(
+    min_lat: Optional[float] = Query(None, description="Viewport min latitude"),
+    max_lat: Optional[float] = Query(None, description="Viewport max latitude"),
+    min_lon: Optional[float] = Query(None, description="Viewport min longitude"),
+    max_lon: Optional[float] = Query(None, description="Viewport max longitude"),
+    zoom: float = Query(6.0, ge=0.0, le=22.0, description="Current map zoom"),
+    max_features: int = Query(
+        GLACIER_OVERVIEW_DEFAULT_MAX_FEATURES,
+        ge=100,
+        le=GLACIER_OVERVIEW_MAX_FEATURES_LIMIT,
+        description="Upper feature cap for this response",
+    ),
+):
+    _ensure_glacier_vector_reader()
+
+    bbox = _validate_glacier_bbox(min_lat=min_lat, max_lat=max_lat, min_lon=min_lon, max_lon=max_lon)
+    simplify_tolerance = _glacier_simplify_tolerance(zoom)
+    max_features = int(max(100, min(int(max_features), GLACIER_OVERVIEW_MAX_FEATURES_LIMIT)))
+    source_signature, glacier_sources = _discover_glacier_polygon_sources()
+
+    if not glacier_sources:
+        return {
+            "feature_collection": {"type": "FeatureCollection", "features": []},
+            "meta": {
+                "count": 0,
+                "truncated": False,
+                "simplify_tolerance": simplify_tolerance,
+                "bbox": None,
+                "zoom": zoom,
+                "source_count": 0,
+                "cached": False,
+            },
+        }
+
+    cache_key = _make_glacier_overview_cache_key(
+        source_signature=source_signature,
+        bbox=bbox,
+        zoom=zoom,
+        max_features=max_features,
+        simplify_tolerance=simplify_tolerance,
+    )
+    cached_payload = GLACIER_OVERVIEW_CACHE.get(cache_key)
+    if cached_payload is not None:
+        GLACIER_OVERVIEW_CACHE.move_to_end(cache_key)
+        cached_meta = dict(cached_payload.get("meta") or {})
+        cached_meta["cached"] = True
+        return {
+            "feature_collection": cached_payload.get("feature_collection", {"type": "FeatureCollection", "features": []}),
+            "meta": cached_meta,
+        }
+
+    features: List[Dict[str, Any]] = []
+    scanned_rows = 0
+    source_count = len(glacier_sources)
+    per_source_read_limit = min(
+        GLACIER_OVERVIEW_READ_MAX_ROWS,
+        max_features * GLACIER_OVERVIEW_READ_MULTIPLIER,
+    )
+
+    for source in glacier_sources:
+        shapefile_path = Path(source["path"])
+        if not shapefile_path.exists():
+            logger.warning("Glacier shapefile missing during overview read: %s", shapefile_path)
+            continue
+
+        source_id_col = str(source.get("id_col") or "")
+        source_name_col = str(source.get("name_col") or "")
+        source_area_col = str(source.get("area_col") or "")
+        source_date_col = str(source.get("date_col") or "")
+        source_line_type_col = str(source.get("line_type_col") or "")
+        source_line_type_value = _normalize_glacier_text(source.get("line_type_value"))
+
+        read_columns = [
+            column
+            for column in [source_id_col, source_name_col, source_area_col, source_date_col, source_line_type_col]
+            if column
+        ]
+        if not read_columns:
+            read_columns = None
+
+        try:
+            frame = _read_glacier_dataframe(
+                shapefile_path=shapefile_path,
+                columns=read_columns,
+                bbox=bbox,
+                max_features=per_source_read_limit,
+            )
+        except Exception as exc:
+            logger.warning("Failed reading glacier shapefile '%s': %s", shapefile_path, exc)
+            continue
+
+        if frame.empty:
+            continue
+        scanned_rows += int(len(frame))
+
+        if source_line_type_col and source_line_type_col in frame.columns and source_line_type_value:
+            line_values = frame[source_line_type_col].map(_normalize_glacier_text)
+            frame = frame[line_values == source_line_type_value]
+            if frame.empty:
+                continue
+
+        frame_crs = getattr(frame, "crs", None)
+        if frame_crs is not None:
+            try:
+                epsg = frame_crs.to_epsg() if hasattr(frame_crs, "to_epsg") else None
+            except Exception:
+                epsg = None
+            if epsg not in (None, 4326):
+                if hasattr(frame, "to_crs"):
+                    try:
+                        frame = frame.to_crs("EPSG:4326")
+                    except Exception as exc:
+                        logger.warning("Skipping '%s' due to CRS transform failure: %s", shapefile_path, exc)
+                        continue
+
+        if source_id_col not in frame.columns:
+            continue
+
+        frame = frame.copy()
+        frame[source_id_col] = frame[source_id_col].astype(str).str.strip()
+        frame = frame[frame[source_id_col] != ""]
+        if frame.empty:
+            continue
+
+        if source_name_col and source_name_col in frame.columns:
+            frame["_normalized_glacier_name"] = frame[source_name_col].map(_normalize_glacier_text)
+        else:
+            frame["_normalized_glacier_name"] = ""
+
+        frame = frame[frame.geometry.notna() & ~frame.geometry.is_empty]
+        if frame.empty:
+            continue
+
+        invalid_mask = ~frame.geometry.is_valid
+        if invalid_mask.any():
+            frame = frame.copy()
+            frame.loc[invalid_mask, "geometry"] = frame.loc[invalid_mask, "geometry"].buffer(0)
+            frame = frame[frame.geometry.notna() & ~frame.geometry.is_empty]
+            if frame.empty:
+                continue
+
+        if simplify_tolerance > 0:
+            frame = frame.copy()
+            frame["geometry"] = frame.geometry.simplify(simplify_tolerance, preserve_topology=True)
+            frame = frame[frame.geometry.notna() & ~frame.geometry.is_empty]
+            if frame.empty:
+                continue
+
+        if source_area_col and source_area_col in frame.columns:
+            frame["_area_km2"] = pd.to_numeric(frame[source_area_col], errors="coerce")
+        else:
+            frame["_area_km2"] = np.nan
+
+        if source_date_col and source_date_col in frame.columns:
+            frame["_date_key"] = frame[source_date_col].fillna("").astype(str).str.strip()
+        else:
+            frame["_date_key"] = ""
+
+        frame = frame.sort_values(
+            by=["_date_key", "_area_km2"],
+            ascending=[False, False],
+            na_position="last",
+        )
+        frame = frame.drop_duplicates(subset=[source_id_col], keep="first")
+        frame = frame.sort_values(by="_area_km2", ascending=False, na_position="last")
+
+        for _, row in frame.iterrows():
+            native_id = str(row.get(source_id_col) or "").strip()
+            if not native_id:
+                continue
+
+            geometry_obj = row.geometry
+            if geometry_obj is None or geometry_obj.is_empty:
+                continue
+
+            glacier_name = _normalize_glacier_text(row.get("_normalized_glacier_name")) or native_id
+
+            props = {
+                "id": f"{GLACIER_ID_PREFIX}{native_id}",
+                "kind": "glacier",
+                "rgi_id": native_id,
+                "glacier_name": glacier_name,
+                "source": source.get("kind"),
+            }
+            area_km2 = _safe_float(row.get("_area_km2"))
+            if area_km2 is not None:
+                props["area_km2"] = area_km2
+            date_value = _normalize_glacier_text(row.get("_date_key"))
+            if date_value:
+                props["src_date"] = date_value
+
+            features.append(
+                {
+                    "type": "Feature",
+                    "properties": props,
+                    "geometry": geometry_obj.__geo_interface__,
+                }
+            )
+            if len(features) >= max_features:
+                break
+
+        if len(features) >= max_features:
+            break
+
+    truncated = len(features) >= max_features
+    bbox_meta = None
+    if bbox:
+        bbox_meta = {
+            "min_lon": bbox[0],
+            "min_lat": bbox[1],
+            "max_lon": bbox[2],
+            "max_lat": bbox[3],
+        }
+
+    payload = {
+        "feature_collection": {
+            "type": "FeatureCollection",
+            "features": features,
+        },
+        "meta": {
+            "count": len(features),
+            "truncated": truncated,
+            "max_features": max_features,
+            "zoom": zoom,
+            "simplify_tolerance": simplify_tolerance,
+            "bbox": bbox_meta,
+            "scanned_rows": scanned_rows,
+            "source_count": source_count,
+            "cached": False,
+        },
+    }
+    GLACIER_OVERVIEW_CACHE[cache_key] = payload
+    GLACIER_OVERVIEW_CACHE.move_to_end(cache_key)
+    while len(GLACIER_OVERVIEW_CACHE) > GLACIER_OVERVIEW_CACHE_MAX_ENTRIES:
+        GLACIER_OVERVIEW_CACHE.popitem(last=False)
+    return payload
 
 
 @app.post("/nc/upload")
@@ -1591,6 +3881,89 @@ async def get_region_mean(
     )
 
 
+@app.get("/hotspot-trends")
+async def get_hotspot_trends(
+    dataset: Optional[str] = Query(None, description="Dataset id"),
+    variable: Optional[str] = Query(None, description="Variable name"),
+    elev_min: Optional[float] = Query(None, description="Minimum elevation"),
+    elev_max: Optional[float] = Query(None, description="Maximum elevation"),
+    subregion_id: Optional[str] = Query(None, description="Optional subregion id"),
+    year_start: Optional[int] = Query(None, description="Inclusive start year"),
+    year_end: Optional[int] = Query(None, description="Inclusive end year"),
+    min_years: int = Query(3, description="Minimum yearly coverage per point"),
+):
+    year_start, year_end = normalize_year_range(year_start, year_end)
+    state = ensure_dataset_loaded(dataset, year_start=year_start, year_end=year_end)
+    var_name = validate_variable(state, variable)
+    elev_min, elev_max = resolve_elevation_bounds(state, elev_min, elev_max)
+    subregion = get_subregion(subregion_id)
+
+    if min_years < 2:
+        raise HTTPException(status_code=400, detail="min_years must be at least 2")
+
+    indexed_years = sorted({int(date_key[:4]) for date_key in state["date_index"].keys()})
+    if not indexed_years:
+        return JSONResponse(
+            content={
+                "dataset": state["id"],
+                "dataset_label": state["label"],
+                "variable": var_name,
+                "year_start": year_start,
+                "year_end": year_end,
+                "summary": {
+                    "points_analyzed": 0,
+                    "hotspots_identified": 0,
+                    "min_years": min_years,
+                },
+                "data": [],
+                "top_hotspots": [],
+                "query_time_ms": 0.0,
+            }
+        )
+
+    analysis_start_year = year_start if year_start is not None else indexed_years[0]
+    analysis_end_year = year_end if year_end is not None else indexed_years[-1]
+    if analysis_start_year > analysis_end_year:
+        raise HTTPException(status_code=400, detail="Invalid year range for hotspot analysis")
+
+    start_time = datetime.now()
+    result = calculate_hotspot_trends(
+        state=state,
+        year_start=analysis_start_year,
+        year_end=analysis_end_year,
+        elev_min=elev_min,
+        elev_max=elev_max,
+        variable=var_name,
+        subregion=subregion,
+        min_years=min_years,
+    )
+    query_time = (datetime.now() - start_time).total_seconds() * 1000
+
+    subregion_log = f", subregion={subregion['id']}" if subregion else ""
+    logger.info(
+        f"[{state['id']}] Hotspot trend [{analysis_start_year}-{analysis_end_year}] "
+        f"[{elev_min}-{elev_max}m] {var_name}: {result['summary']['points_analyzed']} points in {query_time:.0f}ms{subregion_log}"
+    )
+
+    return JSONResponse(
+        content={
+            "dataset": state["id"],
+            "dataset_label": state["label"],
+            "variable": var_name,
+            "elev_min": elev_min,
+            "elev_max": elev_max,
+            "subregion_id": subregion["id"] if subregion else None,
+            "subregion_label": subregion["label"] if subregion else None,
+            "year_start": analysis_start_year,
+            "year_end": analysis_end_year,
+            "summary": result["summary"],
+            "data": result["data"],
+            "top_hotspots": result["top_hotspots"],
+            "query_time_ms": round(query_time, 2),
+        }
+    )
+
+
 @app.get("/stats")
 async def get_stats(
     dataset: Optional[str] = Query(None, description="Dataset id"),
@@ -1599,6 +3972,9 @@ async def get_stats(
 ):
     year_start, year_end = normalize_year_range(year_start, year_end)
     state = ensure_dataset_loaded(dataset, year_start=year_start, year_end=year_end)
+    if is_geotiff_dataset(state):
+        return get_geotiff_stats_payload(state, year_start, year_end)
+
     parquet_files = sorted(state["path"].glob("*.parquet"))
     if not parquet_files:
         raise HTTPException(status_code=404, detail=f"No data files found for dataset '{state['id']}'")

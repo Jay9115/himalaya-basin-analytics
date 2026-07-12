@@ -63,6 +63,30 @@ class APIService {
     return this.getWithCache('/datasets');
   }
 
+  async getOutcomes() {
+    return this.getWithCache('/outcomes');
+  }
+
+  async getLongTermHotspotMeta() {
+    return this.getWithCache('/outcomes/long-term-hotspot/meta');
+  }
+
+  async getLongTermHotspotData(variable, bandId, signal) {
+    return this.getWithCache(
+      '/outcomes/long-term-hotspot/data',
+      { variable, band_id: bandId },
+      { signal }
+    );
+  }
+
+  async getLongTermHotspotDifference(variable, comparisonId, signal) {
+    return this.getWithCache(
+      '/outcomes/long-term-hotspot/difference',
+      { variable, comparison_id: comparisonId },
+      { signal }
+    );
+  }
+
   async uploadNcDataset(file, datasetName) {
     const formData = new FormData();
     formData.append('file', file);
@@ -94,8 +118,24 @@ class APIService {
     return this.getWithCache('/elevation-range', this.withContext({}, dataset, yearRange));
   }
 
-  async getSubregions() {
-    return this.getWithCache('/subregions');
+  async getSubregions(includeGlaciers = true) {
+    return this.getWithCache('/subregions', { include_glaciers: includeGlaciers });
+  }
+
+  async searchGlaciers(query, limit = 50, signal) {
+    const trimmed = (query || '').trim();
+    if (!trimmed) {
+      return { results: [], count: 0, query: '' };
+    }
+    return this.getWithCache('/glaciers/search', { q: trimmed, limit }, { signal });
+  }
+
+  async getSubregionGeometry(subregionId, signal) {
+    if (!subregionId) {
+      return null;
+    }
+    const encoded = encodeURIComponent(subregionId);
+    return this.getWithCache(`/subregions/${encoded}/geometry`, {}, { signal });
   }
 
   async getData(date, elevMin, elevMax, variable, dataset, signal, yearRange, subregionId) {
@@ -168,6 +208,27 @@ class APIService {
 
   async getStats(dataset, yearRange) {
     return this.getWithCache('/stats', this.withContext({}, dataset, yearRange));
+  }
+
+  async getHotspotTrends(elevMin, elevMax, variable, dataset, signal, yearRange, subregionId, minYears = 3) {
+    const params = this.withContext(
+      {
+        elev_min: elevMin,
+        elev_max: elevMax,
+        variable,
+        min_years: minYears,
+      },
+      dataset,
+      yearRange
+    );
+    if (subregionId) {
+      params.subregion_id = subregionId;
+    }
+    return this.getWithCache(
+      '/hotspot-trends',
+      params,
+      { signal }
+    );
   }
 
   clearCache() {

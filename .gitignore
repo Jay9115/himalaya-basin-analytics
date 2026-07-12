@@ -27,6 +27,7 @@ site/
 *.egg-info/
 
 # Frontend
+glims_download_91214/
 node_modules/
 dist/
 dist-ssr/
@@ -59,6 +60,7 @@ Thumbs.db
 # Data files (optional - uncomment if you don't want to track data)
 *.csv
 *.parquet
+*.tif
 
 # Environment
 .env

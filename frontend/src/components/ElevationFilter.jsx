@@ -47,7 +47,7 @@ function ElevationFilter({ min, max, selectedMin, selectedMax, onChange }) {
 
   return (
     <div className="elevation-filter">
-      <h3>🏔️ Elevation Filter</h3>
+      <h3>Elevation Filter</h3>
       
       {/* Preset buttons */}
       <div className="preset-buttons">

@@ -113,13 +113,57 @@ const getColorForValue = (value, min, max) => {
   return [255, 0, 0, 200];
 };
 
-function MapView({ data, currentDate, theme, variableLabel, selectionEnabled, onSelectionComplete, onSelectionPreview, selectionBounds, focusLocation }) {
+const getColorForTrend = (value, maxAbs) => {
+  if (!Number.isFinite(value) || !Number.isFinite(maxAbs) || maxAbs <= 0) {
+    return [140, 140, 140, 140];
+  }
+  const normalized = Math.max(-1, Math.min(1, value / maxAbs));
+  const intensity = Math.abs(normalized);
+  if (normalized >= 0) {
+    const red = Math.round(170 + 85 * intensity);
+    const green = Math.round(160 - 150 * intensity);
+    const blue = Math.round(150 - 145 * intensity);
+    return [red, Math.max(20, green), Math.max(10, blue), 220];
+  }
+  const red = Math.round(150 - 130 * intensity);
+  const green = Math.round(170 - 120 * intensity);
+  const blue = Math.round(175 + 80 * intensity);
+  return [Math.max(20, red), Math.max(40, green), Math.min(255, blue), 220];
+};
+
+const getGlacierMaxFeaturesForZoom = (zoom) => {
+  if (zoom >= 10) return 5000;
+  if (zoom >= 8) return 3200;
+  if (zoom >= 6.5) return 1800;
+  return 1000;
+};
+const MIN_GLACIER_VIEW_ZOOM = 3.5;
+
+function MapView({
+  data,
+  currentDate,
+  theme,
+  variableLabel,
+  selectionEnabled,
+  onSelectionComplete,
+  onSelectionPreview,
+  selectionBounds,
+  selectedSubregionFeature,
+  glacierViewEnabled = false,
+  focusLocation,
+  analysisMode = 'daily',
+  hotspotSummary = null,
+}) {
   const lightStyleOverride = import.meta.env.VITE_MAP_STYLE_LIGHT;
   const darkStyleOverride = import.meta.env.VITE_MAP_STYLE_DARK;
   const apiBaseUrl = useMemo(() => {
     const explicitApiUrl = import.meta.env.VITE_API_URL;
     if (explicitApiUrl) {
       return trimTrailingSlash(explicitApiUrl);
+    }
+    // In local Vite dev, frontend runs on a different port than FastAPI.
+    if (import.meta.env.DEV) {
+      return 'http://127.0.0.1:8000';
     }
     if (typeof window !== 'undefined' && window.location?.origin) {
       return trimTrailingSlash(window.location.origin);
@@ -152,7 +196,11 @@ function MapView({ data, currentDate, theme, variableLabel, selectionEnabled, on
   const [dragStart, setDragStart] = useState(null);
   const [dragEnd, setDragEnd] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [mapLoaded, setMapLoaded] = useState(false);
   const [basinGeoJson, setBasinGeoJson] = useState(null);
+  const [glacierGeoJson, setGlacierGeoJson] = useState(null);
+  const [glacierMeta, setGlacierMeta] = useState(null);
+  const glacierAbortRef = useRef(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -179,6 +227,112 @@ function MapView({ data, currentDate, theme, variableLabel, selectionEnabled, on
     loadBasinBoundary();
     return () => controller.abort();
   }, [basinGeoJsonUrl]);
+
+  useEffect(() => {
+    if (!glacierViewEnabled) {
+      glacierAbortRef.current?.abort?.();
+      setGlacierGeoJson(null);
+      setGlacierMeta(null);
+      return;
+    }
+    if (!mapLoaded) return;
+    if (viewState.zoom < MIN_GLACIER_VIEW_ZOOM) {
+      glacierAbortRef.current?.abort?.();
+      setGlacierGeoJson({ type: 'FeatureCollection', features: [] });
+      setGlacierMeta({
+        count: 0,
+        truncated: false,
+        zoom: viewState.zoom,
+        zoom_limited: true,
+        minimum_zoom: MIN_GLACIER_VIEW_ZOOM,
+      });
+      return;
+    }
+
+    const map = mapRef.current?.getMap?.();
+    if (!map) return;
+    const bounds = map.getBounds?.();
+    if (!bounds) return;
+
+    const maxFeatures = getGlacierMaxFeaturesForZoom(viewState.zoom);
+    const params = new URLSearchParams({
+      min_lat: String(bounds.getSouth()),
+      max_lat: String(bounds.getNorth()),
+      min_lon: String(bounds.getWest()),
+      max_lon: String(bounds.getEast()),
+      zoom: String(viewState.zoom),
+      max_features: String(maxFeatures),
+    });
+    const requestUrl = `${apiBaseUrl}/glaciers/overview?${params.toString()}`;
+
+    const controller = new AbortController();
+    if (glacierAbortRef.current) {
+      glacierAbortRef.current.abort();
+    }
+    glacierAbortRef.current = controller;
+
+    const timer = setTimeout(async () => {
+      const fetchGlacierPayload = async (allowRetry) => {
+        const response = await fetch(requestUrl, {
+          signal: controller.signal,
+          cache: 'no-store',
+        });
+        const contentType = response.headers.get('content-type') || '';
+
+        if (!response.ok) {
+          let detailText = '';
+          try {
+            if (contentType.toLowerCase().includes('application/json')) {
+              const body = await response.json();
+              detailText = body?.detail || JSON.stringify(body);
+            } else {
+              detailText = await response.text();
+            }
+          } catch {
+            detailText = '';
+          }
+
+          if (allowRetry && response.status >= 500 && response.status < 600) {
+            await new Promise((resolve) => setTimeout(resolve, 180));
+            return fetchGlacierPayload(false);
+          }
+
+          const shortDetail = String(detailText || '').trim().slice(0, 180);
+          throw new Error(shortDetail ? `HTTP ${response.status}: ${shortDetail}` : `HTTP ${response.status}`);
+        }
+
+        if (!contentType.toLowerCase().includes('application/json')) {
+          throw new Error(`Expected JSON from glacier API, got '${contentType || 'unknown'}'`);
+        }
+        return response.json();
+      };
+
+      try {
+        const payload = await fetchGlacierPayload(true);
+        if (controller.signal.aborted) return;
+        const featureCollection = payload?.feature_collection;
+        if (featureCollection?.type === 'FeatureCollection') {
+          setGlacierGeoJson(featureCollection);
+          setGlacierMeta(payload?.meta || null);
+        } else {
+          setGlacierGeoJson({ type: 'FeatureCollection', features: [] });
+          setGlacierMeta(payload?.meta || null);
+        }
+      } catch (error) {
+        if (error?.name === 'AbortError') return;
+        console.error('Failed to load glacier overview:', error);
+        if (!controller.signal.aborted) {
+          setGlacierGeoJson({ type: 'FeatureCollection', features: [] });
+          setGlacierMeta(null);
+        }
+      }
+    }, 180);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [glacierViewEnabled, mapLoaded, apiBaseUrl, viewState.longitude, viewState.latitude, viewState.zoom]);
 
   const applyIndiaBoundaryLayer = useCallback(() => {
     const map = mapRef.current?.getMap?.();
@@ -325,6 +479,7 @@ function MapView({ data, currentDate, theme, variableLabel, selectionEnabled, on
   }, [pmtilesTilesTemplate, theme]);
 
   const handleMapLoad = useCallback(() => {
+    setMapLoaded(true);
     try {
       applyIndiaBoundaryLayer();
     } catch (error) {
@@ -371,7 +526,25 @@ function MapView({ data, currentDate, theme, variableLabel, selectionEnabled, on
     return { min, max };
   }, [data]);
 
+  const trendRange = useMemo(() => {
+    if (analysisMode !== 'hotspot' || !data || data.length === 0) {
+      return { maxAbs: 1 };
+    }
+    let maxAbs = 0;
+    for (const point of data) {
+      const slope = point?.slope_per_year;
+      if (!Number.isFinite(slope)) continue;
+      const absValue = Math.abs(slope);
+      if (absValue > maxAbs) maxAbs = absValue;
+    }
+    return { maxAbs: maxAbs > 0 ? maxAbs : 1 };
+  }, [analysisMode, data]);
+
   const legendSteps = useMemo(() => {
+    if (analysisMode === 'hotspot') {
+      const maxAbs = trendRange.maxAbs;
+      return [-maxAbs, -0.5 * maxAbs, -0.2 * maxAbs, 0, 0.2 * maxAbs, 0.5 * maxAbs, maxAbs];
+    }
     const { min, max } = valueRange;
     return [
       min,
@@ -381,12 +554,12 @@ function MapView({ data, currentDate, theme, variableLabel, selectionEnabled, on
       min + (max - min) * 0.8,
       max,
     ];
-  }, [valueRange]);
+  }, [analysisMode, valueRange, trendRange]);
 
   const layers = useMemo(() => {
     const result = [];
 
-    if (basinGeoJson) {
+    if (!glacierViewEnabled && basinGeoJson) {
       result.push(
         new GeoJsonLayer({
           id: 'upper-indus-basin-boundary',
@@ -405,6 +578,45 @@ function MapView({ data, currentDate, theme, variableLabel, selectionEnabled, on
       );
     }
 
+    if (glacierViewEnabled && glacierGeoJson) {
+      result.push(
+        new GeoJsonLayer({
+          id: 'glacier-overview-layer',
+          data: glacierGeoJson,
+          stroked: true,
+          filled: true,
+          pickable: true,
+          autoHighlight: false,
+          getFillColor: theme === 'dark' ? [166, 223, 255, 36] : [118, 191, 236, 42],
+          getLineColor: theme === 'dark' ? [213, 240, 255, 165] : [58, 135, 194, 180],
+          lineWidthUnits: 'pixels',
+          lineWidthMinPixels: 0.7,
+          lineWidthMaxPixels: 1.7,
+          getLineWidth: 1.0,
+          parameters: { depthTest: false },
+        })
+      );
+    }
+
+    if (selectedSubregionFeature) {
+      result.push(
+        new GeoJsonLayer({
+          id: 'selected-subregion-boundary',
+          data: selectedSubregionFeature,
+          stroked: true,
+          filled: true,
+          pickable: false,
+          getFillColor: theme === 'dark' ? [255, 190, 92, 26] : [255, 164, 52, 28],
+          getLineColor: theme === 'dark' ? [255, 214, 145, 235] : [187, 96, 22, 230],
+          lineWidthUnits: 'pixels',
+          lineWidthMinPixels: 1.5,
+          lineWidthMaxPixels: 4,
+          getLineWidth: 2.1,
+          parameters: { depthTest: false },
+        })
+      );
+    }
+
     if (!data || data.length === 0) {
       return result;
     }
@@ -413,24 +625,45 @@ function MapView({ data, currentDate, theme, variableLabel, selectionEnabled, on
       id: 'variable-scatter',
       data: data,
       pickable: true,
-      opacity: 0.7,
+      opacity: analysisMode === 'hotspot' ? 0.82 : 0.7,
       stroked: false,
       filled: true,
       radiusScale: 1,
-      radiusMinPixels: 2,
-      radiusMaxPixels: 8,
+      radiusMinPixels: analysisMode === 'hotspot' ? 3 : 2,
+      radiusMaxPixels: analysisMode === 'hotspot' ? 10 : 8,
       getPosition: (d) => [d.lon, d.lat],
-      getRadius: 300,
-      getFillColor: (d) => getColorForValue(d.value, valueRange.min, valueRange.max),
+      getRadius: (d) => {
+        if (analysisMode !== 'hotspot') return 300;
+        const strength = Number.isFinite(d?.trend_strength) ? d.trend_strength : 0;
+        const maxAbs = trendRange.maxAbs || 1;
+        const normalized = Math.min(1, Math.max(0, strength / maxAbs));
+        return 260 + normalized * 620;
+      },
+      getFillColor: (d) => (
+        analysisMode === 'hotspot'
+          ? getColorForTrend(d.slope_per_year, trendRange.maxAbs)
+          : getColorForValue(d.value, valueRange.min, valueRange.max)
+      ),
       updateTriggers: {
-        getFillColor: [valueRange.min, valueRange.max],
+        getFillColor: [analysisMode, valueRange.min, valueRange.max, trendRange.maxAbs],
+        getRadius: [analysisMode, trendRange.maxAbs],
       },
       parameters: { depthTest: false },
     });
 
     result.push(scatterLayer);
     return result;
-  }, [data, valueRange, basinGeoJson, theme]);
+  }, [
+    data,
+    valueRange,
+    basinGeoJson,
+    glacierGeoJson,
+    glacierViewEnabled,
+    selectedSubregionFeature,
+    theme,
+    analysisMode,
+    trendRange,
+  ]);
 
   const deckController = useMemo(() => {
     if (selectionEnabled) return false;
@@ -441,6 +674,68 @@ function MapView({ data, currentDate, theme, variableLabel, selectionEnabled, on
 
   const getTooltip = ({ object }) => {
     if (!object) return null;
+
+    if (object?.properties?.kind === 'glacier') {
+      const props = object.properties || {};
+      const areaValue = Number(props.area_km2);
+      const area = Number.isFinite(areaValue) ? `${areaValue.toFixed(3)} km²` : 'N/A';
+      return {
+        html: `
+          <div style="background: var(--tooltip-bg); padding: 12px; border-radius: 8px; color: var(--text); border: 1px solid var(--tooltip-border);">
+            <div style="margin-bottom: 8px; font-weight: bold; border-bottom: 1px solid var(--map-overlay-border); padding-bottom: 4px;">
+              Glacier Outline
+            </div>
+            <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; font-size: 13px;">
+              <span style="color: var(--text-muted);">Name:</span>
+              <span>${props.glacier_name || 'Unnamed glacier'}</span>
+              <span style="color: var(--text-muted);">RGI ID:</span>
+              <span>${props.rgi_id || 'N/A'}</span>
+              <span style="color: var(--text-muted);">Area:</span>
+              <span>${area}</span>
+            </div>
+          </div>
+        `,
+        style: {
+          backgroundColor: 'transparent',
+          fontSize: '14px',
+        },
+      };
+    }
+
+    if (analysisMode === 'hotspot') {
+      return {
+        html: `
+          <div style="background: var(--tooltip-bg); padding: 12px; border-radius: 8px; color: var(--text); border: 1px solid var(--tooltip-border);">
+            <div style="margin-bottom: 8px; font-weight: bold; border-bottom: 1px solid var(--map-overlay-border); padding-bottom: 4px;">
+              Long-Term Hotspot
+            </div>
+            <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; font-size: 13px;">
+              <span style="color: var(--text-muted);">Years:</span>
+              <span>${object.start_year} to ${object.end_year}</span>
+
+              <span style="color: var(--text-muted);">Slope / year:</span>
+              <span style="font-weight: bold;">${Number.isFinite(object.slope_per_year) ? object.slope_per_year.toFixed(4) : 'N/A'}</span>
+
+              <span style="color: var(--text-muted);">Total change:</span>
+              <span>${Number.isFinite(object.total_change) ? object.total_change.toFixed(3) : 'N/A'}</span>
+
+              <span style="color: var(--text-muted);">Hotspot level:</span>
+              <span>${object.hotspot_level || 'N/A'}</span>
+
+              <span style="color: var(--text-muted);">Coverage:</span>
+              <span>${Number.isFinite(object.coverage_years) ? object.coverage_years : 'N/A'} years</span>
+
+              <span style="color: var(--text-muted);">Coordinates:</span>
+              <span>${Number.isFinite(object.lat) ? object.lat.toFixed(4) : 'N/A'}N, ${Number.isFinite(object.lon) ? object.lon.toFixed(4) : 'N/A'}E</span>
+            </div>
+          </div>
+        `,
+        style: {
+          backgroundColor: 'transparent',
+          fontSize: '14px',
+        },
+      };
+    }
 
     return {
       html: `
@@ -669,32 +964,61 @@ function MapView({ data, currentDate, theme, variableLabel, selectionEnabled, on
         border: '1px solid var(--map-overlay-border)',
       }}>
         <div style={{ fontWeight: 'bold', marginBottom: '10px' }}>
-          {variableLabel || 'Value'} Scale
+          {analysisMode === 'hotspot' ? 'Trend Hotspots (Slope / Year)' : `${variableLabel || 'Value'} Scale`}
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ width: '20px', height: '12px', background: 'rgb(0, 0, 255)', borderRadius: '2px' }}></div>
-            <span>&lt; {legendSteps[1].toFixed(2)}</span>
+        {analysisMode === 'hotspot' ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ width: '20px', height: '12px', background: 'rgb(26, 61, 255)', borderRadius: '2px' }}></div>
+              <span>Strong decrease ({legendSteps[0].toFixed(3)} to {legendSteps[2].toFixed(3)})</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ width: '20px', height: '12px', background: 'rgb(160, 170, 190)', borderRadius: '2px' }}></div>
+              <span>Low change ({legendSteps[2].toFixed(3)} to {legendSteps[4].toFixed(3)})</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ width: '20px', height: '12px', background: 'rgb(255, 58, 22)', borderRadius: '2px' }}></div>
+              <span>Strong increase ({legendSteps[4].toFixed(3)} to {legendSteps[6].toFixed(3)})</span>
+            </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ width: '20px', height: '12px', background: 'rgb(0, 150, 255)', borderRadius: '2px' }}></div>
-            <span>{legendSteps[1].toFixed(2)} to {legendSteps[2].toFixed(2)}</span>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ width: '20px', height: '12px', background: 'rgb(0, 0, 255)', borderRadius: '2px' }}></div>
+              <span>&lt; {legendSteps[1].toFixed(2)}</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ width: '20px', height: '12px', background: 'rgb(0, 150, 255)', borderRadius: '2px' }}></div>
+              <span>{legendSteps[1].toFixed(2)} to {legendSteps[2].toFixed(2)}</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ width: '20px', height: '12px', background: 'rgb(0, 255, 0)', borderRadius: '2px' }}></div>
+              <span>{legendSteps[2].toFixed(2)} to {legendSteps[3].toFixed(2)}</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ width: '20px', height: '12px', background: 'rgb(255, 200, 0)', borderRadius: '2px' }}></div>
+              <span>{legendSteps[3].toFixed(2)} to {legendSteps[4].toFixed(2)}</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ width: '20px', height: '12px', background: 'rgb(255, 0, 0)', borderRadius: '2px' }}></div>
+              <span>{legendSteps[4].toFixed(2)} to {legendSteps[5].toFixed(2)}</span>
+            </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ width: '20px', height: '12px', background: 'rgb(0, 255, 0)', borderRadius: '2px' }}></div>
-            <span>{legendSteps[2].toFixed(2)} to {legendSteps[3].toFixed(2)}</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ width: '20px', height: '12px', background: 'rgb(255, 200, 0)', borderRadius: '2px' }}></div>
-            <span>{legendSteps[3].toFixed(2)} to {legendSteps[4].toFixed(2)}</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ width: '20px', height: '12px', background: 'rgb(255, 0, 0)', borderRadius: '2px' }}></div>
-            <span>{legendSteps[4].toFixed(2)} to {legendSteps[5].toFixed(2)}</span>
-          </div>
-        </div>
+        )}
         <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--map-overlay-border)', fontSize: '11px', color: 'var(--map-overlay-muted)' }}>
-          {data.length.toLocaleString()} data points
+          {data.length.toLocaleString()} {analysisMode === 'hotspot' ? 'trend points' : 'data points'}
+          {analysisMode === 'hotspot' && hotspotSummary?.hotspots_identified !== undefined && (
+            <div style={{ marginTop: '6px' }}>
+              Hotspots (high/extreme): {Number(hotspotSummary.hotspots_identified).toLocaleString()}
+            </div>
+          )}
+          {glacierViewEnabled && (
+            <div style={{ marginTop: '6px' }}>
+              {glacierMeta?.zoom_limited
+                ? `Glacier outlines: zoom in to ${Number(glacierMeta?.minimum_zoom || MIN_GLACIER_VIEW_ZOOM).toFixed(1)}+`
+                : `Glacier outlines: ${Number(glacierMeta?.count || 0).toLocaleString()}${glacierMeta?.truncated ? ' (viewport cap reached)' : ''}`}
+            </div>
+          )}
         </div>
       </div>
 
@@ -711,7 +1035,7 @@ function MapView({ data, currentDate, theme, variableLabel, selectionEnabled, on
         backdropFilter: 'blur(10px)',
         border: '1px solid var(--map-overlay-border)',
       }}>
-        Date: {currentDate}
+        {analysisMode === 'hotspot' ? 'Long-Term Hotspot Analysis' : `Date: ${currentDate}`}
       </div>
     </div>
   );

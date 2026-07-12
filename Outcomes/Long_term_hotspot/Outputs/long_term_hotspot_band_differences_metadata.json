@@ -1,0 +1,100 @@
+{
+  "outcome_id": "long_term_hotspot",
+  "output_type": "band_difference",
+  "dataset": "era5",
+  "source_band_means_path": "D:\\ISRO-SWOT\\Webapp\\himalaya-basin-analytics\\Outcomes\\Long_term_hotspot\\Outputs\\long_term_hotspot_band_means.parquet",
+  "generated_at": "2026-07-09T00:50:00.354587+00:00",
+  "difference_definition": "change_value = later_band_mean - earlier_band_mean",
+  "bands": [
+    {
+      "id": "1951_1975",
+      "label": "1951-1975",
+      "start_year": 1951,
+      "end_year": 1975
+    },
+    {
+      "id": "1976_2000",
+      "label": "1976-2000",
+      "start_year": 1976,
+      "end_year": 2000
+    },
+    {
+      "id": "2001_2025",
+      "label": "2001-2025",
+      "start_year": 2001,
+      "end_year": 2025
+    }
+  ],
+  "comparisons": [
+    {
+      "id": "1976_2000__minus__1951_1975",
+      "label": "1976-2000 minus 1951-1975",
+      "earlier_band_id": "1951_1975",
+      "earlier_band_label": "1951-1975",
+      "later_band_id": "1976_2000",
+      "later_band_label": "1976-2000",
+      "earlier_start_year": 1951,
+      "earlier_end_year": 1975,
+      "later_start_year": 1976,
+      "later_end_year": 2000
+    },
+    {
+      "id": "2001_2025__minus__1976_2000",
+      "label": "2001-2025 minus 1976-2000",
+      "earlier_band_id": "1976_2000",
+      "earlier_band_label": "1976-2000",
+      "later_band_id": "2001_2025",
+      "later_band_label": "2001-2025",
+      "earlier_start_year": 1976,
+      "earlier_end_year": 2000,
+      "later_start_year": 2001,
+      "later_end_year": 2025
+    },
+    {
+      "id": "2001_2025__minus__1951_1975",
+      "label": "2001-2025 minus 1951-1975",
+      "earlier_band_id": "1951_1975",
+      "earlier_band_label": "1951-1975",
+      "later_band_id": "2001_2025",
+      "later_band_label": "2001-2025",
+      "earlier_start_year": 1951,
+      "earlier_end_year": 1975,
+      "later_start_year": 2001,
+      "later_end_year": 2025
+    }
+  ],
+  "variables": [
+    "SWE_mm",
+    "precipitation_mm",
+    "snow_depth_mm",
+    "snowfall_mm",
+    "solar_radiation_MJm2",
+    "temperature_C",
+    "wind_speed_ms"
+  ],
+  "row_count": 175098,
+  "point_count": 8338,
+  "columns": [
+    "id",
+    "label",
+    "earlier_band_id",
+    "earlier_band_label",
+    "later_band_id",
+    "later_band_label",
+    "earlier_start_year",
+    "earlier_end_year",
+    "later_start_year",
+    "later_end_year",
+    "variable",
+    "lat",
+    "lon",
+    "elev",
+    "earlier_value",
+    "later_value",
+    "change_value",
+    "abs_change_value",
+    "pct_change_value",
+    "earlier_sample_count",
+    "later_sample_count"
+  ]
+}
