@@ -1,0 +1,1085 @@
+This file contains the citations for the data downloaded from the GLIMS
+Glacier Database.  All data are in the longitude/latitude coordinate system
+on the WGS-84 datum.
+
+Field names in the downloaded file are documented at
+  http://www.glims.org/MapsAndDocs/downloaded_field_desc.html
+
+When citing GLIMS data, please be sure to include all the information in
+the examples below, including the analyst's name.
+
+When referring to the GLIMS Initiative in general, please cite
+
+   Raup, B.H.; A. Racoviteanu; S.J.S. Khalsa; C. Helm; R. Armstrong; Y.
+   Arnaud (2007).  "The GLIMS Geospatial Glacier Database: a New Tool for
+   Studying Glacier Change".  Global and Planetary Change 56:101--110.
+   (doi:10.1016/j.gloplacha.2006.07.018)
+
+For the complete set of GLIMS glacier data (when using it for a global
+study of glaciers, for example), please cite
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    Boulder Colorado, USA.  NASA National Snow and Ice Data Center Distributed
+    Active Archive Center.  DOI: https://doi.org/10.7265/N5V98602  [Date
+    accessed].
+
+Specific citations for subsets of your download, by provider, are
+as follows:
+
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 56900--56918, Khromova, Tatiana (submitter); Nosenko, Gennadi (Gennady) (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 61863--1091573, Khromova, Tatiana (submitter); Kutuzov, Stanislav (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4169, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 138835--1079058, Bajracharya, Samjwal (submitter); Bajracharya, Samjwal; Guo, Wanqin; Maharjan, SB; Shrestha, Finu (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 52416--52426, Zheltyhina, Natasha (submitter); Zheltyhina, Natasha (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4160, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4149, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 2930--1091473, Khromova, Tatiana (submitter); Nosenko, Gennadi (Gennady) (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 62105--62128, Khromova, Tatiana (submitter); Dolgova, Ekaterina (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 4254--4269, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 4270--4275, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 2173--2237, Khromova, Tatiana (submitter); Zheltyhina, Natasha (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 5247--5285, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 974964--974972, Bolch, Tobias (submitter); Bolch, Tobias (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 2902--2916, Khromova, Tatiana (submitter); Nosenko, Gennadi (Gennady) (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 57091--57093, Khromova, Tatiana (submitter); Zheltyhina, Natasha (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4150, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 56044--56087, Khromova, Tatiana (submitter); Lavrentiev, Ivan (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 349183--1082293, Miles, Evan (submitter); Chudley, Thomas (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 2316--2351, Khromova, Tatiana (submitter); Zheltyhina, Natasha (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 52369--52414, Zheltyhina, Natasha (submitter); Zheltyhina, Natasha (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 2491--2504, Khromova, Tatiana (submitter); Zheltyhina, Natasha (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4127, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 350019--1082685, Bhambri, Rakesh (submitter); Bhambri, Rakesh; Bolch, Tobias; Moelg, Nico (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 3055--3089, Khromova, Tatiana (submitter); Nosenko, Gennadi (Gennady) (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 59667, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4167, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 61558--1091577, Khromova, Tatiana (submitter); Dolgova, Ekaterina (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 3125--3179, Khromova, Tatiana (submitter); Nosenko, Gennadi (Gennady) (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4162, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 2484--2490, Khromova, Tatiana (submitter); Zheltyhina, Natasha (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 479925--1083634, Cogley, Graham (submitter); Bolch, Tobias; Cogley, Graham; Frey, Holger; Guo, Wanqing; Liu, Shiyin; Nuimura, Takayuki; Paul, Frank; Raup, Bruce H.; Sakai, Akiko (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4151, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 130971--1078979, Bajracharya, Samjwal (submitter); Bajracharya, Samjwal; Guo, Wanqin; Maharjan, SB; Shrestha, Finu (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4144, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4142, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 2283--2315, Khromova, Tatiana (submitter); Khromova, Tatiana (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4148, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 55905--55918, Khromova, Tatiana (submitter); Lavrentiev, Ivan (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4155, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4163, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 56109--56117, Khromova, Tatiana (submitter); Lavrentiev, Ivan (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4153, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 4219--4228, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 348575--348763, Miles, Evan (submitter); Chudley, Thomas (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4159, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 2750--2754, Khromova, Tatiana (submitter); Nosenko, Gennadi (Gennady) (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 56437--56508, Khromova, Tatiana (submitter); Nosenko, Gennadi (Gennady) (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 5132--5135, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 4191--4218, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4129, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4132, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 127561--127693, Bajracharya, Samjwal (submitter); Bajracharya, Samjwal; Guo, Wanqin; Maharjan, SB; Shrestha, Finu (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 57019--1091426, Khromova, Tatiana (submitter); Kutuzov, Stanislav (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 343720--344379, Semakova, Eleonora (submitter); Semakova, Eleonora (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 2238--2273, Khromova, Tatiana (submitter); Zheltyhina, Natasha (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 2675--2723, Khromova, Tatiana (submitter); Zheltyhina, Natasha (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 56132--56154, Khromova, Tatiana (submitter); Lavrentiev, Ivan (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 2739--2742, Khromova, Tatiana (submitter); Nosenko, Gennadi (Gennady) (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 52334--52368, Zheltyhina, Natasha (submitter); Zheltyhina, Natasha (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 2755--2756, Khromova, Tatiana (submitter); Nosenko, Gennadi (Gennady) (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4157, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 348764--349182, Miles, Evan (submitter); Chudley, Thomas (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4131, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 55925--55994, Khromova, Tatiana (submitter); Kapustin, Grigori (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 56318--1091546, Khromova, Tatiana (submitter); Nosenko, Gennadi (Gennady) (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 3024--3054, Khromova, Tatiana (submitter); Nosenko, Gennadi (Gennady) (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 2725--1091465, Khromova, Tatiana (submitter); Nosenko, Gennadi (Gennady) (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 61236--61318, Khromova, Tatiana (submitter); Dolgova, Ekaterina (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4135, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 3090--3124, Khromova, Tatiana (submitter); Nosenko, Gennadi (Gennady) (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 5136--5140, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4143, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 59670, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 56096--56108, Khromova, Tatiana (submitter); Lavrentiev, Ivan (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4154, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 56509--56576, Khromova, Tatiana (submitter); Nosenko, Gennadi (Gennady) (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 52263--52331, Zheltyhina, Natasha (submitter); Zheltyhina, Natasha (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 108307--1078703, Paul, Frank (submitter); Frey, Holger; Paul, Frank (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4139, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 59626--59655, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 52427--52480, Zheltyhina, Natasha (submitter); Zheltyhina, Natasha (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 59673, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4126, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 52481--52508, Zheltyhina, Natasha (submitter); Zheltyhina, Natasha (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 2771--2806, Khromova, Tatiana (submitter); Nosenko, Gennadi (Gennady) (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 2743--1091483, Khromova, Tatiana (submitter); Nosenko, Gennadi (Gennady) (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 2807--1091420, Khromova, Tatiana (submitter); Nosenko, Gennadi (Gennady) (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 52509--52552, Zheltyhina, Natasha (submitter); Zheltyhina, Natasha (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 59674, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 804440--939214, Sakai, Akiko (submitter); Sakai, Akiko (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 3351--3376, Khromova, Tatiana (submitter); Nosenko, Gennadi (Gennady) (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 62414--1091107, Racoviteanu, Adina (submitter); Mool, Pradeep (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4156, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 59671, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 2463--2483, Khromova, Tatiana (submitter); Zheltyhina, Natasha (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 52553--52592, Zheltyhina, Natasha (submitter); Zheltyhina, Natasha (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 242111--1080106, Liu, Shiyin (submitter); Guo, Wanqin; Liu, Shiyin (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 3326--3350, Khromova, Tatiana (submitter); Nosenko, Gennadi (Gennady) (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 55919--55922, Khromova, Tatiana (submitter); Lavrentiev, Ivan (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 59676, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 52209--52262, Zheltyhina, Natasha (submitter); Zheltyhina, Natasha (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4130, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 2506--1091212, Khromova, Tatiana (submitter); Zheltyhina, Natasha (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 55995--56004, Khromova, Tatiana (submitter); Lavrentiev, Ivan (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4152, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 56026--56043, Khromova, Tatiana (submitter); Lavrentiev, Ivan (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4166, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 56118--56131, Khromova, Tatiana (submitter); Lavrentiev, Ivan (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 59669, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 2352--2389, Khromova, Tatiana (submitter); Zheltyhina, Natasha (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4134, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 2616--2643, Khromova, Tatiana (submitter); Zheltyhina, Natasha (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 56589--1091544, Khromova, Tatiana (submitter); Nosenko, Gennadi (Gennady) (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 4276--4296, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 146729--1079257, Bajracharya, Samjwal (submitter); Bajracharya, Samjwal; Guo, Wanqin; Maharjan, SB; Shrestha, Finu (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 5180--5183, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4140, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 3269--3325, Khromova, Tatiana (submitter); Nosenko, Gennadi (Gennady) (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4138, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 57084--57089, Khromova, Tatiana (submitter); Nosenko, Gennadi (Gennady) (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4164, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 1127262--1127413, Guha, Supratim (submitter); Guha, Supratim (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4165, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 2540--1091463, Khromova, Tatiana (submitter); Zheltyhina, Natasha (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4123, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4168, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4158, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 2390--2413, Khromova, Tatiana (submitter); Zheltyhina, Natasha (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4137, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 59675, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 64816--1091117, Racoviteanu, Adina (submitter); Bajracharya, Samjwal (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 61319--61458, Khromova, Tatiana (submitter); Dolgova, Ekaterina (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4146, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4128, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 2757--2770, Khromova, Tatiana (submitter); Nosenko, Gennadi (Gennady) (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 235920--1080092, Liu, Shiyin (submitter); Guo, Wanqin; Liu, Shiyin (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 60227--60400, Berthier, Etienne (submitter); Berthier, Etienne (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 2414--1091542, Khromova, Tatiana (submitter); Zheltyhina, Natasha (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4145, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 4229--4253, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 3180--3268, Khromova, Tatiana (submitter); Nosenko, Gennadi (Gennady) (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 5141--5179, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 56708--56771, Khromova, Tatiana (submitter); Nosenko, Gennadi (Gennady) (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4124, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 56383--56435, Khromova, Tatiana (submitter); Nosenko, Gennadi (Gennady) (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 2274--2282, Khromova, Tatiana (submitter); Zheltyhina, Natasha (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4133, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 3377--3418, Khromova, Tatiana (submitter); Nosenko, Gennadi (Gennady) (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 5189--5246, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 55899--55904, Khromova, Tatiana (submitter); Lavrentiev, Ivan (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 1060441--1075241, Carrivick, Jonathan L. (submitter); Brown, Lee E.; Carrivick, Jonathan L.; Cook, Simon J.; James, William H.M.; Lee, Ethan; Quincey, Duncan J. (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 55806--55819, Khromova, Tatiana (submitter); Lavrentiev, Ivan (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 425587--1078404, Cogley, Graham (submitter); Bolch, Tobias; Cogley, Graham; Frey, Holger; Guo, Wanqing; Liu, Shiyin; Moelg, Nico; Nuimura, Takayuki; Paul, Frank; Raup, Bruce H.; Sakai, Akiko (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 2428--2462, Khromova, Tatiana (submitter); Zheltyhina, Natasha (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 349621--350017, Miles, Evan (submitter); Chudley, Thomas (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 127694--130970, Bajracharya, Samjwal (submitter); Bajracharya, Samjwal; Guo, Wanqin; Maharjan, SB; Shrestha, Finu (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4122, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 54846--54912, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4125, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4170, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 2918--1091479, Khromova, Tatiana (submitter); Nosenko, Gennadi (Gennady) (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 56577--1091559, Khromova, Tatiana (submitter); Nosenko, Gennadi (Gennady) (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4141, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 56005--56025, Khromova, Tatiana (submitter); Lavrentiev, Ivan (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 56919--57018, Khromova, Tatiana (submitter); Kutuzov, Stanislav (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4147, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4136, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 2644--2674, Khromova, Tatiana (submitter); Zheltyhina, Natasha (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 2606--1091538, Khromova, Tatiana (submitter); Zheltyhina, Natasha (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 4161, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 347178--1081929, Bhambri, Rakesh (submitter); Bhambri, Rakesh; Bolch, Tobias; Moelg, Nico (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 59672, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 2985--3023, Khromova, Tatiana (submitter); Nosenko, Gennadi (Gennady) (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_IDs 56088--56095, Khromova, Tatiana (submitter); Lavrentiev, Ivan (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+
+    GLIMS Consortium, 2005. GLIMS Glacier Database, Version 1.
+    [Analysis_ID 59668, Haritashya, Umesh Kumar (submitter); Haritashya, Umesh Kumar (analyst(s))].
+    Boulder, Colorado, USA. NASA National Snow and Ice
+    Data Center Distributed Active Archive Center.
+    DOI: http://dx.doi.org/10.7265/N5V98602  [Date accessed]
+

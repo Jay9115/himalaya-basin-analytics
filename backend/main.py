@@ -108,6 +108,16 @@ BASE_DATASET_CONFIGS: Dict[str, Dict] = {
         "default_elevation": 500.0,
         "map_max_points": 75000,
     },
+    "discharge_network": {
+        "label": "Discharge Network",
+        "paths": [
+            DATABASE_DIR / "Discharge_Geopar",
+        ],
+        "storage": "geoparquet",
+        "file_pattern": "QAll_*.parquet",
+        "default_elevation": 500.0,
+        "map_max_points": 80000,
+    },
 }
 UPLOADED_NC_ROOT = DATABASE_DIR / "Uploaded_NC"
 UPLOADED_NC_MANIFEST = UPLOADED_NC_ROOT / "uploaded_nc_datasets.json"
@@ -125,7 +135,10 @@ FIXED_ELEV_MAX = 9000.0
 YEAR_PATTERN = re.compile(r"(?:19|20)\d{2}")
 PARQUET_STORAGE = "parquet"
 GEOTIFF_STORAGE = "geotiff"
+GEOPARQUET_STORAGE = "geoparquet"
 GEOTIFF_DATE_PATTERN = re.compile(r"MOD10A1_(\d{4})_(\d{2})$", re.IGNORECASE)
+DISCHARGE_DATE_PATTERN = re.compile(r"QAll_(\d{4})(\d{2})(\d{2})$", re.IGNORECASE)
+DISCHARGE_VALUE_COL = "DN"
 GEOTIFF_DATE_COL = "date"
 GEOTIFF_LAT_COL = "latitude"
 GEOTIFF_LON_COL = "longitude"
@@ -159,7 +172,11 @@ GLACIER_CENLAT_COL = "cenlat"
 GLACIER_CENLON_COL = "cenlon"
 GLACIER_AREA_COL = "area_km2"
 GLIMS_FOLDER_PATTERN = "glims_download_*"
-GLIMS_POLYGON_FILE = "glims_polygons.shp"
+GLIMS_POLYGON_GEOPARQUET_FILES = [
+    "glims_polygons_geoparquet.parquet",
+    "glims_polygons.parquet",
+]
+GLIMS_POLYGON_SHAPE_FILE = "glims_polygons.shp"
 GLIMS_ID_COL = "glac_id"
 GLIMS_NAME_COL = "glac_name"
 GLIMS_AREA_COL = "db_area"
@@ -493,15 +510,88 @@ def _ensure_glacier_vector_reader() -> str:
     )
 
 
+def _find_glims_polygon_source(glims_dir: Path) -> Optional[Path]:
+    for filename in GLIMS_POLYGON_GEOPARQUET_FILES:
+        parquet_path = (glims_dir / filename).resolve()
+        if parquet_path.exists():
+            return parquet_path
+
+    shp_path = (glims_dir / GLIMS_POLYGON_SHAPE_FILE).resolve()
+    if shp_path.exists():
+        return shp_path
+    return None
+
+
+def _glacier_source_path(subregion: Dict[str, Any]) -> Optional[Path]:
+    raw_path = subregion.get("vector_path") or subregion.get("shapefile_path")
+    if not raw_path:
+        return None
+    return Path(str(raw_path))
+
+
 def _read_glacier_dataframe(
-    shapefile_path: Path,
+    vector_path: Path,
     *,
     columns: Optional[List[str]] = None,
     where: Optional[str] = None,
     bbox: Optional[Tuple[float, float, float, float]] = None,
     max_features: Optional[int] = None,
 ):
+    global gpd
     reader = _ensure_glacier_vector_reader()
+    vector_path = Path(vector_path)
+
+    if vector_path.suffix.lower() in {".parquet", ".geoparquet"}:
+        if gpd is None:
+            try:
+                import geopandas as _gpd  # type: ignore
+                gpd = _gpd
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=500,
+                    detail="GeoParquet glacier support requires geopandas in backend environment.",
+                ) from exc
+
+        read_columns = list(columns or [])
+        if read_columns and "geometry" not in read_columns:
+            read_columns.append("geometry")
+
+        read_kwargs: Dict[str, Any] = {}
+        if read_columns:
+            read_kwargs["columns"] = read_columns
+        if bbox:
+            read_kwargs["bbox"] = bbox
+
+        where_match = None
+        if where:
+            where_match = re.match(r"^\s*([A-Za-z0-9_]+)\s*=\s*'(.*)'\s*$", where)
+            if where_match:
+                where_col = where_match.group(1)
+                where_value = where_match.group(2).replace("''", "'")
+                read_kwargs["filters"] = [(where_col, "=", where_value)]
+
+        try:
+            frame = gpd.read_parquet(vector_path, **read_kwargs)
+        except (TypeError, ValueError):
+            fallback_kwargs = dict(read_kwargs)
+            fallback_kwargs.pop("bbox", None)
+            fallback_kwargs.pop("filters", None)
+            frame = gpd.read_parquet(vector_path, **fallback_kwargs)
+            if bbox and hasattr(frame, "cx"):
+                frame = frame.cx[bbox[0]:bbox[2], bbox[1]:bbox[3]]
+
+        if where:
+            match = where_match or re.match(r"^\s*([A-Za-z0-9_]+)\s*=\s*'(.*)'\s*$", where)
+            if match:
+                where_col = match.group(1)
+                where_value = match.group(2).replace("''", "'")
+                if where_col in frame.columns:
+                    frame = frame[frame[where_col].astype(str).str.strip() == where_value]
+
+        if max_features is not None and len(frame) > int(max_features):
+            frame = frame.head(int(max_features))
+
+        return frame
 
     if reader == "pyogrio":
         kwargs: Dict[str, Any] = {}
@@ -515,12 +605,12 @@ def _read_glacier_dataframe(
             kwargs["max_features"] = int(max_features)
 
         try:
-            return pyogrio.read_dataframe(shapefile_path, **kwargs)
+            return pyogrio.read_dataframe(vector_path, **kwargs)
         except TypeError:
             # Older builds may not accept bbox; apply bbox client-side as fallback.
             fallback_kwargs = dict(kwargs)
             fallback_kwargs.pop("bbox", None)
-            frame = pyogrio.read_dataframe(shapefile_path, **fallback_kwargs)
+            frame = pyogrio.read_dataframe(vector_path, **fallback_kwargs)
             if bbox and hasattr(frame, "cx"):
                 frame = frame.cx[bbox[0]:bbox[2], bbox[1]:bbox[3]]
             return frame
@@ -534,14 +624,14 @@ def _read_glacier_dataframe(
         read_kwargs["rows"] = slice(0, int(max_features))
 
     try:
-        frame = gpd.read_file(shapefile_path, **read_kwargs)
+        frame = gpd.read_file(vector_path, **read_kwargs)
     except TypeError:
         fallback_kwargs = {}
         if bbox:
             fallback_kwargs["bbox"] = bbox
         if max_features is not None:
             fallback_kwargs["rows"] = slice(0, int(max_features))
-        frame = gpd.read_file(shapefile_path, **fallback_kwargs)
+        frame = gpd.read_file(vector_path, **fallback_kwargs)
 
     if columns:
         keep_columns = [column for column in columns if column in frame.columns]
@@ -614,16 +704,24 @@ def _discover_glacier_polygon_sources() -> Tuple[Tuple[Any, ...], List[Dict[str,
             }
         )
 
-    for glims_dir in sorted(GLACIER_SHAPE_ROOT.glob(GLIMS_FOLDER_PATTERN)):
+    glims_dirs = sorted([path for path in GLACIER_SHAPE_ROOT.glob(GLIMS_FOLDER_PATTERN) if path.is_dir()])
+    glims_geoparquet_dirs = [
+        path
+        for path in glims_dirs
+        if any((path / filename).exists() for filename in GLIMS_POLYGON_GEOPARQUET_FILES)
+    ]
+    glims_dirs_to_use = glims_geoparquet_dirs or glims_dirs
+
+    for glims_dir in glims_dirs_to_use:
         if not glims_dir.is_dir():
             continue
-        shp_path = (glims_dir / GLIMS_POLYGON_FILE).resolve()
-        if not shp_path.exists():
+        vector_path = _find_glims_polygon_source(glims_dir)
+        if not vector_path:
             continue
         sources.append(
             {
                 "kind": "glims",
-                "path": shp_path,
+                "path": vector_path,
                 "id_col": GLIMS_ID_COL,
                 "name_col": GLIMS_NAME_COL,
                 "area_col": GLIMS_AREA_COL,
@@ -693,12 +791,11 @@ def _build_glacier_source_lookup() -> Dict[Path, Dict[str, Any]]:
             continue
 
         native_id = str(item.get("native_id") or "").strip()
-        shapefile_path_raw = item.get("shapefile_path")
-        if not native_id or not shapefile_path_raw:
+        vector_path = _glacier_source_path(item)
+        if not native_id or not vector_path:
             continue
 
-        shapefile_path = Path(shapefile_path_raw)
-        source = lookup.setdefault(shapefile_path, {"ids": set(), "name_by_id": {}})
+        source = lookup.setdefault(vector_path, {"ids": set(), "name_by_id": {}})
         source["ids"].add(native_id)
 
         properties = item.get("properties") or {}
@@ -745,19 +842,18 @@ def _load_glacier_geometry(subregion: Dict[str, Any]) -> None:
     if subregion.get("polygons") and subregion.get("bounds") and subregion.get("geometry"):
         return
 
-    shapefile_path_raw = subregion.get("shapefile_path")
+    vector_path = _glacier_source_path(subregion)
     rgi_id = str(subregion.get("native_id") or "").strip()
-    if not shapefile_path_raw or not rgi_id:
+    if not vector_path or not rgi_id:
         raise HTTPException(status_code=500, detail="Glacier subregion metadata is incomplete.")
 
-    shapefile_path = Path(shapefile_path_raw)
-    if not shapefile_path.exists():
-        raise HTTPException(status_code=500, detail=f"Glacier shapefile missing: {shapefile_path}")
+    if not vector_path.exists():
+        raise HTTPException(status_code=500, detail=f"Glacier vector source missing: {vector_path}")
 
     source_id_col = str(subregion.get("source_id_col") or GLACIER_ID_COL).strip() or GLACIER_ID_COL
     where = f"{source_id_col} = '{_escape_sql_literal(rgi_id)}'"
     try:
-        frame = _read_glacier_dataframe(shapefile_path, where=where)
+        frame = _read_glacier_dataframe(vector_path, where=where)
     except Exception as exc:
         raise HTTPException(
             status_code=500,
@@ -857,6 +953,7 @@ def _append_glacier_subregions(
                         "kind": "glacier",
                         "source_folder": str(region_dir),
                         "source_file": attr_path.name,
+                        "vector_path": str(shp_path),
                         "shapefile_path": str(shp_path),
                         "source_id_col": GLACIER_ID_COL,
                         "properties": properties,
@@ -881,24 +978,40 @@ def _append_glacier_subregions(
         return added
 
     glims_dirs = sorted([path for path in GLACIER_SHAPE_ROOT.glob(GLIMS_FOLDER_PATTERN) if path.is_dir()])
+    glims_geoparquet_dirs = [
+        path
+        for path in glims_dirs
+        if any((path / filename).exists() for filename in GLIMS_POLYGON_GEOPARQUET_FILES)
+    ]
+    glims_dirs = glims_geoparquet_dirs or glims_dirs
     if not glims_dirs:
         return added
 
     for glims_dir in glims_dirs:
-        shp_path = (glims_dir / GLIMS_POLYGON_FILE).resolve()
-        if not shp_path.exists():
-            logger.warning("Skipping GLIMS glacier folder '%s': missing polygon SHP.", glims_dir)
+        vector_path = _find_glims_polygon_source(glims_dir)
+        if not vector_path:
+            logger.warning("Skipping GLIMS glacier folder '%s': missing polygon vector source.", glims_dir)
             continue
 
         region_label = glims_dir.name.replace("glims_download_", "GLIMS ").replace("_", " ").title()
+        basin_bbox = None
+        if basin_mask_subregion:
+            bounds = basin_mask_subregion["bounds"]
+            basin_bbox = (
+                bounds["min_lon"],
+                bounds["min_lat"],
+                bounds["max_lon"],
+                bounds["max_lat"],
+            )
 
         try:
             frame = _read_glacier_dataframe(
-                shp_path,
+                vector_path,
                 columns=[GLIMS_ID_COL, GLIMS_NAME_COL, GLIMS_AREA_COL],
+                bbox=basin_bbox,
             )
         except Exception as exc:
-            logger.warning("Failed to parse GLIMS glacier metadata '%s': %s", shp_path, exc)
+            logger.warning("Failed to parse GLIMS glacier metadata '%s': %s", vector_path, exc)
             continue
 
         if frame.empty or GLIMS_ID_COL not in frame.columns:
@@ -963,8 +1076,9 @@ def _append_glacier_subregions(
                 "label": label,
                 "kind": "glacier",
                 "source_folder": str(glims_dir),
-                "source_file": shp_path.name,
-                "shapefile_path": str(shp_path),
+                "source_file": vector_path.name,
+                "vector_path": str(vector_path),
+                "shapefile_path": str(vector_path),
                 "source_id_col": GLIMS_ID_COL,
                 "properties": properties,
                 "geometry": None,
@@ -1602,6 +1716,173 @@ def select_files_for_year_range(
 
 def is_geotiff_dataset(state: Dict[str, Any]) -> bool:
     return state.get("storage") == GEOTIFF_STORAGE
+
+
+def is_geoparquet_dataset(state: Dict[str, Any]) -> bool:
+    return state.get("storage") == GEOPARQUET_STORAGE
+
+
+def ensure_geopandas_available() -> None:
+    if gpd is None:
+        raise HTTPException(
+            status_code=500,
+            detail="GeoPandas is required to read GeoParquet datasets. Install backend dependency 'geopandas'.",
+        )
+
+
+def get_geoparquet_files(state: Dict[str, Any]) -> List[Path]:
+    path = state["path"]
+    if not path.exists():
+        return []
+    return sorted(path.glob(state.get("file_pattern") or "*.parquet"))
+
+
+def parse_discharge_date_from_path(file_path: Path) -> Optional[str]:
+    match = DISCHARGE_DATE_PATTERN.match(file_path.stem)
+    if not match:
+        years = extract_years_from_filename(file_path)
+        if not years:
+            return None
+        return f"{years[0]}-01-01"
+    year, month, day = match.groups()
+    try:
+        return datetime(int(year), int(month), int(day)).strftime("%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def geoparquet_file_in_year_range(
+    file_path: Path,
+    year_start: Optional[int],
+    year_end: Optional[int],
+) -> bool:
+    date_str = parse_discharge_date_from_path(file_path)
+    if not date_str:
+        return False
+    year = int(date_str[:4])
+    if year_start is not None and year < year_start:
+        return False
+    if year_end is not None and year > year_end:
+        return False
+    return True
+
+
+def select_geoparquet_files_for_year_range(
+    geoparquet_files: List[Path],
+    year_start: Optional[int],
+    year_end: Optional[int],
+) -> List[Path]:
+    if year_start is None and year_end is None:
+        return [file_path for file_path in geoparquet_files if parse_discharge_date_from_path(file_path)]
+    return [
+        file_path
+        for file_path in geoparquet_files
+        if geoparquet_file_in_year_range(file_path, year_start, year_end)
+    ]
+
+
+def load_geoparquet_schema(state: Dict[str, Any], geoparquet_files: List[Path]) -> None:
+    if not geoparquet_files:
+        state["variables"] = []
+        state["all_columns"] = []
+        state["default_variable"] = None
+        return
+
+    try:
+        columns = list(pq.ParquetFile(geoparquet_files[0]).schema.names)
+    except Exception:
+        ensure_geopandas_available()
+        columns = list(gpd.read_parquet(geoparquet_files[0]).columns)  # type: ignore[union-attr]
+
+    # GeoParquet writers may expose covering bbox helper columns; keep them out
+    # of the scientific variable list shown in the UI.
+    helper_columns = {"geometry", "xmin", "ymin", "xmax", "ymax"}
+    variables = [
+        column
+        for column in columns
+        if column not in helper_columns and not column.lower().startswith("bbox")
+    ]
+    if DISCHARGE_VALUE_COL in variables:
+        variables = [DISCHARGE_VALUE_COL] + [column for column in variables if column != DISCHARGE_VALUE_COL]
+
+    state["date_col"] = "date"
+    state["lat_col"] = "latitude"
+    state["lon_col"] = "longitude"
+    state["elev_col"] = "elevation_m"
+    state["variables"] = variables
+    state["default_variable"] = DISCHARGE_VALUE_COL if DISCHARGE_VALUE_COL in variables else choose_default_variable(variables)
+    state["all_columns"] = ["date", "latitude", "longitude", "elevation_m"] + variables + ["geometry"]
+
+
+def load_geoparquet_dataset_index(
+    state: Dict[str, Any],
+    force_reload: bool = False,
+    year_start: Optional[int] = None,
+    year_end: Optional[int] = None,
+) -> None:
+    cache_key = build_index_cache_key(year_start, year_end)
+    if state["loaded"] and not force_reload and state.get("active_index_key") == cache_key:
+        return
+
+    if force_reload:
+        state["index_cache"] = {}
+
+    geoparquet_files = get_geoparquet_files(state)
+    if not geoparquet_files:
+        state["loaded"] = False
+        state["active_index_key"] = None
+        state["active_year_start"] = None
+        state["active_year_end"] = None
+        state["date_index"] = {}
+        state["variables"] = []
+        state["all_columns"] = []
+        state["default_variable"] = None
+        state["elevation_range"] = None
+        logger.warning("No GeoParquet files found for dataset '%s' in %s", state["id"], state["path"])
+        return
+
+    if force_reload or not state["all_columns"]:
+        load_geoparquet_schema(state, geoparquet_files)
+
+    cached = state["index_cache"].get(cache_key)
+    if cached and not force_reload:
+        state["date_index"] = cached["date_index"]
+        state["loaded"] = True
+        state["active_index_key"] = cache_key
+        state["active_year_start"] = year_start
+        state["active_year_end"] = year_end
+        return
+
+    candidate_files = select_geoparquet_files_for_year_range(geoparquet_files, year_start, year_end)
+    year_tag = f"{year_start or '*'}-{year_end or '*'}"
+    logger.info(
+        f"Loading index for GeoParquet dataset '{state['id']}' from {state['path']} "
+        f"(years {year_tag}, files {len(candidate_files)}/{len(geoparquet_files)})"
+    )
+
+    date_index: Dict[str, List[str]] = {}
+    for file_path in candidate_files:
+        date_str = parse_discharge_date_from_path(file_path)
+        if not date_str:
+            continue
+        date_index.setdefault(date_str, []).append(str(file_path))
+        logger.info(f"[{state['id']}] Indexed {file_path.name}: {date_str}")
+
+    state["date_index"] = date_index
+    state["loaded"] = True
+    state["active_index_key"] = cache_key
+    state["active_year_start"] = year_start
+    state["active_year_end"] = year_end
+    state["elevation_range"] = {
+        "min": float(state.get("default_elevation", GEOTIFF_DEFAULT_ELEVATION)),
+        "max": float(state.get("default_elevation", GEOTIFF_DEFAULT_ELEVATION)),
+    }
+    state["index_cache"][cache_key] = {"date_index": date_index}
+    while len(state["index_cache"]) > 6:
+        oldest = next(iter(state["index_cache"]))
+        del state["index_cache"][oldest]
+
+    logger.info(f"[{state['id']}] Total indexed dates ({year_tag}): {len(date_index)}")
 
 
 def ensure_rasterio_available() -> None:
@@ -2275,6 +2556,14 @@ def load_dataset_index(
             year_end=year_end,
         )
         return
+    if is_geoparquet_dataset(state):
+        load_geoparquet_dataset_index(
+            state,
+            force_reload=force_reload,
+            year_start=year_start,
+            year_end=year_end,
+        )
+        return
 
     cache_key = build_index_cache_key(year_start, year_end)
     if state["loaded"] and not force_reload and state.get("active_index_key") == cache_key:
@@ -2379,12 +2668,15 @@ def ensure_dataset_loaded(
     load_dataset_index(state, year_start=year_start, year_end=year_end)
     if not state["loaded"]:
         storage = state.get("storage", PARQUET_STORAGE)
-        expected_files = "GeoTIFF files" if storage == GEOTIFF_STORAGE else "parquet files"
-        conversion_hint = (
-            f"Place MOD10A1 .tif/.tiff files in {state['path']}."
-            if storage == GEOTIFF_STORAGE
-            else f"Convert CSV files first in {state['path']}."
-        )
+        if storage == GEOTIFF_STORAGE:
+            expected_files = "GeoTIFF files"
+            conversion_hint = f"Place MOD10A1 .tif/.tiff files in {state['path']}."
+        elif storage == GEOPARQUET_STORAGE:
+            expected_files = "GeoParquet files"
+            conversion_hint = f"Place discharge GeoParquet files in {state['path']}."
+        else:
+            expected_files = "parquet files"
+            conversion_hint = f"Convert CSV files first in {state['path']}."
         raise HTTPException(
             status_code=404,
             detail=(
@@ -2441,6 +2733,222 @@ def validate_variable(state: Dict, variable: Optional[str]) -> str:
     return var_name
 
 
+def _json_safe_scalar(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, (np.integer,)):
+        return int(value)
+    if isinstance(value, (np.floating,)):
+        return float(value) if np.isfinite(value) else None
+    try:
+        if pd.isna(value):
+            return None
+    except Exception:
+        pass
+    return value
+
+
+def _read_discharge_frame(file_path: str, variable: str) -> Any:
+    ensure_geopandas_available()
+    frame = gpd.read_parquet(file_path, columns=[variable, "geometry"])  # type: ignore[union-attr]
+    if frame.empty:
+        return frame
+    frame = frame[frame.geometry.notna() & ~frame.geometry.is_empty].copy()
+    if frame.empty:
+        return frame
+    if frame.crs is not None:
+        try:
+            epsg = frame.crs.to_epsg()
+        except Exception:
+            epsg = None
+        if epsg != 4326:
+            frame = frame.to_crs("EPSG:4326")
+    return frame
+
+
+def _filter_discharge_by_subregion(frame: Any, subregion: Optional[Dict[str, Any]]) -> Any:
+    if not subregion or frame.empty:
+        return frame
+
+    bounds = subregion["bounds"]
+    candidate = frame.cx[
+        float(bounds["min_lon"]):float(bounds["max_lon"]),
+        float(bounds["min_lat"]):float(bounds["max_lat"]),
+    ]
+    if candidate.empty:
+        return candidate
+
+    shapely_geometry = _get_subregion_shapely_geometry(subregion)
+    if shapely_geometry is None:
+        return candidate
+
+    try:
+        return candidate[candidate.geometry.intersects(shapely_geometry)].copy()
+    except Exception:
+        centroids = candidate.geometry.representative_point()
+        mask = points_in_subregion(
+            centroids.x.to_numpy(dtype=np.float64),
+            centroids.y.to_numpy(dtype=np.float64),
+            subregion,
+        )
+        return candidate.loc[mask].copy()
+
+
+def _filter_discharge_by_bbox(
+    frame: Any,
+    min_lat: float,
+    max_lat: float,
+    min_lon: float,
+    max_lon: float,
+) -> Any:
+    if frame.empty:
+        return frame
+    return frame.cx[float(min_lon):float(max_lon), float(min_lat):float(max_lat)]
+
+
+def _discharge_frame_to_features(
+    frame: Any,
+    *,
+    date: str,
+    variable: str,
+    state: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    if frame.empty:
+        return []
+
+    # Sending 30k+ full polygons per date is too heavy for the local browser.
+    # For interactive DN visualization, render each network cell at its
+    # representative point while keeping the exact DN value unchanged.
+    records: List[Dict[str, Any]] = []
+    centroids = frame.geometry.representative_point()
+    for idx, row in frame.iterrows():
+        geometry = row.geometry
+        if geometry is None or geometry.is_empty:
+            continue
+        raw_value = row.get(variable)
+        value = _json_safe_scalar(raw_value)
+        if value is None:
+            continue
+        centroid = centroids.loc[idx]
+        records.append(
+            {
+                "dataset": state["id"],
+                "kind": "discharge_network",
+                "date": date,
+                "variable": variable,
+                "value": float(value),
+                variable: _json_safe_scalar(raw_value),
+                "lat": float(centroid.y),
+                "lon": float(centroid.x),
+                "elev": float(state.get("default_elevation", GEOTIFF_DEFAULT_ELEVATION)),
+            }
+        )
+    return records
+
+
+def query_geoparquet_data(
+    state: Dict[str, Any],
+    query_date: str,
+    variable: str,
+    subregion: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    if query_date not in state["date_index"]:
+        return []
+
+    results: List[Dict[str, Any]] = []
+    for file_path in state["date_index"][query_date]:
+        try:
+            frame = _read_discharge_frame(file_path, variable)
+            frame = _filter_discharge_by_subregion(frame, subregion)
+            results.extend(
+                _discharge_frame_to_features(
+                    frame,
+                    date=query_date,
+                    variable=variable,
+                    state=state,
+                )
+            )
+        except Exception as exc:
+            logger.error(f"[{state['id']}] Error querying GeoParquet {file_path}: {exc}")
+    return results
+
+
+def calculate_geoparquet_basin_mean(
+    state: Dict[str, Any],
+    start_date: str,
+    end_date: str,
+    variable: str,
+    subregion: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    dates = sorted([d for d in state["date_index"].keys() if start_date <= d <= end_date])
+    results: List[Dict[str, Any]] = []
+    for date_key in dates:
+        frames = []
+        for file_path in state["date_index"][date_key]:
+            try:
+                frame = _read_discharge_frame(file_path, variable)
+                frame = _filter_discharge_by_subregion(frame, subregion)
+                if not frame.empty:
+                    frames.append(frame)
+            except Exception as exc:
+                logger.error(f"[{state['id']}] Error in GeoParquet basin mean for {file_path}: {exc}")
+        if not frames:
+            continue
+        combined = pd.concat(frames, ignore_index=True)
+        values = pd.to_numeric(combined[variable], errors="coerce").dropna()
+        if values.empty:
+            continue
+        results.append(
+            {
+                "date": date_key,
+                "mean_value": float(values.mean()),
+                "pixel_count": int(values.count()),
+            }
+        )
+    return results
+
+
+def calculate_geoparquet_region_mean(
+    state: Dict[str, Any],
+    year: int,
+    min_lat: float,
+    max_lat: float,
+    min_lon: float,
+    max_lon: float,
+    variable: str,
+    subregion: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    start_date = f"{year}-01-01"
+    end_date = f"{year}-12-31"
+    dates = sorted([d for d in state["date_index"].keys() if start_date <= d <= end_date])
+    results: List[Dict[str, Any]] = []
+    for date_key in dates:
+        frames = []
+        for file_path in state["date_index"][date_key]:
+            try:
+                frame = _read_discharge_frame(file_path, variable)
+                frame = _filter_discharge_by_bbox(frame, min_lat, max_lat, min_lon, max_lon)
+                frame = _filter_discharge_by_subregion(frame, subregion)
+                if not frame.empty:
+                    frames.append(frame)
+            except Exception as exc:
+                logger.error(f"[{state['id']}] Error in GeoParquet region mean for {file_path}: {exc}")
+        if not frames:
+            continue
+        combined = pd.concat(frames, ignore_index=True)
+        values = pd.to_numeric(combined[variable], errors="coerce").dropna()
+        if values.empty:
+            continue
+        results.append(
+            {
+                "date": date_key,
+                "mean_value": float(values.mean()),
+                "pixel_count": int(values.count()),
+            }
+        )
+    return results
+
+
 def query_data(
     state: Dict,
     query_date: str,
@@ -2455,6 +2963,13 @@ def query_data(
             query_date,
             elev_min,
             elev_max,
+            variable,
+            subregion=subregion,
+        )
+    if is_geoparquet_dataset(state):
+        return query_geoparquet_data(
+            state,
+            query_date,
             variable,
             subregion=subregion,
         )
@@ -2526,6 +3041,14 @@ def calculate_basin_mean(
             end_date,
             elev_min,
             elev_max,
+            variable,
+            subregion=subregion,
+        )
+    if is_geoparquet_dataset(state):
+        return calculate_geoparquet_basin_mean(
+            state,
+            start_date,
+            end_date,
             variable,
             subregion=subregion,
         )
@@ -2625,6 +3148,17 @@ def calculate_region_mean(
             variable,
             subregion=subregion,
         )
+    if is_geoparquet_dataset(state):
+        return calculate_geoparquet_region_mean(
+            state,
+            year,
+            min_lat,
+            max_lat,
+            min_lon,
+            max_lon,
+            variable,
+            subregion=subregion,
+        )
 
     start_date = f"{year}-01-01"
     end_date = f"{year}-12-31"
@@ -2718,7 +3252,7 @@ def calculate_hotspot_trends(
     Compute long-term change hotspots by fitting a linear trend (value/year)
     at each grid point from annual mean series.
     """
-    if is_geotiff_dataset(state):
+    if is_geotiff_dataset(state) or is_geoparquet_dataset(state):
         return empty_hotspot_result_for_dataset(state, year_start, year_end, min_years)
 
     date_col = state["date_col"]
@@ -3251,6 +3785,23 @@ async def get_available_years(dataset: Optional[str] = Query(None, description="
                 "max_year": years_list[-1] if years_list else None,
             }
         )
+    if is_geoparquet_dataset(state):
+        geoparquet_files = get_geoparquet_files(state)
+        years = {
+            int(date_str[:4])
+            for file_path in geoparquet_files
+            if (date_str := parse_discharge_date_from_path(file_path))
+        }
+        years_list = sorted(years)
+        return JSONResponse(
+            content={
+                "dataset": state["id"],
+                "dataset_label": state["label"],
+                "years": years_list,
+                "min_year": years_list[0] if years_list else None,
+                "max_year": years_list[-1] if years_list else None,
+            }
+        )
 
     parquet_files = sorted(state["path"].glob("*.parquet")) if state["path"].exists() else []
     if not parquet_files:
@@ -3451,9 +4002,9 @@ async def get_glacier_overview(
     )
 
     for source in glacier_sources:
-        shapefile_path = Path(source["path"])
-        if not shapefile_path.exists():
-            logger.warning("Glacier shapefile missing during overview read: %s", shapefile_path)
+        vector_path = Path(source["path"])
+        if not vector_path.exists():
+            logger.warning("Glacier vector source missing during overview read: %s", vector_path)
             continue
 
         source_id_col = str(source.get("id_col") or "")
@@ -3473,13 +4024,13 @@ async def get_glacier_overview(
 
         try:
             frame = _read_glacier_dataframe(
-                shapefile_path=shapefile_path,
+                vector_path,
                 columns=read_columns,
                 bbox=bbox,
                 max_features=per_source_read_limit,
             )
         except Exception as exc:
-            logger.warning("Failed reading glacier shapefile '%s': %s", shapefile_path, exc)
+            logger.warning("Failed reading glacier vector source '%s': %s", vector_path, exc)
             continue
 
         if frame.empty:
@@ -3503,7 +4054,7 @@ async def get_glacier_overview(
                     try:
                         frame = frame.to_crs("EPSG:4326")
                     except Exception as exc:
-                        logger.warning("Skipping '%s' due to CRS transform failure: %s", shapefile_path, exc)
+                        logger.warning("Skipping '%s' due to CRS transform failure: %s", vector_path, exc)
                         continue
 
         if source_id_col not in frame.columns:
@@ -3974,6 +4525,42 @@ async def get_stats(
     state = ensure_dataset_loaded(dataset, year_start=year_start, year_end=year_end)
     if is_geotiff_dataset(state):
         return get_geotiff_stats_payload(state, year_start, year_end)
+    if is_geoparquet_dataset(state):
+        geoparquet_files = get_geoparquet_files(state)
+        filtered_files = select_geoparquet_files_for_year_range(geoparquet_files, year_start, year_end)
+        total_size = sum(file_path.stat().st_size for file_path in filtered_files)
+        sample_file = filtered_files[0] if filtered_files else geoparquet_files[0]
+        ensure_geopandas_available()
+        sample_frame = gpd.read_parquet(sample_file)  # type: ignore[union-attr]
+        sample_stats = {
+            "columns": list(sample_frame.columns),
+            "sample_records": int(len(sample_frame)),
+            "geometry_types": {
+                str(key): int(value)
+                for key, value in sample_frame.geom_type.value_counts(dropna=False).to_dict().items()
+            },
+        }
+        if DISCHARGE_VALUE_COL in sample_frame.columns:
+            values = pd.to_numeric(sample_frame[DISCHARGE_VALUE_COL], errors="coerce").dropna()
+            if not values.empty:
+                sample_stats["value_range"] = {
+                    "min": float(values.min()),
+                    "max": float(values.max()),
+                    "mean": float(values.mean()),
+                }
+
+        return {
+            "dataset": state["id"],
+            "dataset_label": state["label"],
+            "dataset_path": str(state["path"]),
+            "total_files": len(filtered_files),
+            "total_size_mb": round(total_size / (1024 * 1024), 2),
+            "total_dates": len(state["date_index"]),
+            "year_start": year_start,
+            "year_end": year_end,
+            "variables": state["variables"],
+            "sample_stats": sample_stats,
+        }
 
     parquet_files = sorted(state["path"].glob("*.parquet"))
     if not parquet_files:

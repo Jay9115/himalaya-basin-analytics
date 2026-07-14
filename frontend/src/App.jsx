@@ -52,6 +52,7 @@ function App() {
   const [currentDate, setCurrentDate] = useState(null);
   const [variables, setVariables] = useState([]);
   const [selectedVariable, setSelectedVariable] = useState('temperature_C');
+  const [variablesContextKey, setVariablesContextKey] = useState('');
   const [years, setYears] = useState([]);
   const [selectedYear, setSelectedYear] = useState(null);
   const [regionSelectMode, setRegionSelectMode] = useState(false);
@@ -106,6 +107,15 @@ function App() {
   const activeYearRange = selectedYearRange.start !== null && selectedYearRange.end !== null
     ? selectedYearRange
     : null;
+  const datasetContextKey = activeYearRange
+    ? `${datasetId}:${activeYearRange.start}-${activeYearRange.end}`
+    : '';
+  const selectedVariableReady = Boolean(
+    datasetContextKey
+      && variablesContextKey === datasetContextKey
+      && selectedVariable
+      && variables.includes(selectedVariable)
+  );
   const selectedSubregion = subregions.find((item) => item.id === selectedSubregionId) || null;
   const basinSubregions = useMemo(
     () => subregions.filter((item) => item.kind !== 'glacier'),
@@ -378,9 +388,16 @@ function App() {
     if (!datasetReady || !datasetId || !activeYearRange) return;
 
     const initialize = async () => {
+      const contextKey = `${datasetId}:${activeYearRange.start}-${activeYearRange.end}`;
       try {
         setLoading(true);
         setError(null);
+        setVariables([]);
+        setSelectedVariable('');
+        setVariablesContextKey('');
+        setMapData([]);
+        setGraphData([]);
+        setHotspotData([]);
         
         // Fetch available dates (critical)
         const datesResponse = await apiService.getAvailableDates(datasetId, activeYearRange);
@@ -415,9 +432,13 @@ function App() {
             if (varResponse.variables && varResponse.variables.length > 0) {
               setVariables(varResponse.variables);
               setSelectedVariable(varResponse.default_variable || varResponse.variables[0]);
+              setVariablesContextKey(contextKey);
             }
           })
-          .catch(err => console.warn('Could not load variables:', err));
+          .catch(err => {
+            setVariablesContextKey('');
+            console.warn('Could not load variables:', err);
+          });
         
       } catch (err) {
         console.error('Initialization error:', err);
@@ -431,7 +452,7 @@ function App() {
 
   // Fetch map data when date or elevation changes
   useEffect(() => {
-    if (!datasetReady || !datasetId || !currentDate || !activeYearRange || isHotspotMode) return;
+    if (!datasetReady || !datasetId || !currentDate || !activeYearRange || !selectedVariableReady || isHotspotMode) return;
 
     const controller = new AbortController();
     if (mapAbortRef.current) {
@@ -470,11 +491,11 @@ function App() {
     return () => {
       controller.abort();
     };
-  }, [datasetReady, datasetId, currentDate, selectedElevRange, selectedVariable, activeYearRange, selectedSubregionId, isHotspotMode]);
+  }, [datasetReady, datasetId, currentDate, selectedElevRange, selectedVariable, selectedVariableReady, activeYearRange, selectedSubregionId, isHotspotMode]);
 
   // Fetch hotspot trends for long-term change analysis
   useEffect(() => {
-    if (!datasetReady || !datasetId || !activeYearRange || !selectedVariable || !isHotspotMode) return;
+    if (!datasetReady || !datasetId || !activeYearRange || !selectedVariableReady || !isHotspotMode) return;
 
     const controller = new AbortController();
     if (hotspotAbortRef.current) {
@@ -524,6 +545,7 @@ function App() {
     activeYearRange,
     selectedElevRange,
     selectedVariable,
+    selectedVariableReady,
     selectedSubregionId,
     isHotspotMode,
     hotspotMinYears,
@@ -531,7 +553,7 @@ function App() {
 
   // Fetch graph data when elevation changes
   useEffect(() => {
-    if (!datasetReady || !datasetId || !dates || dates.length === 0 || !activeYearRange) return;
+    if (!datasetReady || !datasetId || !dates || dates.length === 0 || !activeYearRange || !selectedVariableReady) return;
 
     const controller = new AbortController();
     if (graphAbortRef.current) {
@@ -587,7 +609,7 @@ function App() {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [datasetReady, datasetId, dates, selectedElevRange, selectedVariable, regionBounds, selectedYear, activeYearRange, selectedSubregionId]);
+  }, [datasetReady, datasetId, dates, selectedElevRange, selectedVariable, selectedVariableReady, regionBounds, selectedYear, activeYearRange, selectedSubregionId]);
 
   // Animation control using requestAnimationFrame
   const animate = useCallback(() => {

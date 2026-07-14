@@ -131,6 +131,15 @@ const getColorForTrend = (value, maxAbs) => {
   return [Math.max(20, red), Math.max(40, green), Math.min(255, blue), 220];
 };
 
+const getDatumValue = (item) => {
+  if (!item) return NaN;
+  if (Number.isFinite(item.value)) return item.value;
+  const propValue = item.properties?.value;
+  return Number.isFinite(propValue) ? propValue : Number(propValue);
+};
+
+const isGeoJsonFeature = (item) => item?.type === 'Feature' && item?.geometry;
+
 const getGlacierMaxFeaturesForZoom = (zoom) => {
   if (zoom >= 10) return 5000;
   if (zoom >= 8) return 3200;
@@ -512,7 +521,7 @@ function MapView({
     let min = Infinity;
     let max = -Infinity;
     for (const point of data) {
-      const value = point.value;
+      const value = getDatumValue(point);
       if (!Number.isFinite(value)) continue;
       if (value < min) min = value;
       if (value > max) max = value;
@@ -558,6 +567,8 @@ function MapView({
 
   const layers = useMemo(() => {
     const result = [];
+    const featureData = (data || []).filter(isGeoJsonFeature);
+    const pointData = (data || []).filter((item) => !isGeoJsonFeature(item));
 
     if (!glacierViewEnabled && basinGeoJson) {
       result.push(
@@ -621,18 +632,50 @@ function MapView({
       return result;
     }
 
+    if (featureData.length > 0) {
+      result.push(
+        new GeoJsonLayer({
+          id: 'geoparquet-network-cells',
+          data: {
+            type: 'FeatureCollection',
+            features: featureData,
+          },
+          pickable: true,
+          stroked: true,
+          filled: true,
+          opacity: 0.86,
+          getFillColor: (feature) => getColorForValue(getDatumValue(feature), valueRange.min, valueRange.max),
+          getLineColor: theme === 'dark' ? [10, 16, 24, 80] : [255, 255, 255, 95],
+          lineWidthUnits: 'pixels',
+          lineWidthMinPixels: 0.05,
+          lineWidthMaxPixels: 0.45,
+          getLineWidth: 0.18,
+          updateTriggers: {
+            getFillColor: [valueRange.min, valueRange.max],
+            getLineColor: [theme],
+          },
+          parameters: { depthTest: false },
+        })
+      );
+    }
+
+    if (pointData.length === 0) {
+      return result;
+    }
+
     const scatterLayer = new ScatterplotLayer({
       id: 'variable-scatter',
-      data: data,
+      data: pointData,
       pickable: true,
       opacity: analysisMode === 'hotspot' ? 0.82 : 0.7,
       stroked: false,
       filled: true,
       radiusScale: 1,
       radiusMinPixels: analysisMode === 'hotspot' ? 3 : 2,
-      radiusMaxPixels: analysisMode === 'hotspot' ? 10 : 8,
+      radiusMaxPixels: analysisMode === 'hotspot' ? 10 : 9,
       getPosition: (d) => [d.lon, d.lat],
       getRadius: (d) => {
+        if (d?.kind === 'discharge_network') return 520;
         if (analysisMode !== 'hotspot') return 300;
         const strength = Number.isFinite(d?.trend_strength) ? d.trend_strength : 0;
         const maxAbs = trendRange.maxAbs || 1;
@@ -642,7 +685,7 @@ function MapView({
       getFillColor: (d) => (
         analysisMode === 'hotspot'
           ? getColorForTrend(d.slope_per_year, trendRange.maxAbs)
-          : getColorForValue(d.value, valueRange.min, valueRange.max)
+          : getColorForValue(getDatumValue(d), valueRange.min, valueRange.max)
       ),
       updateTriggers: {
         getFillColor: [analysisMode, valueRange.min, valueRange.max, trendRange.maxAbs],
@@ -692,6 +735,34 @@ function MapView({
               <span>${props.rgi_id || 'N/A'}</span>
               <span style="color: var(--text-muted);">Area:</span>
               <span>${area}</span>
+            </div>
+          </div>
+        `,
+        style: {
+          backgroundColor: 'transparent',
+          fontSize: '14px',
+        },
+      };
+    }
+
+    if (object?.properties?.kind === 'discharge_network' || object?.kind === 'discharge_network') {
+      const props = object.properties || object || {};
+      const value = getDatumValue(object);
+      const lat = Number(props.lat);
+      const lon = Number(props.lon);
+      return {
+        html: `
+          <div style="background: var(--tooltip-bg); padding: 12px; border-radius: 8px; color: var(--text); border: 1px solid var(--tooltip-border);">
+            <div style="margin-bottom: 8px; font-weight: bold; border-bottom: 1px solid var(--map-overlay-border); padding-bottom: 4px;">
+              Discharge Network Cell
+            </div>
+            <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; font-size: 13px;">
+              <span style="color: var(--text-muted);">Date:</span>
+              <span>${props.date || currentDate}</span>
+              <span style="color: var(--text-muted);">${variableLabel || props.variable || 'Value'}:</span>
+              <span style="font-weight: bold;">${Number.isFinite(value) ? value.toFixed(2) : 'N/A'}</span>
+              <span style="color: var(--text-muted);">Coordinates:</span>
+              <span>${Number.isFinite(lat) ? lat.toFixed(4) : 'N/A'}N, ${Number.isFinite(lon) ? lon.toFixed(4) : 'N/A'}E</span>
             </div>
           </div>
         `,

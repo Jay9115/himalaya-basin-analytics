@@ -30,10 +30,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-
-INPUT_DIR_PATH = SCRIPT_DIR
-OUTPUT_DIR_PATH = SCRIPT_DIR / "output"
+INPUT_DIR_PATH = Path(r"D:\ISRO-SWOT\Webapp\himalaya-basin-analytics\SPHY_Model_data_prep")
+OUTPUT_DIR_PATH = Path(r"D:\ISRO-SWOT\Webapp\himalaya-basin-analytics\SPHY_Model_data_prep\test_1")
 
 DEFAULT_SOURCE_DIR = INPUT_DIR_PATH
 DEFAULT_OUTPUT_DIR = OUTPUT_DIR_PATH
