@@ -90,27 +90,86 @@ const shouldHideBaseLayer = (layerId, layerType) => {
   return id.includes('admin') || id.includes('boundary') || id.includes('border');
 };
 
-const getColorForValue = (value, min, max) => {
-  if (!Number.isFinite(value)) return [120, 120, 120, 80];
-  if (max <= min) return [0, 150, 255, 200];
-  const p20 = min + (max - min) * 0.2;
-  const p40 = min + (max - min) * 0.4;
-  const p60 = min + (max - min) * 0.6;
-  const p80 = min + (max - min) * 0.8;
+const paletteStops = {
+  viridis: [
+    [68, 1, 84],
+    [59, 82, 139],
+    [33, 145, 140],
+    [94, 201, 98],
+    [253, 231, 37],
+  ],
+  magma: [
+    [0, 0, 4],
+    [80, 18, 123],
+    [182, 54, 121],
+    [251, 136, 97],
+    [252, 253, 191],
+  ],
+  turbo: [
+    [48, 18, 59],
+    [50, 101, 222],
+    [50, 216, 164],
+    [251, 210, 73],
+    [180, 4, 38],
+  ],
+  blue_red: [
+    [43, 120, 190],
+    [255, 255, 255],
+    [202, 0, 32],
+  ],
+};
 
-  if (value < p20) {
-    return [0, 0, 255, 200];
+const clamp01 = (value) => Math.max(0, Math.min(1, value));
+
+const getPaletteStops = (style, fallback = 'viridis') => {
+  if (style?.palette) {
+    return paletteStops[String(style.palette).toLowerCase()] || paletteStops[fallback] || paletteStops.viridis;
   }
-  if (value < p40) {
-    return [0, 150, 255, 200];
+  return paletteStops[fallback] || paletteStops.viridis;
+};
+
+const parseColor = (color, alpha) => {
+  if (Array.isArray(color) && color.length >= 3) {
+    return [
+      Number(color[0]) || 0,
+      Number(color[1]) || 0,
+      Number(color[2]) || 0,
+      Number.isFinite(Number(color[3])) ? Number(color[3]) : alpha,
+    ];
   }
-  if (value < p60) {
-    return [0, 255, 0, 200];
+  if (typeof color === 'string' && /^#[0-9a-fA-F]{6}$/.test(color)) {
+    return [
+      Number.parseInt(color.slice(1, 3), 16),
+      Number.parseInt(color.slice(3, 5), 16),
+      Number.parseInt(color.slice(5, 7), 16),
+      alpha,
+    ];
   }
-  if (value < p80) {
-    return [255, 200, 0, 200];
-  }
-  return [255, 0, 0, 200];
+  return null;
+};
+
+const interpolateColor = (stops, ratio, alpha) => {
+  const safeStops = stops && stops.length >= 2 ? stops : paletteStops.viridis;
+  const scaled = clamp01(ratio) * (safeStops.length - 1);
+  const lower = Math.floor(scaled);
+  const upper = Math.min(safeStops.length - 1, lower + 1);
+  const local = scaled - lower;
+  const color = [0, 1, 2].map((index) => Math.round(
+    safeStops[lower][index] + (safeStops[upper][index] - safeStops[lower][index]) * local
+  ));
+  return [...color, alpha];
+};
+
+const getColorForValue = (value, min, max, style = null) => {
+  const alpha = Math.round(clamp01(Number(style?.opacity ?? 0.78)) * 255);
+  if (!Number.isFinite(value)) return [120, 120, 120, 80];
+  const fixedColor = parseColor(style?.color, alpha);
+  if (fixedColor) return fixedColor;
+  const palette = getPaletteStops(style, 'viridis');
+  const styledMin = Number.isFinite(Number(style?.vmin)) ? Number(style.vmin) : min;
+  const styledMax = Number.isFinite(Number(style?.vmax)) ? Number(style.vmax) : max;
+  const ratio = styledMax <= styledMin ? 0.5 : (value - styledMin) / (styledMax - styledMin);
+  return interpolateColor(palette, ratio, alpha);
 };
 
 const getColorForTrend = (value, maxAbs) => {
@@ -118,17 +177,7 @@ const getColorForTrend = (value, maxAbs) => {
     return [140, 140, 140, 140];
   }
   const normalized = Math.max(-1, Math.min(1, value / maxAbs));
-  const intensity = Math.abs(normalized);
-  if (normalized >= 0) {
-    const red = Math.round(170 + 85 * intensity);
-    const green = Math.round(160 - 150 * intensity);
-    const blue = Math.round(150 - 145 * intensity);
-    return [red, Math.max(20, green), Math.max(10, blue), 220];
-  }
-  const red = Math.round(150 - 130 * intensity);
-  const green = Math.round(170 - 120 * intensity);
-  const blue = Math.round(175 + 80 * intensity);
-  return [Math.max(20, red), Math.max(40, green), Math.min(255, blue), 220];
+  return interpolateColor(paletteStops.blue_red, (normalized + 1) / 2, 220);
 };
 
 const getDatumValue = (item) => {
@@ -162,6 +211,7 @@ function MapView({
   focusLocation,
   analysisMode = 'daily',
   hotspotSummary = null,
+  layerStyle = null,
 }) {
   const lightStyleOverride = import.meta.env.VITE_MAP_STYLE_LIGHT;
   const darkStyleOverride = import.meta.env.VITE_MAP_STYLE_DARK;
@@ -518,6 +568,11 @@ function MapView({
     if (!data || data.length === 0) {
       return { min: 0, max: 1 };
     }
+    const styledMin = Number(layerStyle?.vmin);
+    const styledMax = Number(layerStyle?.vmax);
+    if (Number.isFinite(styledMin) && Number.isFinite(styledMax) && styledMin < styledMax) {
+      return { min: styledMin, max: styledMax };
+    }
     let min = Infinity;
     let max = -Infinity;
     for (const point of data) {
@@ -533,7 +588,7 @@ function MapView({
       return { min, max: min + 1 };
     }
     return { min, max };
-  }, [data]);
+  }, [data, layerStyle]);
 
   const trendRange = useMemo(() => {
     if (analysisMode !== 'hotspot' || !data || data.length === 0) {
@@ -549,21 +604,36 @@ function MapView({
     return { maxAbs: maxAbs > 0 ? maxAbs : 1 };
   }, [analysisMode, data]);
 
-  const legendSteps = useMemo(() => {
+  const legendPalette = useMemo(() => {
+    if (analysisMode === 'hotspot') {
+      return paletteStops.blue_red;
+    }
+    return getPaletteStops(layerStyle, 'viridis');
+  }, [analysisMode, layerStyle]);
+
+  const legendRange = useMemo(() => {
     if (analysisMode === 'hotspot') {
       const maxAbs = trendRange.maxAbs;
-      return [-maxAbs, -0.5 * maxAbs, -0.2 * maxAbs, 0, 0.2 * maxAbs, 0.5 * maxAbs, maxAbs];
+      return {
+        min: -maxAbs,
+        mid: 0,
+        max: maxAbs,
+      };
     }
-    const { min, max } = valueRange;
-    return [
-      min,
-      min + (max - min) * 0.2,
-      min + (max - min) * 0.4,
-      min + (max - min) * 0.6,
-      min + (max - min) * 0.8,
-      max,
-    ];
-  }, [analysisMode, valueRange, trendRange]);
+    return {
+      min: valueRange.min,
+      mid: valueRange.min + ((valueRange.max - valueRange.min) / 2),
+      max: valueRange.max,
+    };
+  }, [analysisMode, trendRange.maxAbs, valueRange.min, valueRange.max]);
+
+  const legendGradient = useMemo(() => {
+    const safeStops = legendPalette && legendPalette.length >= 2 ? legendPalette : paletteStops.viridis;
+    const step = 100 / (safeStops.length - 1);
+    return `linear-gradient(90deg, ${safeStops
+      .map(([r, g, b], index) => `rgb(${r}, ${g}, ${b}) ${Math.round(index * step)}%`)
+      .join(', ')})`;
+  }, [legendPalette]);
 
   const layers = useMemo(() => {
     const result = [];
@@ -644,7 +714,7 @@ function MapView({
           stroked: true,
           filled: true,
           opacity: 0.86,
-          getFillColor: (feature) => getColorForValue(getDatumValue(feature), valueRange.min, valueRange.max),
+          getFillColor: (feature) => getColorForValue(getDatumValue(feature), valueRange.min, valueRange.max, layerStyle),
           getLineColor: theme === 'dark' ? [10, 16, 24, 80] : [255, 255, 255, 95],
           lineWidthUnits: 'pixels',
           lineWidthMinPixels: 0.05,
@@ -685,10 +755,10 @@ function MapView({
       getFillColor: (d) => (
         analysisMode === 'hotspot'
           ? getColorForTrend(d.slope_per_year, trendRange.maxAbs)
-          : getColorForValue(getDatumValue(d), valueRange.min, valueRange.max)
+          : getColorForValue(getDatumValue(d), valueRange.min, valueRange.max, layerStyle)
       ),
       updateTriggers: {
-        getFillColor: [analysisMode, valueRange.min, valueRange.max, trendRange.maxAbs],
+        getFillColor: [analysisMode, valueRange.min, valueRange.max, trendRange.maxAbs, layerStyle],
         getRadius: [analysisMode, trendRange.maxAbs],
       },
       parameters: { depthTest: false },
@@ -1037,45 +1107,26 @@ function MapView({
         <div style={{ fontWeight: 'bold', marginBottom: '10px' }}>
           {analysisMode === 'hotspot' ? 'Trend Hotspots (Slope / Year)' : `${variableLabel || 'Value'} Scale`}
         </div>
-        {analysisMode === 'hotspot' ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div style={{ width: '20px', height: '12px', background: 'rgb(26, 61, 255)', borderRadius: '2px' }}></div>
-              <span>Strong decrease ({legendSteps[0].toFixed(3)} to {legendSteps[2].toFixed(3)})</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div style={{ width: '20px', height: '12px', background: 'rgb(160, 170, 190)', borderRadius: '2px' }}></div>
-              <span>Low change ({legendSteps[2].toFixed(3)} to {legendSteps[4].toFixed(3)})</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div style={{ width: '20px', height: '12px', background: 'rgb(255, 58, 22)', borderRadius: '2px' }}></div>
-              <span>Strong increase ({legendSteps[4].toFixed(3)} to {legendSteps[6].toFixed(3)})</span>
-            </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div
+            style={{
+              height: '12px',
+              borderRadius: '999px',
+              background: legendGradient,
+              border: '1px solid var(--map-overlay-border)',
+            }}
+          />
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', fontSize: '11px', color: 'var(--map-overlay-muted)' }}>
+            <span>{legendRange.min.toFixed(3)}</span>
+            <span>{legendRange.mid.toFixed(3)}</span>
+            <span>{legendRange.max.toFixed(3)}</span>
           </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div style={{ width: '20px', height: '12px', background: 'rgb(0, 0, 255)', borderRadius: '2px' }}></div>
-              <span>&lt; {legendSteps[1].toFixed(2)}</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div style={{ width: '20px', height: '12px', background: 'rgb(0, 150, 255)', borderRadius: '2px' }}></div>
-              <span>{legendSteps[1].toFixed(2)} to {legendSteps[2].toFixed(2)}</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div style={{ width: '20px', height: '12px', background: 'rgb(0, 255, 0)', borderRadius: '2px' }}></div>
-              <span>{legendSteps[2].toFixed(2)} to {legendSteps[3].toFixed(2)}</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div style={{ width: '20px', height: '12px', background: 'rgb(255, 200, 0)', borderRadius: '2px' }}></div>
-              <span>{legendSteps[3].toFixed(2)} to {legendSteps[4].toFixed(2)}</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div style={{ width: '20px', height: '12px', background: 'rgb(255, 0, 0)', borderRadius: '2px' }}></div>
-              <span>{legendSteps[4].toFixed(2)} to {legendSteps[5].toFixed(2)}</span>
-            </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', fontSize: '11px', color: 'var(--map-overlay-muted)' }}>
+            <span>{analysisMode === 'hotspot' ? 'Decrease' : 'Low'}</span>
+            <span>{analysisMode === 'hotspot' ? 'Neutral' : 'Mid'}</span>
+            <span>{analysisMode === 'hotspot' ? 'Increase' : 'High'}</span>
           </div>
-        )}
+        </div>
         <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--map-overlay-border)', fontSize: '11px', color: 'var(--map-overlay-muted)' }}>
           {data.length.toLocaleString()} {analysisMode === 'hotspot' ? 'trend points' : 'data points'}
           {analysisMode === 'hotspot' && hotspotSummary?.hotspots_identified !== undefined && (

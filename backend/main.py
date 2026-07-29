@@ -32,6 +32,8 @@ from nc_ingest import (
     list_uploaded_dataset_configs,
     slugify,
 )
+from custom_operations.data_access import OperationBackendHooks
+from custom_operations.router import build_custom_operations_router
 
 
 logging.basicConfig(level=logging.INFO)
@@ -3461,6 +3463,24 @@ def calculate_hotspot_trends(
         "top_hotspots": top_hotspots,
     }
 
+
+def register_custom_operations_router() -> None:
+    app.include_router(
+        build_custom_operations_router(
+            hooks=OperationBackendHooks(
+                ensure_dataset_loaded=ensure_dataset_loaded,
+                validate_variable=validate_variable,
+                resolve_elevation_bounds=resolve_elevation_bounds,
+                normalize_year_range=normalize_year_range,
+                get_subregion=get_subregion,
+                query_data=query_data,
+            ),
+            workspace_root=WEBAPP_DIR / "HBapi" / "workspace" / "custom_operations",
+        )
+    )
+
+
+register_custom_operations_router()
 
 
 

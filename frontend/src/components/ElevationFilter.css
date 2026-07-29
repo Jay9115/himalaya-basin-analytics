@@ -1,12 +1,19 @@
-/* Elevation Filter Component Styles */
+/* Compact dual-handle elevation filter */
 .elevation-filter {
   background: var(--bg-panel);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+}
+
+.elevation-filter-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .elevation-filter h3 {
@@ -18,202 +25,107 @@
   text-transform: uppercase;
 }
 
-/* Preset Buttons */
-.preset-buttons {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-  margin-bottom: 0;
-}
-
-.preset-btn {
-  min-height: 32px;
-  padding: 7px 8px;
-  background: var(--input-bg);
-  border: 1px solid var(--input-border);
-  color: var(--text);
-  border-radius: 7px;
-  cursor: pointer;
+.elevation-range-readout {
+  padding: 5px 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--input-border) 65%);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent 88%);
+  color: var(--accent);
   font-size: 12px;
-  font-weight: 600;
-  transition: border-color 0.16s ease, background-color 0.16s ease, color 0.16s ease;
-  text-align: center;
-  line-height: 1.2;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
-.preset-btn:first-child {
-  grid-column: 1 / -1;
-}
-
-.preset-btn:hover {
-  background: var(--hover-bg);
-  border-color: var(--accent);
-}
-
-.preset-btn.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #ffffff;
-  font-weight: 600;
-  box-shadow: none;
-}
-
-/* Range Sliders */
-.range-sliders {
+.dual-range-wrap {
+  position: relative;
+  height: 34px;
   display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-bottom: 0;
-}
-
-.slider-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.slider-group label {
-  font-size: 12px;
-  color: var(--text-muted);
-  display: flex;
-  justify-content: space-between;
   align-items: center;
 }
 
-.slider-group strong {
-  color: var(--accent);
-  font-size: 12px;
-}
-
-.elevation-slider {
-  width: 100%;
-  height: 6px;
-  border-radius: 3px;
-  outline: none;
-  -webkit-appearance: none;
-  appearance: none;
-  cursor: pointer;
-}
-
-.elevation-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--accent);
-  cursor: pointer;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent 80%);
-  transition: all 0.2s ease;
-}
-
-.elevation-slider::-webkit-slider-thumb:hover {
-  box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 24%, transparent 76%);
-}
-
-.elevation-slider::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
-  border: none;
-  border-radius: 50%;
-  background: var(--accent);
-  cursor: pointer;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent 80%);
-  transition: all 0.2s ease;
-}
-
-.elevation-slider::-moz-range-thumb:hover {
-  box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 24%, transparent 76%);
-}
-
-/* Custom Input */
-.custom-input {
-  background: var(--panel-bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin-bottom: 0;
-}
-
-.input-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.input-group label {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.elevation-input {
-  height: 34px;
-  padding: 7px 9px;
-  background: var(--input-bg);
-  border: 1px solid var(--input-border);
-  border-radius: 7px;
-  color: var(--text);
-  font-size: 13px;
-  transition: all 0.2s ease;
-}
-
-.elevation-input:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(77, 171, 247, 0.1);
-}
-
-.apply-btn {
-  grid-column: 1 / -1;
-  min-height: 34px;
-  padding: 8px 12px;
-  background: var(--accent-2);
-  border: none;
-  color: #ffffff;
-  border-radius: 7px;
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 600;
-  transition: all 0.2s ease;
-}
-
-.apply-btn:hover {
-  background: var(--accent-2-strong);
-}
-
-/* Current Range Display */
-.current-range {
-  margin-top: 0;
-}
-
-.range-bar {
-  position: relative;
-  height: 6px;
-  background: var(--input-bg);
-  border-radius: 999px;
-  margin-bottom: 8px;
-}
-
-.range-fill {
+.dual-range-track {
   position: absolute;
-  height: 100%;
-  background: var(--accent);
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 6px;
+  transform: translateY(-50%);
   border-radius: 999px;
-  transition: all 0.3s ease;
+  background: var(--input-bg);
+  overflow: hidden;
 }
 
-.range-labels {
+.dual-range-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+}
+
+.dual-range-input {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 34px;
+  margin: 0;
+  pointer-events: none;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.dual-range-input::-webkit-slider-thumb {
+  width: 16px;
+  height: 16px;
+  border: 2px solid color-mix(in srgb, var(--bg-elevated) 94%, #fff 6%);
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  pointer-events: auto;
+  -webkit-appearance: none;
+  appearance: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent 78%);
+}
+
+.dual-range-input::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: 2px solid color-mix(in srgb, var(--bg-elevated) 94%, #fff 6%);
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent 78%);
+}
+
+.dual-range-max::-webkit-slider-thumb {
+  background: var(--accent-2);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-2) 22%, transparent 78%);
+}
+
+.dual-range-max::-moz-range-thumb {
+  background: var(--accent-2);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-2) 22%, transparent 78%);
+}
+
+.dual-range-input::-webkit-slider-runnable-track {
+  background: transparent;
+}
+
+.dual-range-input::-moz-range-track {
+  background: transparent;
+}
+
+.range-labels.compact {
   display: flex;
   justify-content: space-between;
+  gap: 10px;
   font-size: 11px;
   color: var(--text-muted);
 }
 
 .selected-range {
   color: var(--accent);
-  font-weight: 600;
-  font-size: 12px;
+  font-weight: 700;
 }

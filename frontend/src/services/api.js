@@ -231,6 +231,55 @@ class APIService {
     );
   }
 
+  async getOperationCapabilities() {
+    return this.getWithCache('/operations/capabilities');
+  }
+
+  async validateOperationCode(code, signal) {
+    const response = await this.client.post('/operations/validate', { code }, { signal });
+    return response.data;
+  }
+
+  async planOperation(selection, signal) {
+    const response = await this.client.post('/operations/plan', { selection }, { signal });
+    return response.data;
+  }
+
+  async runOperation(payload, signal) {
+    const response = await this.client.post('/operations/run', payload, {
+      signal,
+      timeout: 0,
+    });
+    return response.data;
+  }
+
+  async submitOperationJob(payload, signal) {
+    const response = await this.client.post('/operations/jobs', payload, {
+      signal,
+      timeout: 0,
+    });
+    return response.data;
+  }
+
+  async getOperationJob(jobId, signal) {
+    return this.getWithCache(`/operations/jobs/${encodeURIComponent(jobId)}`, {}, { signal });
+  }
+
+  async cancelOperationJob(jobId, signal) {
+    const response = await this.client.post(`/operations/jobs/${encodeURIComponent(jobId)}/cancel`, {}, { signal });
+    return response.data;
+  }
+
+  getOperationExportUrl(downloadUrl) {
+    if (!downloadUrl) return '';
+    if (downloadUrl.startsWith('http://') || downloadUrl.startsWith('https://')) {
+      return downloadUrl;
+    }
+    const base = this.client.defaults.baseURL.replace(/\/+$/, '');
+    const path = downloadUrl.startsWith('/') ? downloadUrl : `/${downloadUrl}`;
+    return `${base}${path}`;
+  }
+
   clearCache() {
     this.cache.clear();
   }

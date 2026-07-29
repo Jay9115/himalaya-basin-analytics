@@ -5,6 +5,7 @@ import ElevationFilter from './components/ElevationFilter';
 import TempGraph from './components/TempGraph';
 import DocumentationPage from './components/DocumentationPage';
 import OutcomeLongTermHotspotPage from './components/OutcomeLongTermHotspotPage';
+import DashboardCodePanel from './components/DashboardCodePanel';
 import apiService from './services/api';
 import './App.css';
 
@@ -37,6 +38,8 @@ function App() {
   const [outcomeReady, setOutcomeReady] = useState(false);
   const [datasetLoading, setDatasetLoading] = useState(true);
   const [showDocumentation, setShowDocumentation] = useState(false);
+  const [codePanelOpen, setCodePanelOpen] = useState(false);
+  const [codeMapOutput, setCodeMapOutput] = useState(null);
   const [yearOptions, setYearOptions] = useState([]);
   const [yearRangeLoading, setYearRangeLoading] = useState(false);
   const [yearRangeError, setYearRangeError] = useState('');
@@ -53,6 +56,8 @@ function App() {
   const [variables, setVariables] = useState([]);
   const [selectedVariable, setSelectedVariable] = useState('temperature_C');
   const [variablesContextKey, setVariablesContextKey] = useState('');
+  const [searchToolsOpen, setSearchToolsOpen] = useState(false);
+  const [activeToolPanel, setActiveToolPanel] = useState('');
   const [years, setYears] = useState([]);
   const [selectedYear, setSelectedYear] = useState(null);
   const [regionSelectMode, setRegionSelectMode] = useState(false);
@@ -89,13 +94,13 @@ function App() {
   const [playSpeed, setPlaySpeed] = useState(500); // ms per frame
   const [error, setError] = useState(null);
   const [stats, setStats] = useState(null);
-  const [sidebarWidth, setSidebarWidth] = useState(() => {
-    const stored = Number(localStorage.getItem('sidebarWidth'));
-    return Number.isFinite(stored) ? clamp(stored, 240, 560) : 320;
-  });
   const [bottomPanelHeight, setBottomPanelHeight] = useState(() => {
     const stored = Number(localStorage.getItem('bottomPanelHeight'));
     return Number.isFinite(stored) ? clamp(stored, 180, 520) : 360;
+  });
+  const [codePanelWidth, setCodePanelWidth] = useState(() => {
+    const stored = Number(localStorage.getItem('codePanelWidth'));
+    return Number.isFinite(stored) ? clamp(stored, 360, 760) : 620;
   });
   
   const animationRef = useRef(null);
@@ -146,11 +151,16 @@ function App() {
   }, [glacierSubregions, normalizedSubregionQuery]);
   const isHotspotMode = analysisMode === 'hotspot';
   const glacierViewEnabled = mapViewMode === 'glacier';
-  const displayedMapData = isHotspotMode ? hotspotData : mapData;
+  const variableLabel = formatVariableLabel(selectedVariable);
+  const hasCodeMapOutput = codePanelOpen && Array.isArray(codeMapOutput?.data) && codeMapOutput.data.length > 0;
+  const displayedMapData = hasCodeMapOutput ? codeMapOutput.data : isHotspotMode ? hotspotData : mapData;
   const hotspotMinYearsMax = activeYearRange
     ? Math.max(2, activeYearRange.end - activeYearRange.start + 1)
     : 2;
   const mapPointCount = displayedMapData.length;
+  const displayedVariableLabel = hasCodeMapOutput ? (codeMapOutput.label || 'Code Result') : variableLabel;
+  const displayedAnalysisMode = hasCodeMapOutput ? 'daily' : analysisMode;
+  const displayedLayerStyle = hasCodeMapOutput ? codeMapOutput.style : null;
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -158,34 +168,25 @@ function App() {
   }, [theme]);
 
   useEffect(() => {
-    localStorage.setItem('sidebarWidth', String(sidebarWidth));
-  }, [sidebarWidth]);
-
-  useEffect(() => {
     localStorage.setItem('bottomPanelHeight', String(bottomPanelHeight));
   }, [bottomPanelHeight]);
 
-  const handleSidebarResizeStart = useCallback((event) => {
-    event.preventDefault();
-    const contentRect = appContentRef.current?.getBoundingClientRect();
-    const leftOffset = contentRect?.left ?? 0;
-    const maxWidth = contentRect ? Math.min(560, Math.max(280, contentRect.width * 0.45)) : 560;
+  useEffect(() => {
+    localStorage.setItem('codePanelWidth', String(codePanelWidth));
+  }, [codePanelWidth]);
 
-    const handleMouseMove = (moveEvent) => {
-      setSidebarWidth(clamp(moveEvent.clientX - leftOffset, 240, maxWidth));
-      window.requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
-    };
-
-    const handleMouseUp = () => {
-      document.body.classList.remove('is-resizing-sidebar');
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-
-    document.body.classList.add('is-resizing-sidebar');
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-  }, []);
+  useEffect(() => {
+    setCodeMapOutput(null);
+  }, [
+    datasetId,
+    currentDate,
+    selectedVariable,
+    selectedElevRange.min,
+    selectedElevRange.max,
+    selectedSubregionId,
+    activeYearRange?.start,
+    activeYearRange?.end,
+  ]);
 
   const handleBottomResizeStart = useCallback((event) => {
     event.preventDefault();
@@ -206,6 +207,29 @@ function App() {
     };
 
     document.body.classList.add('is-resizing-bottom');
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  }, []);
+
+  const handleCodeResizeStart = useCallback((event) => {
+    event.preventDefault();
+
+    const handleMouseMove = (moveEvent) => {
+      const contentRect = appContentRef.current?.getBoundingClientRect();
+      if (!contentRect) return;
+      const availableWidth = contentRect.width;
+      const nextWidth = moveEvent.clientX - contentRect.left;
+      setCodePanelWidth(clamp(nextWidth, 360, Math.max(360, availableWidth - 320)));
+      window.requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+    };
+
+    const handleMouseUp = () => {
+      document.body.classList.remove('is-resizing-sidebar');
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.body.classList.add('is-resizing-sidebar');
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
   }, []);
@@ -687,7 +711,6 @@ function App() {
     setHotspotMinYears(clamped);
   }, [hotspotMinYearsMax]);
 
-  const variableLabel = formatVariableLabel(selectedVariable);
   const handleToggleRegion = useCallback(() => {
     if (regionSelectMode) {
       setRegionSelectMode(false);
@@ -878,6 +901,8 @@ function App() {
     setError(null);
     setShowDocumentation(false);
     setOutcomeReady(false);
+    setCodePanelOpen(false);
+    setCodeMapOutput(null);
     setDatasetReady(true);
   }, [datasetId, activeYearRange]);
 
@@ -899,6 +924,8 @@ function App() {
     setLoading(false);
     setMapViewMode('basin');
     setDatasetReady(false);
+    setCodePanelOpen(false);
+    setCodeMapOutput(null);
     setOutcomeReady(true);
   }, [outcomes, selectedOutcomeId]);
 
@@ -922,6 +949,8 @@ function App() {
     setAnalysisMode('daily');
     setMapViewMode('basin');
     setOutcomeReady(false);
+    setCodePanelOpen(false);
+    setCodeMapOutput(null);
     setError(null);
     setShowDocumentation(false);
     setDatasetReady(false);
@@ -929,6 +958,30 @@ function App() {
 
   const handleToggleDocumentation = useCallback(() => {
     setShowDocumentation((prev) => !prev);
+    setCodePanelOpen(false);
+    setCodeMapOutput(null);
+  }, []);
+
+  const handleToggleCodePanel = useCallback(() => {
+    setShowDocumentation(false);
+    setSearchToolsOpen(false);
+    setActiveToolPanel('');
+    setIsPlaying(false);
+    setCodePanelOpen((prev) => {
+      if (prev) {
+        setCodeMapOutput(null);
+      }
+      return !prev;
+    });
+  }, []);
+
+  const handleCloseCodePanel = useCallback(() => {
+    setCodePanelOpen(false);
+    setCodeMapOutput(null);
+  }, []);
+
+  const handleCodeMapOutputChange = useCallback((output) => {
+    setCodeMapOutput(output);
   }, []);
 
   const handleHomeModuleChange = useCallback((moduleName) => {
@@ -947,6 +1000,480 @@ function App() {
   const selectedOutcome = outcomes.find((item) => item.id === selectedOutcomeId) || null;
   const yearMin = yearOptions.length > 0 ? yearOptions[0] : null;
   const yearMax = yearOptions.length > 0 ? yearOptions[yearOptions.length - 1] : null;
+
+
+  const renderCoordinateSearchPanel = (className = 'search-panel') => (
+    <div className={className}>
+      <h3>Jump to Coordinates</h3>
+      <div className="search-row">
+        <label htmlFor="search-lat">Latitude</label>
+        <input
+          id="search-lat"
+          type="number"
+          step="0.0001"
+          value={searchLat}
+          onChange={(e) => setSearchLat(e.target.value)}
+          placeholder="e.g. 34.12"
+        />
+      </div>
+      <div className="search-row">
+        <label htmlFor="search-lon">Longitude</label>
+        <input
+          id="search-lon"
+          type="number"
+          step="0.0001"
+          value={searchLon}
+          onChange={(e) => setSearchLon(e.target.value)}
+          placeholder="e.g. 75.12"
+        />
+      </div>
+      {searchError && <div className="search-error">{searchError}</div>}
+      <button
+        className="search-btn"
+        type="button"
+        onClick={() => {
+          handleSearch();
+          setSearchToolsOpen(false);
+        }}
+      >
+        Go To Location
+      </button>
+    </div>
+  );
+
+  const renderQuickRegionResults = () => {
+    const hasResults = filteredBasinSubregions.length > 0 || filteredGlacierSubregions.length > 0;
+    return (
+      <div className="quick-region-results">
+        <div className="quick-region-header">
+          <strong>Regions & Glaciers</strong>
+          <span>{subregionSearchText.trim() ? 'Filtered results' : 'Start typing to filter'}</span>
+        </div>
+        <div className="quick-region-list">
+          <button
+            type="button"
+            className={`quick-region-item ${selectedSubregionId === '' ? 'selected' : ''}`}
+            onClick={() => {
+              handleSubregionChange('');
+              setSearchToolsOpen(false);
+            }}
+          >
+            <span>Custom Rectangle</span>
+            <small>Draw or enter manual bounds</small>
+          </button>
+          {hasResults ? (
+            <>
+              {filteredBasinSubregions.map((region) => (
+                <button
+                  key={region.id}
+                  type="button"
+                  className={`quick-region-item ${selectedSubregionId === region.id ? 'selected' : ''}`}
+                  onClick={() => {
+                    handleSubregionChange(region.id);
+                    setMapViewMode('basin');
+                    setSearchToolsOpen(false);
+                  }}
+                >
+                  <span>{region.label}</span>
+                  <small>Basin | ID: {region.id}</small>
+                </button>
+              ))}
+              {filteredGlacierSubregions.map((region) => (
+                <button
+                  key={region.id}
+                  type="button"
+                  className={`quick-region-item ${selectedSubregionId === region.id ? 'selected' : ''}`}
+                  onClick={() => {
+                    handleSubregionChange(region.id);
+                    setMapViewMode('glacier');
+                    setSearchToolsOpen(false);
+                  }}
+                >
+                  <span>{region.label}</span>
+                  <small>Glacier | ID: {region.id}</small>
+                </button>
+              ))}
+            </>
+          ) : (
+            <div className="quick-region-empty">No region or glacier matches found.</div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderRegionSelectionPanel = (className = 'region-panel') => (
+    <div className={className}>
+      <h3>Region Selection</h3>
+      <div className="subregion-picker">
+        <label htmlFor="subregion-select">Sub-Region</label>
+        <div className="subregion-combobox">
+          <input
+            id="subregion-select"
+            type="text"
+            value={subregionSearchText}
+            onChange={(e) => {
+              setSubregionSearchText(e.target.value);
+              setSubregionDropdownOpen(true);
+              if (selectedSubregionId) {
+                setSelectedSubregionId('');
+                setSelectedSubregionFeature(null);
+              }
+            }}
+            onFocus={() => setSubregionDropdownOpen(true)}
+            onBlur={() => {
+              window.setTimeout(() => setSubregionDropdownOpen(false), 120);
+            }}
+            placeholder="Type to search basins or glaciers"
+            disabled={subregionsLoading}
+            autoComplete="off"
+          />
+          {subregionDropdownOpen && !subregionsLoading && (
+            <div className="subregion-dropdown" role="listbox" aria-label="Sub-region suggestions">
+              <button
+                type="button"
+                className={`subregion-option ${selectedSubregionId === '' ? 'selected' : ''}`}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => handleSubregionChange('')}
+              >
+                <span className="subregion-option-label">Custom Rectangle (draw/manual)</span>
+                <span className="subregion-option-meta">No preset selection</span>
+              </button>
+
+              {(filteredBasinSubregions.length > 0 || filteredGlacierSubregions.length > 0) ? (
+                <>
+                  {filteredBasinSubregions.length > 0 && (
+                    <div className="subregion-group">
+                      <div className="subregion-group-label">
+                        Basin Sub-Regions ({filteredBasinSubregions.length})
+                      </div>
+                      {filteredBasinSubregions.map((region) => (
+                        <button
+                          key={region.id}
+                          type="button"
+                          className={`subregion-option ${selectedSubregionId === region.id ? 'selected' : ''}`}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => handleSubregionChange(region.id)}
+                        >
+                          <span className="subregion-option-label">{region.label}</span>
+                          <span className="subregion-option-meta">Basin | ID: {region.id}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {filteredGlacierSubregions.length > 0 && (
+                    <div className="subregion-group">
+                      <div className="subregion-group-label">
+                        Glacier Results ({filteredGlacierSubregions.length})
+                      </div>
+                      {filteredGlacierSubregions.map((region) => (
+                        <button
+                          key={region.id}
+                          type="button"
+                          className={`subregion-option ${selectedSubregionId === region.id ? 'selected' : ''}`}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => handleSubregionChange(region.id)}
+                        >
+                          <span className="subregion-option-label">{region.label}</span>
+                          <span className="subregion-option-meta">Glacier | ID: {region.id}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="subregion-empty">No matches found.</div>
+              )}
+            </div>
+          )}
+        </div>
+        {subregionsLoading && (
+          <div className="subregion-loading">Loading sub-regions...</div>
+        )}
+      </div>
+      <div className="region-panel-note">Draw a rectangle, enter coordinates, or choose a sub-region.</div>
+      <button
+        className={`region-btn mode-${regionAction} ${regionSelectMode ? 'active' : ''}`}
+        onClick={() => {
+          handleToggleRegion();
+          setSearchToolsOpen(false);
+        }}
+        type="button"
+      >
+        <span className="region-square" />
+        <span key={regionActionLabel} className="region-btn-label">{regionActionLabel}</span>
+      </button>
+      <div className="region-manual">
+        <div className="region-manual-row">
+          <label htmlFor="region-lat-min">Lat Min</label>
+          <input
+            id="region-lat-min"
+            type="number"
+            step="0.0001"
+            value={regionLatMin}
+            onChange={(e) => setRegionLatMin(e.target.value)}
+            placeholder="e.g. 33.5"
+          />
+        </div>
+        <div className="region-manual-row">
+          <label htmlFor="region-lat-max">Lat Max</label>
+          <input
+            id="region-lat-max"
+            type="number"
+            step="0.0001"
+            value={regionLatMax}
+            onChange={(e) => setRegionLatMax(e.target.value)}
+            placeholder="e.g. 36.2"
+          />
+        </div>
+        <div className="region-manual-row">
+          <label htmlFor="region-lon-min">Lon Min</label>
+          <input
+            id="region-lon-min"
+            type="number"
+            step="0.0001"
+            value={regionLonMin}
+            onChange={(e) => setRegionLonMin(e.target.value)}
+            placeholder="e.g. 73.9"
+          />
+        </div>
+        <div className="region-manual-row">
+          <label htmlFor="region-lon-max">Lon Max</label>
+          <input
+            id="region-lon-max"
+            type="number"
+            step="0.0001"
+            value={regionLonMax}
+            onChange={(e) => setRegionLonMax(e.target.value)}
+            placeholder="e.g. 76.4"
+          />
+        </div>
+        {regionInputError && <div className="region-error">{regionInputError}</div>}
+        <button
+          className="region-apply"
+          type="button"
+          onClick={() => {
+            handleRegionApply();
+            setSearchToolsOpen(false);
+          }}
+        >
+          Apply Coordinates
+        </button>
+      </div>
+      {(regionBounds || regionPreview) && (
+        <div className="region-details">
+          <div className="region-row">
+            Lat: {(regionPreview || regionBounds).minLat.toFixed(3)} to {(regionPreview || regionBounds).maxLat.toFixed(3)}
+          </div>
+          <div className="region-row">
+            Lon: {(regionPreview || regionBounds).minLon.toFixed(3)} to {(regionPreview || regionBounds).maxLon.toFixed(3)}
+          </div>
+          {selectedSubregion && (
+            <div className="region-row">
+              Sub-Region: {selectedSubregion.label}
+              {selectedSubregion.kind === 'glacier' ? '' : ` (ID: ${selectedSubregion.id})`}
+            </div>
+          )}
+          {regionBounds && years.length > 0 && (
+            <div className="region-year">
+              <label htmlFor="region-year-select">Year:</label>
+              <select
+                id="region-year-select"
+                value={selectedYear || ''}
+                onChange={(e) => setSelectedYear(e.target.value)}
+              >
+                {years.map((year) => (
+                  <option key={year} value={year}>{year}</option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+      )}
+      {!regionBounds && (
+        <div className="region-hint">Draw a rectangle or pick a sub-region for faster local analysis.</div>
+      )}
+    </div>
+  );
+
+  const renderVariablePanel = (className = 'variable-panel') => (
+    <div className={className}>
+      <h3>Variable Selection</h3>
+      <div className="variable-view-picker">
+        <label>Map View</label>
+        <div className="map-mode-switch">
+          <button
+            type="button"
+            className={`map-mode-btn ${!glacierViewEnabled ? 'active' : ''}`}
+            onClick={() => setMapViewMode('basin')}
+          >
+            Basin View
+          </button>
+          <button
+            type="button"
+            className={`map-mode-btn ${glacierViewEnabled ? 'active' : ''}`}
+            onClick={() => setMapViewMode('glacier')}
+          >
+            Glacier View
+          </button>
+        </div>
+      </div>
+      {variables.length === 0 && (
+        <div className="variable-empty">No variables available</div>
+      )}
+      {variables.length > 0 && (
+        <div className="variable-options">
+          {variables.map((variable) => (
+            <label className="variable-option" key={variable}>
+              <input
+                type="checkbox"
+                checked={selectedVariable === variable}
+                onChange={() => setSelectedVariable(variable)}
+              />
+              <span>{formatVariableLabel(variable)}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  const renderHotspotPanel = (className = 'hotspot-panel') => (
+    <div className={className}>
+      <h3>Long-Term Hotspots</h3>
+      <p>Identify where the selected variable changed the fastest across the chosen years.</p>
+      <div className="hotspot-mode-switch">
+        <button
+          type="button"
+          className={`hotspot-mode-btn ${!isHotspotMode ? 'active' : ''}`}
+          onClick={() => handleAnalysisModeChange('daily')}
+        >
+          Daily Map
+        </button>
+        <button
+          type="button"
+          className={`hotspot-mode-btn ${isHotspotMode ? 'active' : ''}`}
+          onClick={() => handleAnalysisModeChange('hotspot')}
+        >
+          Trend Hotspots
+        </button>
+      </div>
+      {isHotspotMode && (
+        <>
+          <div className="hotspot-control">
+            <label htmlFor="hotspot-min-years">
+              Minimum yearly coverage: <strong>{hotspotMinYears}</strong>
+            </label>
+            <input
+              id="hotspot-min-years"
+              type="range"
+              min="2"
+              max={hotspotMinYearsMax}
+              step="1"
+              value={hotspotMinYears}
+              onChange={(e) => handleHotspotMinYearsChange(e.target.value)}
+            />
+            <div className="hotspot-note">
+              Uses years with at least {hotspotMinYears} annual observations per grid point.
+            </div>
+          </div>
+          {hotspotLoading && (
+            <div className="hotspot-loading">Computing hotspot trends...</div>
+          )}
+          {hotspotError && (
+            <div className="hotspot-error">{hotspotError}</div>
+          )}
+          {!hotspotLoading && !hotspotError && hotspotSummary && (
+            <div className="hotspot-summary">
+              <div className="hotspot-summary-row">
+                <span>Points analyzed</span>
+                <strong>{Number(hotspotSummary.points_analyzed || 0).toLocaleString()}</strong>
+              </div>
+              <div className="hotspot-summary-row">
+                <span>High / extreme hotspots</span>
+                <strong>{Number(hotspotSummary.hotspots_identified || 0).toLocaleString()}</strong>
+              </div>
+              <div className="hotspot-summary-row">
+                <span>Mean trend strength</span>
+                <strong>{Number.isFinite(hotspotSummary.mean_strength) ? hotspotSummary.mean_strength.toFixed(4) : 'N/A'}</strong>
+              </div>
+              <div className="hotspot-summary-row">
+                <span>Max trend strength</span>
+                <strong>{Number.isFinite(hotspotSummary.max_strength) ? hotspotSummary.max_strength.toFixed(4) : 'N/A'}</strong>
+              </div>
+              <div className="hotspot-summary-row">
+                <span>Strength P95</span>
+                <strong>
+                  {Number.isFinite(hotspotSummary?.strength_percentiles?.p95)
+                    ? hotspotSummary.strength_percentiles.p95.toFixed(4)
+                    : 'N/A'}
+                </strong>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+      {!isHotspotMode && (
+        <div className="hotspot-hint">
+          Daily map mode shows date-wise values. Switch to hotspot mode for long-term trend intensity.
+        </div>
+      )}
+    </div>
+  );
+
+  const renderLiveSummaryPanel = (className = 'info-panel') => (
+    <div className={className}>
+      <h3>Live Summary</h3>
+      <div className="info-item">
+        <span className="label">Date:</span>
+        <span className="value">{currentDate}</span>
+      </div>
+      <div className="info-item">
+        <span className="label">Variable:</span>
+        <span className="value">{variableLabel}</span>
+      </div>
+      {selectedSubregion && (
+        <div className="info-item">
+          <span className="label">Sub-Region:</span>
+          <span className="value">
+            {selectedSubregion.label}
+            {selectedSubregion.kind === 'glacier' ? '' : ` (ID: ${selectedSubregion.id})`}
+          </span>
+        </div>
+      )}
+      {activeYearRange && (
+        <div className="info-item">
+          <span className="label">Year Range:</span>
+          <span className="value">
+            {activeYearRange.start} - {activeYearRange.end}
+          </span>
+        </div>
+      )}
+      <div className="info-item">
+        <span className="label">Elevation:</span>
+        <span className="value">
+          {selectedElevRange.min}m - {selectedElevRange.max}m
+        </span>
+      </div>
+      <div className="info-item">
+        <span className="label">{isHotspotMode ? 'Trend Points:' : 'Data Points:'}</span>
+        <span className="value">{mapPointCount.toLocaleString()}</span>
+      </div>
+    </div>
+  );
+
+  const renderElevationPanel = (className = 'strip-elevation-panel') => (
+    <div className={className}>
+      <ElevationFilter
+        min={elevationRange.min}
+        max={elevationRange.max}
+        selectedMin={selectedElevRange.min}
+        selectedMax={selectedElevRange.max}
+        onChange={handleElevationChange}
+      />
+    </div>
+  );
 
   if (datasetLoading) {
     return (
@@ -1309,8 +1836,89 @@ function App() {
   return (
     <div className="app" data-theme={theme}>
       {/* Header */}
-      <header className="app-header">
-        <h1>Himalayan Basin Visualization</h1>
+      <header className="app-header dashboard-header">
+        <div className="dashboard-brand">
+          <h1>Himalayan Basin Visualization</h1>
+          {!showDocumentation && (
+            <button
+              type="button"
+              className={`dashboard-code-toggle ${codePanelOpen ? 'active' : ''}`}
+              onClick={handleToggleCodePanel}
+              title={codePanelOpen ? 'Close Python code workspace' : 'Open Python code workspace'}
+            >
+              Code
+            </button>
+          )}
+        </div>
+        {!showDocumentation && (
+          <div className="header-search">
+            <div
+              className={`map-search-trigger ${searchToolsOpen ? 'active' : ''}`}
+              role="search"
+            >
+              <span className="search-mark">Search</span>
+              <input
+                className="map-search-input"
+                value={subregionSearchText}
+                onFocus={() => {
+                  setSearchToolsOpen(true);
+                  setActiveToolPanel('');
+                  setSubregionDropdownOpen(true);
+                }}
+                onChange={(event) => {
+                  setSubregionSearchText(event.target.value);
+                  setSearchToolsOpen(true);
+                  setActiveToolPanel('');
+                  setSubregionDropdownOpen(true);
+                  if (selectedSubregionId) {
+                    setSelectedSubregionId('');
+                    setSelectedSubregionFeature(null);
+                  }
+                }}
+                placeholder="Search regions/glaciers, or open coordinate tools"
+                aria-label="Search regions or glaciers"
+              />
+              {selectedSubregion && (
+                <span className="search-chip">{selectedSubregion.label}</span>
+              )}
+              <button
+                type="button"
+                className="search-tools-toggle"
+                onClick={() => {
+                  setSearchToolsOpen((prev) => !prev);
+                  setActiveToolPanel('');
+                  setSubregionDropdownOpen(true);
+                }}
+                aria-expanded={searchToolsOpen}
+              >
+                Tools
+              </button>
+            </div>
+            {searchToolsOpen && (
+              <div className="map-search-mega">
+                <div className="mega-heading">
+                  <div>
+                    <strong>Map Search & Region Tools</strong>
+                    <span>Coordinates, rectangle selection, sub-basins, and glacier regions.</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="mega-close"
+                    onClick={() => setSearchToolsOpen(false)}
+                    aria-label="Close search tools"
+                  >
+                    Close
+                  </button>
+                </div>
+                {renderQuickRegionResults()}
+                <div className="mega-grid">
+                  {renderCoordinateSearchPanel('search-panel mega-card')}
+                  {renderRegionSelectionPanel('region-panel mega-card')}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         <div className="header-controls">
           <button
             className="home-btn"
@@ -1326,11 +1934,11 @@ function App() {
             type="button"
             title="Open methods and computation notes"
           >
-            {showDocumentation ? 'Back To Analysis' : 'Documentation'}
+            {showDocumentation ? 'Analysis' : 'Docs'}
           </button>
           {selectedDataset && (
             <div className="dataset-badge">
-              Dataset: {selectedDataset.label}
+              {selectedDataset.label}
               {activeYearRange && ` | Years: ${activeYearRange.start}-${activeYearRange.end}`}
             </div>
           )}
@@ -1345,15 +1953,87 @@ function App() {
             aria-label="Toggle theme"
             title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
           >
-            {theme === 'dark' ? 'Light Theme' : 'Dark Theme'}
+            Theme: {theme === 'dark' ? 'Dark' : 'Light'}
           </button>
         </div>
       </header>
 
+      {!showDocumentation && (
+        <div className="analysis-strip">
+          <div className="strip-left">
+            <button
+              type="button"
+              className={`strip-btn ${activeToolPanel === 'variables' ? 'active' : ''}`}
+              onClick={() => {
+                setActiveToolPanel((prev) => (prev === 'variables' ? '' : 'variables'));
+                setSearchToolsOpen(false);
+              }}
+              title={`Variable: ${variableLabel || 'Select a variable'}`}
+            >
+              <strong>Variable</strong>
+            </button>
+            <button
+              type="button"
+              className={`strip-btn ${activeToolPanel === 'elevation' ? 'active' : ''}`}
+              onClick={() => {
+                setActiveToolPanel((prev) => (prev === 'elevation' ? '' : 'elevation'));
+                setSearchToolsOpen(false);
+              }}
+              title={`Elevation: ${selectedElevRange.min}m - ${selectedElevRange.max}m`}
+            >
+              <strong>Elevation</strong>
+            </button>
+            <button
+              type="button"
+              className={`strip-btn icon-btn ${activeToolPanel === 'summary' ? 'active' : ''}`}
+              onClick={() => {
+                setActiveToolPanel((prev) => (prev === 'summary' ? '' : 'summary'));
+                setSearchToolsOpen(false);
+              }}
+              title="Live summary of the current selection"
+            >
+              <span className="strip-icon">i</span>
+              <strong>Live Summary</strong>
+            </button>
+            <button
+              type="button"
+              className={`strip-btn ${activeToolPanel === 'hotspot' ? 'active' : ''} ${isHotspotMode ? 'mode-on' : ''}`}
+              onClick={() => {
+                setActiveToolPanel((prev) => (prev === 'hotspot' ? '' : 'hotspot'));
+                setSearchToolsOpen(false);
+              }}
+              title={`Analysis: ${isHotspotMode ? 'Trend Hotspots' : 'Daily Map'}`}
+            >
+              <strong>Analysis</strong>
+            </button>
+          </div>
+          <div className="strip-right">
+            <span className="mini-status">Date {currentDate || '...'}</span>
+            <span className="mini-status">Points {mapPointCount.toLocaleString()}</span>
+          </div>
+          {activeToolPanel && (
+            <div className={`strip-popover strip-popover-${activeToolPanel}`}>
+              <button
+                type="button"
+                className="strip-popover-close"
+                onClick={() => setActiveToolPanel('')}
+                aria-label="Close toolbar panel"
+              >
+                Close
+              </button>
+              {activeToolPanel === 'variables' && renderVariablePanel('variable-panel strip-card')}
+              {activeToolPanel === 'elevation' && renderElevationPanel('strip-elevation-panel strip-card')}
+              {activeToolPanel === 'summary' && renderLiveSummaryPanel('info-panel strip-card')}
+              {activeToolPanel === 'hotspot' && renderHotspotPanel('hotspot-panel strip-card')}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Main content */}
       <div
         ref={appContentRef}
-        className={`app-content ${showDocumentation ? 'docs-only-content' : ''}`}
+        className={`app-content ${showDocumentation ? 'docs-only-content' : ''} ${codePanelOpen ? 'code-split-content' : ''}`}
       >
         {showDocumentation ? (
           <DocumentationPage
@@ -1364,402 +2044,34 @@ function App() {
           />
         ) : (
           <>
-        {/* Left sidebar */}
-        <aside
-          className="sidebar"
-          style={{ width: `${sidebarWidth}px`, flexBasis: `${sidebarWidth}px` }}
-        >
-          <div className="search-panel">
-            <h3>Jump to Coordinates</h3>
-            <div className="search-row">
-              <label htmlFor="search-lat">Latitude</label>
-              <input
-                id="search-lat"
-                type="number"
-                step="0.0001"
-                value={searchLat}
-                onChange={(e) => setSearchLat(e.target.value)}
-                placeholder="e.g. 34.12"
-              />
-            </div>
-            <div className="search-row">
-              <label htmlFor="search-lon">Longitude</label>
-              <input
-                id="search-lon"
-                type="number"
-                step="0.0001"
-                value={searchLon}
-                onChange={(e) => setSearchLon(e.target.value)}
-                placeholder="e.g. 75.12"
-              />
-            </div>
-            {searchError && <div className="search-error">{searchError}</div>}
-            <button className="search-btn" type="button" onClick={handleSearch}>
-              Go
-            </button>
-          </div>
-
-          <div className="region-panel">
-            <h3>Region Selection</h3>
-            <div className="map-mode-picker">
-              <label>Map View</label>
-              <div className="map-mode-switch">
-                <button
-                  type="button"
-                  className={`map-mode-btn ${!glacierViewEnabled ? 'active' : ''}`}
-                  onClick={() => setMapViewMode('basin')}
-                >
-                  Basin View
-                </button>
-                <button
-                  type="button"
-                  className={`map-mode-btn ${glacierViewEnabled ? 'active' : ''}`}
-                  onClick={() => setMapViewMode('glacier')}
-                >
-                  Glacier View
-                </button>
-              </div>
-            </div>
-            <div className="subregion-picker">
-              <label htmlFor="subregion-select">Sub-Region</label>
-              <div className="subregion-combobox">
-                <input
-                  id="subregion-select"
-                  type="text"
-                  value={subregionSearchText}
-                  onChange={(e) => {
-                    setSubregionSearchText(e.target.value);
-                    setSubregionDropdownOpen(true);
-                    if (selectedSubregionId) {
-                      setSelectedSubregionId('');
-                      setSelectedSubregionFeature(null);
-                    }
-                  }}
-                  onFocus={() => setSubregionDropdownOpen(true)}
-                  onBlur={() => {
-                    window.setTimeout(() => setSubregionDropdownOpen(false), 120);
-                  }}
-                  placeholder="Type to search basins or glaciers"
-                  disabled={subregionsLoading}
-                  autoComplete="off"
-                />
-                {subregionDropdownOpen && !subregionsLoading && (
-                  <div className="subregion-dropdown" role="listbox" aria-label="Sub-region suggestions">
-                    <button
-                      type="button"
-                      className={`subregion-option ${selectedSubregionId === '' ? 'selected' : ''}`}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => handleSubregionChange('')}
-                    >
-                      <span className="subregion-option-label">Custom Rectangle (draw/manual)</span>
-                      <span className="subregion-option-meta">No preset selection</span>
-                    </button>
-
-                    {(filteredBasinSubregions.length > 0 || filteredGlacierSubregions.length > 0) ? (
-                      <>
-                        {filteredBasinSubregions.length > 0 && (
-                          <div className="subregion-group">
-                            <div className="subregion-group-label">
-                              Basin Sub-Regions ({filteredBasinSubregions.length})
-                            </div>
-                            {filteredBasinSubregions.map((region) => (
-                              <button
-                                key={region.id}
-                                type="button"
-                                className={`subregion-option ${selectedSubregionId === region.id ? 'selected' : ''}`}
-                                onMouseDown={(event) => event.preventDefault()}
-                                onClick={() => handleSubregionChange(region.id)}
-                              >
-                                <span className="subregion-option-label">{region.label}</span>
-                                <span className="subregion-option-meta">Basin | ID: {region.id}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-
-                        {filteredGlacierSubregions.length > 0 && (
-                          <div className="subregion-group">
-                            <div className="subregion-group-label">
-                              Glacier Results ({filteredGlacierSubregions.length})
-                            </div>
-                            {filteredGlacierSubregions.map((region) => (
-                              <button
-                                key={region.id}
-                                type="button"
-                                className={`subregion-option ${selectedSubregionId === region.id ? 'selected' : ''}`}
-                                onMouseDown={(event) => event.preventDefault()}
-                                onClick={() => handleSubregionChange(region.id)}
-                              >
-                                <span className="subregion-option-label">{region.label}</span>
-                                <span className="subregion-option-meta">Glacier | ID: {region.id}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <div className="subregion-empty">No matches found.</div>
-                    )}
-                  </div>
-                )}
-              </div>
-              {subregionsLoading && (
-                <div className="subregion-loading">Loading sub-regions...</div>
-              )}
-            </div>
-            <div className="region-panel-note">Draw a rectangle, enter coordinates, or choose a sub-region.</div>
-            <button
-              className={`region-btn mode-${regionAction} ${regionSelectMode ? 'active' : ''}`}
-              onClick={handleToggleRegion}
-              type="button"
-            >
-              <span className="region-square" />
-              <span key={regionActionLabel} className="region-btn-label">{regionActionLabel}</span>
-            </button>
-            <div className="region-manual">
-              <div className="region-manual-row">
-                <label htmlFor="region-lat-min">Lat Min</label>
-                <input
-                  id="region-lat-min"
-                  type="number"
-                  step="0.0001"
-                  value={regionLatMin}
-                  onChange={(e) => setRegionLatMin(e.target.value)}
-                  placeholder="e.g. 33.5"
-                />
-              </div>
-              <div className="region-manual-row">
-                <label htmlFor="region-lat-max">Lat Max</label>
-                <input
-                  id="region-lat-max"
-                  type="number"
-                  step="0.0001"
-                  value={regionLatMax}
-                  onChange={(e) => setRegionLatMax(e.target.value)}
-                  placeholder="e.g. 36.2"
-                />
-              </div>
-              <div className="region-manual-row">
-                <label htmlFor="region-lon-min">Lon Min</label>
-                <input
-                  id="region-lon-min"
-                  type="number"
-                  step="0.0001"
-                  value={regionLonMin}
-                  onChange={(e) => setRegionLonMin(e.target.value)}
-                  placeholder="e.g. 73.9"
-                />
-              </div>
-              <div className="region-manual-row">
-                <label htmlFor="region-lon-max">Lon Max</label>
-                <input
-                  id="region-lon-max"
-                  type="number"
-                  step="0.0001"
-                  value={regionLonMax}
-                  onChange={(e) => setRegionLonMax(e.target.value)}
-                  placeholder="e.g. 76.4"
-                />
-              </div>
-              {regionInputError && <div className="region-error">{regionInputError}</div>}
-              <button className="region-apply" type="button" onClick={handleRegionApply}>
-                Apply Coordinates
-              </button>
-            </div>
-            {(regionBounds || regionPreview) && (
-              <div className="region-details">
-                <div className="region-row">
-                  Lat: {(regionPreview || regionBounds).minLat.toFixed(3)} to {(regionPreview || regionBounds).maxLat.toFixed(3)}
-                </div>
-                <div className="region-row">
-                  Lon: {(regionPreview || regionBounds).minLon.toFixed(3)} to {(regionPreview || regionBounds).maxLon.toFixed(3)}
-                </div>
-                {selectedSubregion && (
-                  <div className="region-row">
-                    Sub-Region: {selectedSubregion.label}
-                    {selectedSubregion.kind === 'glacier' ? '' : ` (ID: ${selectedSubregion.id})`}
-                  </div>
-                )}
-                {regionBounds && years.length > 0 && (
-                  <div className="region-year">
-                    <label htmlFor="region-year-select">Year:</label>
-                    <select
-                      id="region-year-select"
-                      value={selectedYear || ''}
-                      onChange={(e) => setSelectedYear(e.target.value)}
-                    >
-                      {years.map((year) => (
-                        <option key={year} value={year}>{year}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
-            )}
-            {!regionBounds && (
-              <div className="region-hint">Draw a rectangle or pick a sub-region for faster local analysis.</div>
-            )}
-          </div>
-
-          <div className="variable-panel">
-            <h3>Variable Selection</h3>
-            {variables.length === 0 && (
-              <div className="variable-empty">No variables available</div>
-            )}
-            {variables.length > 0 && (
-              <div className="variable-options">
-                {variables.map((variable) => (
-                  <label className="variable-option" key={variable}>
-                    <input
-                      type="checkbox"
-                      checked={selectedVariable === variable}
-                      onChange={() => setSelectedVariable(variable)}
-                    />
-                    <span>{formatVariableLabel(variable)}</span>
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="hotspot-panel">
-            <h3>Long-Term Hotspots</h3>
-            <p>Identify where the selected variable changed the fastest across the chosen years.</p>
-            <div className="hotspot-mode-switch">
-              <button
-                type="button"
-                className={`hotspot-mode-btn ${!isHotspotMode ? 'active' : ''}`}
-                onClick={() => handleAnalysisModeChange('daily')}
-              >
-                Daily Map
-              </button>
-              <button
-                type="button"
-                className={`hotspot-mode-btn ${isHotspotMode ? 'active' : ''}`}
-                onClick={() => handleAnalysisModeChange('hotspot')}
-              >
-                Trend Hotspots
-              </button>
-            </div>
-            {isHotspotMode && (
-              <>
-                <div className="hotspot-control">
-                  <label htmlFor="hotspot-min-years">
-                    Minimum yearly coverage: <strong>{hotspotMinYears}</strong>
-                  </label>
-                  <input
-                    id="hotspot-min-years"
-                    type="range"
-                    min="2"
-                    max={hotspotMinYearsMax}
-                    step="1"
-                    value={hotspotMinYears}
-                    onChange={(e) => handleHotspotMinYearsChange(e.target.value)}
-                  />
-                  <div className="hotspot-note">
-                    Uses years with at least {hotspotMinYears} annual observations per grid point.
-                  </div>
-                </div>
-                {hotspotLoading && (
-                  <div className="hotspot-loading">Computing hotspot trends...</div>
-                )}
-                {hotspotError && (
-                  <div className="hotspot-error">{hotspotError}</div>
-                )}
-                {!hotspotLoading && !hotspotError && hotspotSummary && (
-                  <div className="hotspot-summary">
-                    <div className="hotspot-summary-row">
-                      <span>Points analyzed</span>
-                      <strong>{Number(hotspotSummary.points_analyzed || 0).toLocaleString()}</strong>
-                    </div>
-                    <div className="hotspot-summary-row">
-                      <span>High / extreme hotspots</span>
-                      <strong>{Number(hotspotSummary.hotspots_identified || 0).toLocaleString()}</strong>
-                    </div>
-                    <div className="hotspot-summary-row">
-                      <span>Mean trend strength</span>
-                      <strong>{Number.isFinite(hotspotSummary.mean_strength) ? hotspotSummary.mean_strength.toFixed(4) : 'N/A'}</strong>
-                    </div>
-                    <div className="hotspot-summary-row">
-                      <span>Max trend strength</span>
-                      <strong>{Number.isFinite(hotspotSummary.max_strength) ? hotspotSummary.max_strength.toFixed(4) : 'N/A'}</strong>
-                    </div>
-                    <div className="hotspot-summary-row">
-                      <span>Strength P95</span>
-                      <strong>
-                        {Number.isFinite(hotspotSummary?.strength_percentiles?.p95)
-                          ? hotspotSummary.strength_percentiles.p95.toFixed(4)
-                          : 'N/A'}
-                      </strong>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-            {!isHotspotMode && (
-              <div className="hotspot-hint">
-                Daily map mode shows date-wise values. Switch to hotspot mode for long-term trend intensity.
-              </div>
-            )}
-          </div>
-
-          <ElevationFilter
-            min={elevationRange.min}
-            max={elevationRange.max}
-            selectedMin={selectedElevRange.min}
-            selectedMax={selectedElevRange.max}
-            onChange={handleElevationChange}
+        {codePanelOpen && (
+          <DashboardCodePanel
+            theme={theme}
+            datasetId={datasetId}
+            datasetLabel={selectedDataset?.label || ''}
+            yearRange={activeYearRange}
+            currentDate={currentDate}
+            dates={dates}
+            selectedVariable={selectedVariable}
+            selectedElevRange={selectedElevRange}
+            selectedSubregionId={selectedSubregionId}
+            selectedSubregionLabel={selectedSubregion?.label || ''}
+            onClose={handleCloseCodePanel}
+            onMapOutputChange={handleCodeMapOutputChange}
+            outputPortalTargetId={codePanelOpen ? 'code-output-dock' : null}
+            panelWidth={codePanelWidth}
           />
-          
-          <div className="info-panel">
-            <h3>Live Summary</h3>
-            <div className="info-item">
-              <span className="label">Date:</span>
-              <span className="value">{currentDate}</span>
-            </div>
-            <div className="info-item">
-              <span className="label">Variable:</span>
-              <span className="value">{variableLabel}</span>
-            </div>
-            {selectedSubregion && (
-              <div className="info-item">
-                <span className="label">Sub-Region:</span>
-                <span className="value">
-                  {selectedSubregion.label}
-                  {selectedSubregion.kind === 'glacier' ? '' : ` (ID: ${selectedSubregion.id})`}
-                </span>
-              </div>
-            )}
-            {activeYearRange && (
-              <div className="info-item">
-                <span className="label">Year Range:</span>
-                <span className="value">
-                  {activeYearRange.start} - {activeYearRange.end}
-                </span>
-              </div>
-            )}
-            <div className="info-item">
-              <span className="label">Elevation:</span>
-              <span className="value">
-                {selectedElevRange.min}m - {selectedElevRange.max}m
-              </span>
-            </div>
-            <div className="info-item">
-              <span className="label">{isHotspotMode ? 'Trend Points:' : 'Data Points:'}</span>
-              <span className="value">{mapPointCount.toLocaleString()}</span>
-            </div>
-          </div>
-        </aside>
-        <div
-          className="sidebar-resize-handle"
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize sidebar"
-          title="Drag to resize sidebar"
-          onMouseDown={handleSidebarResizeStart}
-        />
-
-        {/* Main visualization area */}
+        )}
+        {codePanelOpen && (
+          <div
+            className="code-resize-handle"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize code and map panels"
+            title="Drag to resize code panel"
+            onMouseDown={handleCodeResizeStart}
+          />
+        )}
         <main className="main-content">
           {/* Map */}
           <div className="map-container">
@@ -1767,21 +2079,22 @@ function App() {
               data={displayedMapData}
               currentDate={currentDate}
               theme={theme}
-              variableLabel={variableLabel}
+              variableLabel={displayedVariableLabel}
               selectionEnabled={regionSelectMode}
               onSelectionComplete={handleRegionSelect}
               onSelectionPreview={handleRegionPreview}
               selectionBounds={regionBounds}
               selectedSubregionFeature={selectedSubregionFeature}
-              glacierViewEnabled={glacierViewEnabled}
+              glacierViewEnabled={hasCodeMapOutput ? false : glacierViewEnabled}
               focusLocation={focusLocation}
-              analysisMode={analysisMode}
-              hotspotSummary={hotspotSummary}
+              analysisMode={displayedAnalysisMode}
+              hotspotSummary={hasCodeMapOutput ? null : hotspotSummary}
+              layerStyle={displayedLayerStyle}
             />
           </div>
 
           <div
-            className="bottom-analysis-panel"
+            className={`bottom-analysis-panel ${codePanelOpen ? 'code-output-mode' : ''}`}
             style={{ height: `${bottomPanelHeight}px` }}
           >
             <div
@@ -1792,34 +2105,38 @@ function App() {
               title="Drag to resize bottom panel"
               onMouseDown={handleBottomResizeStart}
             />
-            {/* Controls */}
-            <div className="controls-container">
-              {isHotspotMode && (
-                <div className="hotspot-time-note">
-                  Hotspot mode uses the full selected year range for trend fitting. The time slider only moves the graph marker.
+            {codePanelOpen ? (
+              <div id="code-output-dock" className="code-output-dock" />
+            ) : (
+              <>
+                <div className="controls-container">
+                  {isHotspotMode && (
+                    <div className="hotspot-time-note">
+                      Hotspot mode uses the full selected year range for trend fitting. The time slider only moves the graph marker.
+                    </div>
+                  )}
+                  <TimeSlider
+                    dates={dates}
+                    currentIndex={currentDateIndex}
+                    isPlaying={isPlaying}
+                    playSpeed={playSpeed}
+                    onDateChange={handleDateChange}
+                    onPlayPause={handlePlayPause}
+                    onSpeedChange={handleSpeedChange}
+                  />
                 </div>
-              )}
-              <TimeSlider
-                dates={dates}
-                currentIndex={currentDateIndex}
-                isPlaying={isPlaying}
-                playSpeed={playSpeed}
-                onDateChange={handleDateChange}
-                onPlayPause={handlePlayPause}
-                onSpeedChange={handleSpeedChange}
-              />
-            </div>
 
-            {/* Graph */}
-            <div className="graph-container">
-              <TempGraph
-                data={graphData}
-                currentDate={currentDate}
-                variableLabel={variableLabel}
-                showPointStats={Boolean(regionBounds)}
-                pointStatsLabel="Region points/day"
-              />
-            </div>
+                <div className="graph-container">
+                  <TempGraph
+                    data={graphData}
+                    currentDate={currentDate}
+                    variableLabel={variableLabel}
+                    showPointStats={Boolean(regionBounds)}
+                    pointStatsLabel="Region points/day"
+                  />
+                </div>
+              </>
+            )}
           </div>
         </main>
           </>
