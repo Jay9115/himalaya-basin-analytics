@@ -18,12 +18,14 @@ from contextlib import asynccontextmanager
 
 import numpy as np
 import pandas as pd
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
 from nc_ingest import (
     add_uploaded_dataset_entry,
@@ -98,6 +100,12 @@ BASE_DATASET_CONFIGS: Dict[str, Dict] = {
         "label": "SPHY Model",
         "paths": [
             DATABASE_DIR / "SPHY_Model",
+        ],
+    },
+    "chirps": {
+        "label": "CHIRPS Precipitation",
+        "paths": [
+            DATABASE_DIR / "CHIRPS",
         ],
     },
     "mod10a1_monthly": {
@@ -345,9 +353,6 @@ def serve_map_asset(asset_path: str, request: Request, head_only: bool = False):
     range_header = request.headers.get("range")
     suffix = file_path.suffix.lower()
     cache_control = "public, max-age=3600"
-    # Keep GeoJSON fresh to avoid stale basin boundary overlays after shape updates.
-    if suffix in {".geojson", ".json"}:
-        cache_control = "no-cache, max-age=0"
 
     base_headers = {
         "Accept-Ranges": "bytes",
@@ -1655,6 +1660,8 @@ def choose_default_variable(variables: List[str]) -> Optional[str]:
         "temp_mean_C",
         "temp_C",
         "temperature",
+        "precipitation_mm",
+        "precip_mm_day",
         "Snow_Albedo_Daily_Tile",
         "NDSI_Snow_Cover",
     ]
@@ -2240,6 +2247,7 @@ def calculate_geotiff_basin_mean(
     elev_max: float,
     variable: str,
     subregion: Optional[Dict[str, Any]] = None,
+    region_bounds: Optional[Dict[str, float]] = None,
 ) -> List[Dict]:
     if not geotiff_elevation_allowed(state, elev_min, elev_max):
         return []
@@ -2256,13 +2264,22 @@ def calculate_geotiff_basin_mean(
         for file_path in state["date_index"][date_str]:
             try:
                 values, valid_mask, transform = read_geotiff_band(file_path, band_index)
-                if subregion:
+                if region_bounds or subregion:
                     rows, cols = np.nonzero(valid_mask)
                     if rows.size == 0:
                         continue
                     point_values = values[rows, cols]
                     lats, lons = geotiff_pixel_coordinates(transform, rows, cols)
-                    mask = build_subregion_mask_for_points(lats, lons, subregion)
+                    mask = np.ones(point_values.shape, dtype=bool)
+                    if region_bounds:
+                        mask &= (
+                            (lats >= float(region_bounds["min_lat"]))
+                            & (lats <= float(region_bounds["max_lat"]))
+                            & (lons >= float(region_bounds["min_lon"]))
+                            & (lons <= float(region_bounds["max_lon"]))
+                        )
+                    if subregion and mask.any():
+                        mask &= build_subregion_mask_for_points(lats, lons, subregion)
                     if not mask.any():
                         continue
                     point_values = point_values[mask]
@@ -2613,8 +2630,14 @@ def load_dataset_index(
     indexing_errors: List[str] = []
     for file_path in candidate_files:
         try:
-            df = pd.read_parquet(file_path, columns=[date_col])
-            parsed_dates = parse_datetime_series(df[date_col], f"{file_path.name}:{date_col}")
+            # Reduce millions of repeated grid-row dates to the few hundred
+            # unique values in Arrow before crossing into pandas.
+            date_table = pq.read_table(file_path, columns=[date_col])
+            unique_date_values = pc.unique(date_table.column(date_col).combine_chunks()).to_pylist()
+            parsed_dates = parse_datetime_series(
+                pd.Series(unique_date_values),
+                f"{file_path.name}:{date_col}",
+            )
 
             valid_dates = parsed_dates.dropna()
             if year_start is not None:
@@ -2687,6 +2710,13 @@ def ensure_dataset_loaded(
             ),
         )
     return state
+
+
+def snapshot_dataset_state(state: Dict) -> Dict:
+    """Freeze the active index before running a query outside the event loop."""
+    snapshot = dict(state)
+    snapshot["date_index"] = dict(state.get("date_index") or {})
+    return snapshot
 
 
 def read_parquet_subset(
@@ -2881,6 +2911,7 @@ def calculate_geoparquet_basin_mean(
     end_date: str,
     variable: str,
     subregion: Optional[Dict[str, Any]] = None,
+    region_bounds: Optional[Dict[str, float]] = None,
 ) -> List[Dict[str, Any]]:
     dates = sorted([d for d in state["date_index"].keys() if start_date <= d <= end_date])
     results: List[Dict[str, Any]] = []
@@ -2889,6 +2920,14 @@ def calculate_geoparquet_basin_mean(
         for file_path in state["date_index"][date_key]:
             try:
                 frame = _read_discharge_frame(file_path, variable)
+                if region_bounds:
+                    frame = _filter_discharge_by_bbox(
+                        frame,
+                        region_bounds["min_lat"],
+                        region_bounds["max_lat"],
+                        region_bounds["min_lon"],
+                        region_bounds["max_lon"],
+                    )
                 frame = _filter_discharge_by_subregion(frame, subregion)
                 if not frame.empty:
                     frames.append(frame)
@@ -3035,6 +3074,7 @@ def calculate_basin_mean(
     elev_max: float,
     variable: str,
     subregion: Optional[Dict[str, Any]] = None,
+    region_bounds: Optional[Dict[str, float]] = None,
 ) -> List[Dict]:
     if is_geotiff_dataset(state):
         return calculate_geotiff_basin_mean(
@@ -3045,6 +3085,7 @@ def calculate_basin_mean(
             elev_max,
             variable,
             subregion=subregion,
+            region_bounds=region_bounds,
         )
     if is_geoparquet_dataset(state):
         return calculate_geoparquet_basin_mean(
@@ -3053,6 +3094,7 @@ def calculate_basin_mean(
             end_date,
             variable,
             subregion=subregion,
+            region_bounds=region_bounds,
         )
 
     dates = sorted([d for d in state["date_index"].keys() if start_date <= d <= end_date])
@@ -3071,7 +3113,7 @@ def calculate_basin_mean(
     for file_path in files:
         try:
             columns_key = (date_col, elev_col, variable)
-            if subregion:
+            if region_bounds or subregion:
                 columns_key = (date_col, lat_col, lon_col, elev_col, variable)
             filters = [
                 (date_col, ">=", start_ts.to_pydatetime()),
@@ -3079,6 +3121,15 @@ def calculate_basin_mean(
                 (elev_col, ">=", float(elev_min)),
                 (elev_col, "<=", float(elev_max)),
             ]
+            if region_bounds:
+                filters.extend(
+                    [
+                        (lat_col, ">=", float(region_bounds["min_lat"])),
+                        (lat_col, "<=", float(region_bounds["max_lat"])),
+                        (lon_col, ">=", float(region_bounds["min_lon"])),
+                        (lon_col, "<=", float(region_bounds["max_lon"])),
+                    ]
+                )
             if subregion:
                 bounds = subregion["bounds"]
                 filters.extend(
@@ -3098,6 +3149,13 @@ def calculate_basin_mean(
                 & (df[elev_col] >= elev_min)
                 & (df[elev_col] <= elev_max)
             )
+            if region_bounds and mask.any():
+                mask &= (
+                    (df[lat_col] >= float(region_bounds["min_lat"]))
+                    & (df[lat_col] <= float(region_bounds["max_lat"]))
+                    & (df[lon_col] >= float(region_bounds["min_lon"]))
+                    & (df[lon_col] <= float(region_bounds["max_lon"]))
+                )
             if subregion and mask.any():
                 mask &= build_subregion_mask(df, lat_col, lon_col, subregion)
             if not mask.any():
@@ -4296,7 +4354,16 @@ async def get_data(
     subregion = get_subregion(subregion_id)
 
     start_time = datetime.now()
-    data = query_data(state, date, elev_min, elev_max, var_name, subregion=subregion)
+    query_state = snapshot_dataset_state(state)
+    data = await run_in_threadpool(
+        query_data,
+        query_state,
+        date,
+        elev_min,
+        elev_max,
+        var_name,
+        subregion,
+    )
     query_time = (datetime.now() - start_time).total_seconds() * 1000
 
     subregion_log = f", subregion={subregion['id']}" if subregion else ""
@@ -4319,7 +4386,8 @@ async def get_data(
             "data": data,
             "count": len(data),
             "query_time_ms": round(query_time, 2),
-        }
+        },
+        headers={"Cache-Control": "private, max-age=120"},
     )
 
 
@@ -4331,6 +4399,10 @@ async def get_basin_mean(
     elev_max: Optional[float] = Query(None, description="Maximum elevation"),
     variable: Optional[str] = Query(None, description="Variable name"),
     subregion_id: Optional[str] = Query(None, description="Optional subregion id"),
+    min_lat: Optional[float] = Query(None, description="Optional minimum latitude for selected region"),
+    max_lat: Optional[float] = Query(None, description="Optional maximum latitude for selected region"),
+    min_lon: Optional[float] = Query(None, description="Optional minimum longitude for selected region"),
+    max_lon: Optional[float] = Query(None, description="Optional maximum longitude for selected region"),
     dataset: Optional[str] = Query(None, description="Dataset id"),
     year_start: Optional[int] = Query(None, description="Inclusive start year"),
     year_end: Optional[int] = Query(None, description="Inclusive end year"),
@@ -4346,23 +4418,45 @@ async def get_basin_mean(
     var_name = validate_variable(state, variable)
     elev_min, elev_max = resolve_elevation_bounds(state, elev_min, elev_max)
     subregion = get_subregion(subregion_id)
+    bound_values = [min_lat, max_lat, min_lon, max_lon]
+    if any(value is not None for value in bound_values) and not all(value is not None for value in bound_values):
+        raise HTTPException(status_code=400, detail="Selected region requires min_lat, max_lat, min_lon, and max_lon")
+    region_bounds = None
+    if all(value is not None for value in bound_values):
+        min_lat, max_lat = sorted([min_lat, max_lat])
+        min_lon, max_lon = sorted([min_lon, max_lon])
+        region_bounds = {
+            "min_lat": min_lat,
+            "max_lat": max_lat,
+            "min_lon": min_lon,
+            "max_lon": max_lon,
+        }
 
     start_time = datetime.now()
-    data = calculate_basin_mean(
-        state,
+    query_state = snapshot_dataset_state(state)
+    data = await run_in_threadpool(
+        calculate_basin_mean,
+        query_state,
         start_date,
         end_date,
         elev_min,
         elev_max,
         var_name,
-        subregion=subregion,
+        subregion,
+        region_bounds,
     )
     query_time = (datetime.now() - start_time).total_seconds() * 1000
 
     subregion_log = f", subregion={subregion['id']}" if subregion else ""
+    region_log = (
+        f", region=[{region_bounds['min_lat']},{region_bounds['max_lat']}]x"
+        f"[{region_bounds['min_lon']},{region_bounds['max_lon']}]"
+        if region_bounds
+        else ""
+    )
     logger.info(
         f"[{state['id']}] Basin mean [{start_date} to {end_date}] [{elev_min}-{elev_max}m] {var_name}: "
-        f"{len(data)} days in {query_time:.0f}ms{subregion_log}"
+        f"{len(data)} days in {query_time:.0f}ms{subregion_log}{region_log}"
     )
     return JSONResponse(
         content={
@@ -4375,12 +4469,14 @@ async def get_basin_mean(
             "variable": var_name,
             "subregion_id": subregion["id"] if subregion else None,
             "subregion_label": subregion["label"] if subregion else None,
+            "bounds": region_bounds,
             "year_start": year_start,
             "year_end": year_end,
             "data": data,
             "count": len(data),
             "query_time_ms": round(query_time, 2),
-        }
+        },
+        headers={"Cache-Control": "private, max-age=300"},
     )
 
 
@@ -4408,8 +4504,10 @@ async def get_region_mean(
     min_lon, max_lon = sorted([min_lon, max_lon])
 
     start_time = datetime.now()
-    data = calculate_region_mean(
-        state,
+    query_state = snapshot_dataset_state(state)
+    data = await run_in_threadpool(
+        calculate_region_mean,
+        query_state,
         year,
         min_lat,
         max_lat,
@@ -4418,7 +4516,7 @@ async def get_region_mean(
         elev_min,
         elev_max,
         var_name,
-        subregion=subregion,
+        subregion,
     )
     query_time = (datetime.now() - start_time).total_seconds() * 1000
 
@@ -4448,7 +4546,8 @@ async def get_region_mean(
             "data": data,
             "count": len(data),
             "query_time_ms": round(query_time, 2),
-        }
+        },
+        headers={"Cache-Control": "private, max-age=300"},
     )
 
 
@@ -4498,15 +4597,17 @@ async def get_hotspot_trends(
         raise HTTPException(status_code=400, detail="Invalid year range for hotspot analysis")
 
     start_time = datetime.now()
-    result = calculate_hotspot_trends(
-        state=state,
-        year_start=analysis_start_year,
-        year_end=analysis_end_year,
-        elev_min=elev_min,
-        elev_max=elev_max,
-        variable=var_name,
-        subregion=subregion,
-        min_years=min_years,
+    query_state = snapshot_dataset_state(state)
+    result = await run_in_threadpool(
+        calculate_hotspot_trends,
+        query_state,
+        analysis_start_year,
+        analysis_end_year,
+        elev_min,
+        elev_max,
+        var_name,
+        subregion,
+        min_years,
     )
     query_time = (datetime.now() - start_time).total_seconds() * 1000
 
@@ -4531,7 +4632,8 @@ async def get_hotspot_trends(
             "data": result["data"],
             "top_hotspots": result["top_hotspots"],
             "query_time_ms": round(query_time, 2),
-        }
+        },
+        headers={"Cache-Control": "private, max-age=300"},
     )
 
 

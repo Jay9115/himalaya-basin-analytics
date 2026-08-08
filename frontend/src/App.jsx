@@ -1,13 +1,21 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import MapView from './components/MapView';
+import React, { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import TimeSlider from './components/TimeSlider';
 import ElevationFilter from './components/ElevationFilter';
-import TempGraph from './components/TempGraph';
-import DocumentationPage from './components/DocumentationPage';
-import OutcomeLongTermHotspotPage from './components/OutcomeLongTermHotspotPage';
-import DashboardCodePanel from './components/DashboardCodePanel';
 import apiService from './services/api';
 import './App.css';
+
+const MapView = lazy(() => import('./components/MapView'));
+const TempGraph = lazy(() => import('./components/TempGraph'));
+const DocumentationPage = lazy(() => import('./components/DocumentationPage'));
+const OutcomeLongTermHotspotPage = lazy(() => import('./components/OutcomeLongTermHotspotPage'));
+const DashboardCodePanel = lazy(() => import('./components/DashboardCodePanel'));
+
+const DeferredPanelFallback = () => (
+  <div className="deferred-panel-loading" role="status" aria-live="polite">
+    <div className="loading-spinner" />
+    <p>Loading tools...</p>
+  </div>
+);
 
 const formatVariableLabel = (name) => {
   if (!name) return '';
@@ -27,7 +35,7 @@ function App() {
   // State management
   const [theme, setTheme] = useState(() => {
     const stored = localStorage.getItem('theme');
-    return stored === 'light' || stored === 'dark' ? stored : 'dark';
+    return stored === 'light' || stored === 'dark' ? stored : 'light';
   });
   const [datasets, setDatasets] = useState([]);
   const [outcomes, setOutcomes] = useState([]);
@@ -55,11 +63,10 @@ function App() {
   const [currentDate, setCurrentDate] = useState(null);
   const [variables, setVariables] = useState([]);
   const [selectedVariable, setSelectedVariable] = useState('temperature_C');
+  const [comparisonVariables, setComparisonVariables] = useState([]);
   const [variablesContextKey, setVariablesContextKey] = useState('');
   const [searchToolsOpen, setSearchToolsOpen] = useState(false);
   const [activeToolPanel, setActiveToolPanel] = useState('');
-  const [years, setYears] = useState([]);
-  const [selectedYear, setSelectedYear] = useState(null);
   const [regionSelectMode, setRegionSelectMode] = useState(false);
   const [regionBounds, setRegionBounds] = useState(null);
   const [regionPreview, setRegionPreview] = useState(null);
@@ -103,7 +110,6 @@ function App() {
     return Number.isFinite(stored) ? clamp(stored, 360, 760) : 620;
   });
   
-  const animationRef = useRef(null);
   const mapAbortRef = useRef(null);
   const hotspotAbortRef = useRef(null);
   const graphAbortRef = useRef(null);
@@ -152,6 +158,14 @@ function App() {
   const isHotspotMode = analysisMode === 'hotspot';
   const glacierViewEnabled = mapViewMode === 'glacier';
   const variableLabel = formatVariableLabel(selectedVariable);
+  const graphVariableKeys = useMemo(() => (
+    Array.from(new Set([selectedVariable, ...comparisonVariables]))
+      .filter((variable) => variable && variables.includes(variable))
+  ), [selectedVariable, comparisonVariables, variables]);
+  const graphSeries = useMemo(() => graphVariableKeys.map((variable) => ({
+    key: variable,
+    label: formatVariableLabel(variable),
+  })), [graphVariableKeys]);
   const hasCodeMapOutput = codePanelOpen && Array.isArray(codeMapOutput?.data) && codeMapOutput.data.length > 0;
   const displayedMapData = hasCodeMapOutput ? codeMapOutput.data : isHotspotMode ? hotspotData : mapData;
   const hotspotMinYearsMax = activeYearRange
@@ -161,11 +175,47 @@ function App() {
   const displayedVariableLabel = hasCodeMapOutput ? (codeMapOutput.label || 'Code Result') : variableLabel;
   const displayedAnalysisMode = hasCodeMapOutput ? 'daily' : analysisMode;
   const displayedLayerStyle = hasCodeMapOutput ? codeMapOutput.style : null;
+  const mapRequestKey = useMemo(() => [
+    datasetId,
+    activeYearRange?.start,
+    activeYearRange?.end,
+    currentDate,
+    selectedElevRange.min,
+    selectedElevRange.max,
+    selectedVariable,
+    selectedSubregionId,
+  ].join('|'), [
+    datasetId,
+    activeYearRange?.start,
+    activeYearRange?.end,
+    currentDate,
+    selectedElevRange.min,
+    selectedElevRange.max,
+    selectedVariable,
+    selectedSubregionId,
+  ]);
+  const [mapFrameReadyKey, setMapFrameReadyKey] = useState('');
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    const warmVisualizationModules = () => {
+      Promise.allSettled([
+        import('./components/MapView'),
+        import('./components/TempGraph'),
+      ]);
+    };
+
+    if ('requestIdleCallback' in window) {
+      const idleId = window.requestIdleCallback(warmVisualizationModules, { timeout: 1500 });
+      return () => window.cancelIdleCallback(idleId);
+    }
+    const timer = window.setTimeout(warmVisualizationModules, 250);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('bottomPanelHeight', String(bottomPanelHeight));
@@ -174,6 +224,12 @@ function App() {
   useEffect(() => {
     localStorage.setItem('codePanelWidth', String(codePanelWidth));
   }, [codePanelWidth]);
+
+  useEffect(() => {
+    setComparisonVariables((prev) => (
+      prev.filter((variable) => variable !== selectedVariable && variables.includes(variable))
+    ));
+  }, [selectedVariable, variables]);
 
   useEffect(() => {
     setCodeMapOutput(null);
@@ -418,6 +474,7 @@ function App() {
         setError(null);
         setVariables([]);
         setSelectedVariable('');
+        setComparisonVariables([]);
         setVariablesContextKey('');
         setMapData([]);
         setGraphData([]);
@@ -430,9 +487,6 @@ function App() {
           setCurrentDate(datesResponse.dates[0]);
           setCurrentDateIndex(0);
           setLoading(false); // Allow UI to show while other data loads
-          const yearSet = Array.from(new Set(datesResponse.dates.map((d) => d.slice(0, 4)))).sort();
-          setYears(yearSet);
-          setSelectedYear(yearSet[0] || null);
         } else {
           setError(
             `No data available for dataset '${datasetId}' in ${activeYearRange.start}-${activeYearRange.end}.`
@@ -497,7 +551,9 @@ function App() {
           selectedSubregionId || undefined
         );
         
+        if (controller.signal.aborted) return;
         setMapData(response.data || []);
+        setMapFrameReadyKey(mapRequestKey);
         
         if (response.query_time_ms) {
           console.log(`Query completed in ${response.query_time_ms}ms`);
@@ -515,7 +571,7 @@ function App() {
     return () => {
       controller.abort();
     };
-  }, [datasetReady, datasetId, currentDate, selectedElevRange, selectedVariable, selectedVariableReady, activeYearRange, selectedSubregionId, isHotspotMode]);
+  }, [datasetReady, datasetId, currentDate, selectedElevRange, selectedVariable, selectedVariableReady, activeYearRange, selectedSubregionId, isHotspotMode, mapRequestKey]);
 
   // Fetch hotspot trends for long-term change analysis
   useEffect(() => {
@@ -587,37 +643,52 @@ function App() {
 
     const fetchGraphData = async () => {
       try {
-        if (regionBounds && selectedYear) {
-          const response = await apiService.getRegionMean(
-            selectedYear,
-            regionBounds,
-            selectedElevRange.min,
-            selectedElevRange.max,
-            selectedVariable,
-            datasetId,
-            controller.signal,
-            activeYearRange,
-            selectedSubregionId || undefined
-          );
-          setGraphData(response.data || []);
-        } else {
+        const variablesForGraph = graphVariableKeys.length > 0 ? graphVariableKeys : [selectedVariable];
+        const fetchSeries = async (variable) => {
           const startDate = dates[0];
           const endDate = dates[dates.length - 1];
-          
-          const response = await apiService.getBasinMean(
+
+          return apiService.getBasinMean(
             startDate,
             endDate,
             selectedElevRange.min,
             selectedElevRange.max,
-            selectedVariable,
+            variable,
             datasetId,
             controller.signal,
             activeYearRange,
-            selectedSubregionId || undefined
+            selectedSubregionId || undefined,
+            regionBounds || undefined
           );
-          
-          setGraphData(response.data || []);
+        };
+
+        const responses = await Promise.all(
+          variablesForGraph.map(async (variable) => ({
+            variable,
+            response: await fetchSeries(variable),
+          }))
+        );
+
+        if (controller.signal.aborted) return;
+
+        if (responses.length === 1) {
+          setGraphData(responses[0].response.data || []);
+          return;
         }
+
+        const mergedByDate = new Map();
+        responses.forEach(({ variable, response }) => {
+          (response.data || []).forEach((point) => {
+            const date = point.date;
+            if (!date) return;
+            const existing = mergedByDate.get(date) || { date };
+            existing[variable] = point.mean_value ?? point.mean_temp ?? point.value;
+            existing[`${variable}__pixels`] = point.pixel_count ?? point.count;
+            mergedByDate.set(date, existing);
+          });
+        });
+
+        setGraphData(Array.from(mergedByDate.values()).sort((a, b) => a.date.localeCompare(b.date)));
       } catch (err) {
         const isCanceled = err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED';
         if (isCanceled) return;
@@ -633,46 +704,63 @@ function App() {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [datasetReady, datasetId, dates, selectedElevRange, selectedVariable, selectedVariableReady, regionBounds, selectedYear, activeYearRange, selectedSubregionId]);
+  }, [datasetReady, datasetId, dates, selectedElevRange, selectedVariable, selectedVariableReady, graphVariableKeys, regionBounds, activeYearRange, selectedSubregionId]);
 
-  // Animation control using requestAnimationFrame
-  const animate = useCallback(() => {
-    if (!isPlaying) return;
+  // Keep one frame ahead in the bounded cache. Playback only advances after
+  // the visible frame is ready, preventing slow requests from being cancelled
+  // repeatedly at 2x/5x speed.
+  useEffect(() => {
+    if (!isPlaying || isHotspotMode || mapFrameReadyKey !== mapRequestKey) return undefined;
+    const nextIndex = currentDateIndex + 1;
+    if (nextIndex >= dates.length) return undefined;
 
-    setCurrentDateIndex((prevIndex) => {
-      const nextIndex = prevIndex + 1;
-      
-      if (nextIndex >= dates.length) {
-        setIsPlaying(false);
-        return 0; // Reset to start
-      }
-      
-      setCurrentDate(dates[nextIndex]);
-      return nextIndex;
+    apiService.prefetchData(
+      dates[nextIndex],
+      selectedElevRange.min,
+      selectedElevRange.max,
+      selectedVariable,
+      datasetId,
+      activeYearRange,
+      selectedSubregionId || undefined
+    ).catch(() => {
+      // The foreground request remains the source of truth if prefetch fails.
     });
-
-    animationRef.current = setTimeout(() => {
-      requestAnimationFrame(animate);
-    }, playSpeed);
-  }, [isPlaying, dates, playSpeed]);
+    return undefined;
+  }, [
+    isPlaying,
+    isHotspotMode,
+    mapFrameReadyKey,
+    mapRequestKey,
+    currentDateIndex,
+    dates,
+    selectedElevRange.min,
+    selectedElevRange.max,
+    selectedVariable,
+    datasetId,
+    activeYearRange,
+    selectedSubregionId,
+  ]);
 
   useEffect(() => {
-    if (isPlaying) {
-      animationRef.current = setTimeout(() => {
-        requestAnimationFrame(animate);
-      }, playSpeed);
-    } else {
-      if (animationRef.current) {
-        clearTimeout(animationRef.current);
-      }
+    if (!isPlaying || isHotspotMode || mapFrameReadyKey !== mapRequestKey || dates.length === 0) {
+      return undefined;
     }
 
-    return () => {
-      if (animationRef.current) {
-        clearTimeout(animationRef.current);
-      }
-    };
-  }, [isPlaying, animate, playSpeed]);
+    const timer = window.setTimeout(() => {
+      setCurrentDateIndex((prevIndex) => {
+        const nextIndex = prevIndex + 1;
+        if (nextIndex >= dates.length) {
+          setIsPlaying(false);
+          setCurrentDate(dates[0] || null);
+          return 0;
+        }
+        setCurrentDate(dates[nextIndex]);
+        return nextIndex;
+      });
+    }, playSpeed);
+
+    return () => window.clearTimeout(timer);
+  }, [isPlaying, isHotspotMode, mapFrameReadyKey, mapRequestKey, dates, playSpeed]);
 
   // Handle date change
   const handleDateChange = useCallback((index) => {
@@ -704,6 +792,19 @@ function App() {
     }
   }, []);
 
+  const handlePrimaryVariableChange = useCallback((variable) => {
+    setSelectedVariable(variable);
+  }, []);
+
+  const handleComparisonVariableToggle = useCallback((variable) => {
+    if (variable === selectedVariable) return;
+    setComparisonVariables((prev) => (
+      prev.includes(variable)
+        ? prev.filter((item) => item !== variable)
+        : [...prev, variable]
+    ));
+  }, [selectedVariable]);
+
   const handleHotspotMinYearsChange = useCallback((value) => {
     const parsed = Number.parseInt(value, 10);
     if (!Number.isInteger(parsed)) return;
@@ -731,10 +832,7 @@ function App() {
     setRegionSelectMode(false);
     setRegionPreview(null);
     setRegionInputError('');
-    if (currentDate) {
-      setSelectedYear(currentDate.slice(0, 4));
-    }
-  }, [currentDate]);
+  }, []);
 
   const handleRegionPreview = useCallback((bounds) => {
     setRegionPreview(bounds);
@@ -764,10 +862,7 @@ function App() {
     setRegionBounds(bounds);
     setRegionSelectMode(false);
     setRegionPreview(null);
-    if (currentDate) {
-      setSelectedYear(currentDate.slice(0, 4));
-    }
-  }, [regionLatMin, regionLatMax, regionLonMin, regionLonMax, currentDate]);
+  }, [regionLatMin, regionLatMax, regionLonMin, regionLonMax]);
 
   const handleSubregionChange = useCallback((value) => {
     setSelectedSubregionId(value);
@@ -1275,20 +1370,6 @@ function App() {
               {selectedSubregion.kind === 'glacier' ? '' : ` (ID: ${selectedSubregion.id})`}
             </div>
           )}
-          {regionBounds && years.length > 0 && (
-            <div className="region-year">
-              <label htmlFor="region-year-select">Year:</label>
-              <select
-                id="region-year-select"
-                value={selectedYear || ''}
-                onChange={(e) => setSelectedYear(e.target.value)}
-              >
-                {years.map((year) => (
-                  <option key={year} value={year}>{year}</option>
-                ))}
-              </select>
-            </div>
-          )}
         </div>
       )}
       {!regionBounds && (
@@ -1327,13 +1408,46 @@ function App() {
           {variables.map((variable) => (
             <label className="variable-option" key={variable}>
               <input
-                type="checkbox"
+                type="radio"
+                name="primary-map-variable"
                 checked={selectedVariable === variable}
-                onChange={() => setSelectedVariable(variable)}
+                onChange={() => handlePrimaryVariableChange(variable)}
               />
               <span>{formatVariableLabel(variable)}</span>
             </label>
           ))}
+        </div>
+      )}
+      {variables.length > 1 && (
+        <div className="comparison-options">
+          <div className="comparison-header">
+            <label>Plot Comparison</label>
+            {comparisonVariables.length > 0 && (
+              <button
+                type="button"
+                className="comparison-clear"
+                onClick={() => setComparisonVariables([])}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          <div className="comparison-list">
+            {variables.map((variable) => (
+              <label
+                className={`comparison-option ${variable === selectedVariable ? 'primary' : ''}`}
+                key={`compare-${variable}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={variable === selectedVariable || comparisonVariables.includes(variable)}
+                  disabled={variable === selectedVariable}
+                  onChange={() => handleComparisonVariableToggle(variable)}
+                />
+                <span>{formatVariableLabel(variable)}</span>
+              </label>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -1510,12 +1624,14 @@ function App() {
             </div>
           </header>
           <div className="app-content docs-only-content">
-            <DocumentationPage
-              selectedDataset={selectedDataset}
-              selectedYearRange={activeYearRange}
-              selectedVariable={selectedVariable}
-              stats={stats}
-            />
+            <Suspense fallback={<DeferredPanelFallback />}>
+              <DocumentationPage
+                selectedDataset={selectedDataset}
+                selectedYearRange={activeYearRange}
+                selectedVariable={selectedVariable}
+                stats={stats}
+              />
+            </Suspense>
           </div>
         </div>
       );
@@ -1827,7 +1943,9 @@ function App() {
           </div>
         </header>
         <div className="app-content">
-          <OutcomeLongTermHotspotPage theme={theme} />
+          <Suspense fallback={<DeferredPanelFallback />}>
+            <OutcomeLongTermHotspotPage theme={theme} />
+          </Suspense>
         </div>
       </div>
     );
@@ -2036,31 +2154,35 @@ function App() {
         className={`app-content ${showDocumentation ? 'docs-only-content' : ''} ${codePanelOpen ? 'code-split-content' : ''}`}
       >
         {showDocumentation ? (
-          <DocumentationPage
-            selectedDataset={selectedDataset}
-            selectedYearRange={activeYearRange}
-            selectedVariable={selectedVariable}
-            stats={stats}
-          />
+          <Suspense fallback={<DeferredPanelFallback />}>
+            <DocumentationPage
+              selectedDataset={selectedDataset}
+              selectedYearRange={activeYearRange}
+              selectedVariable={selectedVariable}
+              stats={stats}
+            />
+          </Suspense>
         ) : (
           <>
         {codePanelOpen && (
-          <DashboardCodePanel
-            theme={theme}
-            datasetId={datasetId}
-            datasetLabel={selectedDataset?.label || ''}
-            yearRange={activeYearRange}
-            currentDate={currentDate}
-            dates={dates}
-            selectedVariable={selectedVariable}
-            selectedElevRange={selectedElevRange}
-            selectedSubregionId={selectedSubregionId}
-            selectedSubregionLabel={selectedSubregion?.label || ''}
-            onClose={handleCloseCodePanel}
-            onMapOutputChange={handleCodeMapOutputChange}
-            outputPortalTargetId={codePanelOpen ? 'code-output-dock' : null}
-            panelWidth={codePanelWidth}
-          />
+          <Suspense fallback={<DeferredPanelFallback />}>
+            <DashboardCodePanel
+              theme={theme}
+              datasetId={datasetId}
+              datasetLabel={selectedDataset?.label || ''}
+              yearRange={activeYearRange}
+              currentDate={currentDate}
+              dates={dates}
+              selectedVariable={selectedVariable}
+              selectedElevRange={selectedElevRange}
+              selectedSubregionId={selectedSubregionId}
+              selectedSubregionLabel={selectedSubregion?.label || ''}
+              onClose={handleCloseCodePanel}
+              onMapOutputChange={handleCodeMapOutputChange}
+              outputPortalTargetId={codePanelOpen ? 'code-output-dock' : null}
+              panelWidth={codePanelWidth}
+            />
+          </Suspense>
         )}
         {codePanelOpen && (
           <div
@@ -2075,22 +2197,24 @@ function App() {
         <main className="main-content">
           {/* Map */}
           <div className="map-container">
-            <MapView
-              data={displayedMapData}
-              currentDate={currentDate}
-              theme={theme}
-              variableLabel={displayedVariableLabel}
-              selectionEnabled={regionSelectMode}
-              onSelectionComplete={handleRegionSelect}
-              onSelectionPreview={handleRegionPreview}
-              selectionBounds={regionBounds}
-              selectedSubregionFeature={selectedSubregionFeature}
-              glacierViewEnabled={hasCodeMapOutput ? false : glacierViewEnabled}
-              focusLocation={focusLocation}
-              analysisMode={displayedAnalysisMode}
-              hotspotSummary={hasCodeMapOutput ? null : hotspotSummary}
-              layerStyle={displayedLayerStyle}
-            />
+            <Suspense fallback={<DeferredPanelFallback />}>
+              <MapView
+                data={displayedMapData}
+                currentDate={currentDate}
+                theme={theme}
+                variableLabel={displayedVariableLabel}
+                selectionEnabled={regionSelectMode}
+                onSelectionComplete={handleRegionSelect}
+                onSelectionPreview={handleRegionPreview}
+                selectionBounds={regionBounds}
+                selectedSubregionFeature={selectedSubregionFeature}
+                glacierViewEnabled={hasCodeMapOutput ? false : glacierViewEnabled}
+                focusLocation={focusLocation}
+                analysisMode={displayedAnalysisMode}
+                hotspotSummary={hasCodeMapOutput ? null : hotspotSummary}
+                layerStyle={displayedLayerStyle}
+              />
+            </Suspense>
           </div>
 
           <div
@@ -2127,13 +2251,16 @@ function App() {
                 </div>
 
                 <div className="graph-container">
-                  <TempGraph
-                    data={graphData}
-                    currentDate={currentDate}
-                    variableLabel={variableLabel}
-                    showPointStats={Boolean(regionBounds)}
-                    pointStatsLabel="Region points/day"
-                  />
+                  <Suspense fallback={<DeferredPanelFallback />}>
+                    <TempGraph
+                      data={graphData}
+                      currentDate={currentDate}
+                      variableLabel={variableLabel}
+                      series={graphSeries}
+                      showPointStats={Boolean(regionBounds)}
+                      pointStatsLabel="Region points/day"
+                    />
+                  </Suspense>
                 </div>
               </>
             )}

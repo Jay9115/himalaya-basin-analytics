@@ -7,10 +7,14 @@ import React, {
   useState,
 } from 'react';
 import { createPortal } from 'react-dom';
-import Editor from '@monaco-editor/react';
+import Editor, { loader } from '@monaco-editor/react';
+import * as monaco from 'monaco-editor';
 import apiService from '../services/api';
+import llmService from '../services/llmService';
 import OperationChartRenderer from './OperationChartRenderer';
 import './DashboardCodePanel.css';
+
+loader.config({ monaco });
 
 const DEFAULT_CODE = `def run(hb, df, meta):
     if meta.get("large_mode"):
@@ -92,6 +96,37 @@ const tableValue = (columns, row, key) => {
   return index >= 0 ? row[index] : undefined;
 };
 
+const extractCodeFromAssistant = (text) => {
+  if (!text) return '';
+  const fenced = text.match(/```(?:python)?\s*([\s\S]*?)```/i);
+  if (fenced?.[1]) return fenced[1].trim();
+  return text.trim();
+};
+
+const buildChatContextPrefix = ({
+  datasetLabel,
+  datasetId,
+  selectedVariable,
+  currentDate,
+  selectedElevRange,
+  selectedSubregionLabel,
+  yearRange,
+}) => {
+  const pieces = [
+    `dataset=${datasetLabel || datasetId || 'unknown'}`,
+    `variable=${selectedVariable || 'unknown'}`,
+    `date=${currentDate || 'unknown'}`,
+    `elevation=${selectedElevRange?.min ?? '?'} to ${selectedElevRange?.max ?? '?'}`,
+  ];
+  if (yearRange?.start && yearRange?.end) {
+    pieces.push(`years=${yearRange.start}-${yearRange.end}`);
+  }
+  if (selectedSubregionLabel) {
+    pieces.push(`subregion=${selectedSubregionLabel}`);
+  }
+  return `[Dashboard context: ${pieces.join(', ')}]`;
+};
+
 function DashboardCodePanel({
   theme,
   datasetId,
@@ -109,6 +144,14 @@ function DashboardCodePanel({
   panelWidth = null,
 }) {
   const [code, setCode] = useState(DEFAULT_CODE);
+  const [panelMode, setPanelMode] = useState('code');
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatError, setChatError] = useState('');
+  const [llmHealth, setLlmHealth] = useState(null);
+  const chatAbortRef = useRef(null);
+  const chatScrollRef = useRef(null);
   const [dateMode, setDateMode] = useState('single');
   const [rangeStartDate, setRangeStartDate] = useState(currentDate || dates?.[0] || '');
   const [rangeEndDate, setRangeEndDate] = useState(currentDate || dates?.[0] || '');
@@ -203,8 +246,96 @@ function DashboardCodePanel({
 
   useEffect(() => () => {
     operationAbortRef.current?.abort?.();
+    chatAbortRef.current?.abort?.();
     onMapOutputChange(null);
   }, [onMapOutputChange]);
+
+  useEffect(() => {
+    if (panelMode !== 'chatbot') return undefined;
+
+    const controller = new AbortController();
+    llmService.getHealth(controller.signal)
+      .then((payload) => {
+        setLlmHealth(payload);
+        setChatError('');
+      })
+      .catch((err) => {
+        if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') return;
+        setLlmHealth(null);
+        setChatError('LLM service unavailable at http://127.0.0.1:8010. Start START_LLM.bat first.');
+      });
+
+    return () => controller.abort();
+  }, [panelMode]);
+
+  useEffect(() => {
+    if (!chatScrollRef.current) return;
+    chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+  }, [chatMessages, chatLoading, panelMode]);
+
+  const sendChatMessage = useCallback(async () => {
+    const trimmed = chatInput.trim();
+    if (!trimmed || chatLoading) return;
+
+    const controller = new AbortController();
+    chatAbortRef.current?.abort?.();
+    chatAbortRef.current = controller;
+
+    const contextPrefix = buildChatContextPrefix({
+      datasetLabel,
+      datasetId,
+      selectedVariable,
+      currentDate,
+      selectedElevRange,
+      selectedSubregionLabel,
+      yearRange,
+    });
+    const requestMessage = `${contextPrefix}\n\n${trimmed}`;
+
+    setChatLoading(true);
+    setChatError('');
+    setChatMessages((prev) => [...prev, { role: 'user', content: trimmed }]);
+    setChatInput('');
+
+    try {
+      const response = await llmService.chat(requestMessage, { signal: controller.signal });
+      const assistantText = llmService.extractMessage(response) || 'No response returned.';
+      setChatMessages((prev) => [...prev, { role: 'assistant', content: assistantText }]);
+    } catch (err) {
+      if (err?.name === 'CanceledError' || err?.name === 'AbortError' || err?.code === 'ERR_CANCELED') {
+        return;
+      }
+      const detail = err?.response?.data?.detail || err?.message || 'Chat request failed.';
+      setChatError(String(detail));
+      setChatMessages((prev) => [...prev, { role: 'assistant', content: `Error: ${detail}`, error: true }]);
+    } finally {
+      if (!controller.signal.aborted) setChatLoading(false);
+    }
+  }, [
+    chatInput,
+    chatLoading,
+    currentDate,
+    datasetId,
+    datasetLabel,
+    selectedElevRange,
+    selectedSubregionLabel,
+    selectedVariable,
+    yearRange,
+  ]);
+
+  const insertAssistantCode = useCallback((content) => {
+    const nextCode = extractCodeFromAssistant(content);
+    if (!nextCode) return;
+    setCode(nextCode);
+    setPanelMode('code');
+  }, []);
+
+  const clearChat = useCallback(() => {
+    chatAbortRef.current?.abort?.();
+    setChatLoading(false);
+    setChatMessages([]);
+    setChatError('');
+  }, []);
 
   const validateCode = useCallback(async () => {
     setValidation(null);
@@ -472,13 +603,33 @@ function DashboardCodePanel({
     >
       <div className="dashboard-code-note">
         <div>
-          <strong>HB Code</strong>
+          <strong>{panelMode === 'code' ? 'HB Code' : 'HB Chatbot'}</strong>
           <span>{datasetLabel || datasetId} | {selectedVariable || 'variable'} | {currentDate || 'date'}</span>
           {selectedSubregionLabel && <span>{selectedSubregionLabel}</span>}
         </div>
-        <button type="button" className="dashboard-code-close" onClick={onClose}>Close</button>
+        <div className="dashboard-code-note-actions">
+          <div className="dashboard-code-mode-switch">
+            <button
+              type="button"
+              className={panelMode === 'code' ? 'active' : ''}
+              onClick={() => setPanelMode('code')}
+            >
+              Code
+            </button>
+            <button
+              type="button"
+              className={panelMode === 'chatbot' ? 'active' : ''}
+              onClick={() => setPanelMode('chatbot')}
+            >
+              Chatbot
+            </button>
+          </div>
+          <button type="button" className="dashboard-code-close" onClick={onClose}>Close</button>
+        </div>
       </div>
 
+      {panelMode === 'code' && (
+      <>
       <div className="dashboard-code-toolbar">
         <div className="dashboard-code-date-mode">
           <button
@@ -580,9 +731,94 @@ function DashboardCodePanel({
 
       {!outputPortalTarget && outputSection}
       {outputPortalTarget && createPortal(outputSection, outputPortalTarget)}
+      </>
+      )}
+
+      {panelMode === 'chatbot' && (
+        <>
+          <div className="dashboard-chat-toolbar">
+            <span className={`dashboard-chat-health ${llmHealth?.status === 'ok' ? 'online' : 'offline'}`}>
+              {llmHealth?.loaded
+                ? 'LLM ready'
+                : llmHealth?.error
+                  ? 'LLM model not loaded'
+                  : llmHealth?.status === 'ok'
+                    ? 'LLM online'
+                    : 'LLM offline'}
+            </span>
+            <button type="button" className="dashboard-code-secondary" onClick={clearChat} disabled={chatLoading}>
+              Clear
+            </button>
+          </div>
+
+          <div className="dashboard-chat-panel" ref={chatScrollRef}>
+            {chatMessages.length === 0 && (
+              <div className="dashboard-chat-empty">
+                Ask about HB analytics, request Python using hb/df/meta, or get help with the current dashboard selection.
+              </div>
+            )}
+            {chatMessages.map((message, index) => (
+              <div
+                key={`${message.role}-${index}`}
+                className={`dashboard-chat-message ${message.role}${message.error ? ' error' : ''}`}
+              >
+                <div className="dashboard-chat-message-role">{message.role === 'user' ? 'You' : 'Assistant'}</div>
+                <pre>{message.content}</pre>
+                {message.role === 'assistant' && !message.error && (
+                  <button
+                    type="button"
+                    className="dashboard-chat-insert"
+                    onClick={() => insertAssistantCode(message.content)}
+                  >
+                    Use as code
+                  </button>
+                )}
+              </div>
+            ))}
+            {chatLoading && (
+              <div className="dashboard-chat-message assistant loading">
+                <div className="dashboard-chat-message-role">Assistant</div>
+                <pre>Thinking...</pre>
+              </div>
+            )}
+          </div>
+
+          <div className="dashboard-chat-compose">
+            <textarea
+              value={chatInput}
+              onChange={(event) => setChatInput(event.target.value)}
+              placeholder="Ask the Himalaya Basin assistant..."
+              rows={3}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  sendChatMessage();
+                }
+              }}
+              disabled={chatLoading}
+            />
+            <button
+              type="button"
+              className="dashboard-code-primary"
+              onClick={sendChatMessage}
+              disabled={chatLoading || !chatInput.trim()}
+            >
+              {chatLoading ? 'Sending...' : 'Send'}
+            </button>
+          </div>
+
+          <div className="dashboard-code-status">
+            {chatError && <span className="status-error">{chatError}</span>}
+            {!chatError && llmHealth && (
+              <span className={llmHealth.loaded ? 'status-ok' : 'status-error'}>
+                {llmHealth.loaded ? 'Model loaded' : 'Waiting for model in Models folder'}
+              </span>
+            )}
+          </div>
+        </>
+      )}
     </aside>
   );
 }
 
 export default DashboardCodePanel;
-

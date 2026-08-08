@@ -19,7 +19,19 @@ import {
   YAxis,
 } from 'recharts';
 
-const CHART_COLORS = ['#0f766e', '#2563eb', '#dc2626', '#ca8a04', '#7c3aed', '#ea580c'];
+const CHART_COLORS = ['#0072b2', '#d55e00', '#009e73', '#cc79a7', '#e69f00', '#56b4e9'];
+const chartMargin = { top: 12, right: 24, left: 8, bottom: 24 };
+const gridProps = { strokeDasharray: '2 4', stroke: 'var(--plot-grid)', vertical: false };
+const tooltipProps = {
+  contentStyle: {
+    background: 'var(--tooltip-bg)',
+    border: '1px solid var(--tooltip-border)',
+    borderRadius: 6,
+    color: 'var(--text)',
+    boxShadow: '0 8px 24px var(--shadow)',
+  },
+  labelStyle: { color: 'var(--text)' },
+};
 
 const withFallbackData = (output) => output?.points || [];
 
@@ -55,8 +67,8 @@ function OperationChartRenderer({ output, height = 240, compact = false }) {
     return (
       <ResponsiveContainer width="100%" height={height}>
         <PieChart>
-          <Tooltip />
-          <Legend />
+          <Tooltip {...tooltipProps} />
+          <Legend wrapperStyle={{ color: 'var(--text)', fontSize: 12 }} />
           <Pie data={data} dataKey={valueKey} nameKey={nameKey} outerRadius="72%">
             {data.map((item, index) => (
               <Cell key={`${item[nameKey]}-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
@@ -70,12 +82,12 @@ function OperationChartRenderer({ output, height = 240, compact = false }) {
   if (chartType === 'scatter') {
     return (
       <ResponsiveContainer width="100%" height={height}>
-        <ScatterChart>
-          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-          <XAxis dataKey={xKey} stroke="var(--text-muted)" tick={{ fontSize: tickSize }} />
-          <YAxis dataKey={yKey} stroke="var(--text-muted)" tick={{ fontSize: tickSize }} width={axisWidth} />
-          <Tooltip />
-          <Scatter data={data} fill={CHART_COLORS[0]} />
+        <ScatterChart margin={chartMargin}>
+          <CartesianGrid {...gridProps} />
+          <XAxis dataKey={xKey} stroke="var(--plot-axis)" tick={{ fill: 'var(--plot-axis)', fontSize: tickSize }} />
+          <YAxis dataKey={yKey} stroke="var(--plot-axis)" tick={{ fill: 'var(--plot-axis)', fontSize: tickSize }} width={axisWidth} />
+          <Tooltip {...tooltipProps} />
+          <Scatter data={data} fill={CHART_COLORS[0]} stroke="#ffffff" strokeWidth={0.8} />
         </ScatterChart>
       </ResponsiveContainer>
     );
@@ -84,12 +96,12 @@ function OperationChartRenderer({ output, height = 240, compact = false }) {
   if (chartType === 'bar' || chartType === 'histogram') {
     return (
       <ResponsiveContainer width="100%" height={height}>
-        <BarChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-          <XAxis dataKey={xKey} stroke="var(--text-muted)" tick={{ fontSize: tickSize }} />
-          <YAxis stroke="var(--text-muted)" tick={{ fontSize: tickSize }} width={axisWidth} />
-          <Tooltip />
-          <Legend />
+        <BarChart data={data} margin={chartMargin}>
+          <CartesianGrid {...gridProps} />
+          <XAxis dataKey={xKey} stroke="var(--plot-axis)" tick={{ fill: 'var(--plot-axis)', fontSize: tickSize }} />
+          <YAxis stroke="var(--plot-axis)" tick={{ fill: 'var(--plot-axis)', fontSize: tickSize }} width={axisWidth} />
+          <Tooltip {...tooltipProps} />
+          <Legend wrapperStyle={{ color: 'var(--text)', fontSize: 12 }} />
           {series.map((key, index) => (
             <Bar key={key} dataKey={key} fill={CHART_COLORS[index % CHART_COLORS.length]} />
           ))}
@@ -101,12 +113,12 @@ function OperationChartRenderer({ output, height = 240, compact = false }) {
   if (chartType === 'area') {
     return (
       <ResponsiveContainer width="100%" height={height}>
-        <AreaChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-          <XAxis dataKey={xKey} stroke="var(--text-muted)" tick={{ fontSize: tickSize }} />
-          <YAxis stroke="var(--text-muted)" tick={{ fontSize: tickSize }} width={axisWidth} />
-          <Tooltip />
-          <Legend />
+        <AreaChart data={data} margin={chartMargin}>
+          <CartesianGrid {...gridProps} />
+          <XAxis dataKey={xKey} stroke="var(--plot-axis)" tick={{ fill: 'var(--plot-axis)', fontSize: tickSize }} />
+          <YAxis stroke="var(--plot-axis)" tick={{ fill: 'var(--plot-axis)', fontSize: tickSize }} width={axisWidth} />
+          <Tooltip {...tooltipProps} />
+          <Legend wrapperStyle={{ color: 'var(--text)', fontSize: 12 }} />
           {series.map((key, index) => (
             <Area
               key={key}
@@ -114,7 +126,7 @@ function OperationChartRenderer({ output, height = 240, compact = false }) {
               dataKey={key}
               stroke={CHART_COLORS[index % CHART_COLORS.length]}
               fill={CHART_COLORS[index % CHART_COLORS.length]}
-              fillOpacity={0.2}
+              fillOpacity={0.16}
             />
           ))}
         </AreaChart>
@@ -124,19 +136,19 @@ function OperationChartRenderer({ output, height = 240, compact = false }) {
 
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <LineChart data={data}>
-        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-        <XAxis dataKey={xKey} stroke="var(--text-muted)" tick={{ fontSize: tickSize }} />
-        <YAxis stroke="var(--text-muted)" tick={{ fontSize: tickSize }} width={axisWidth} />
-        <Tooltip />
-        <Legend />
+      <LineChart data={data} margin={chartMargin}>
+        <CartesianGrid {...gridProps} />
+        <XAxis dataKey={xKey} stroke="var(--plot-axis)" tick={{ fill: 'var(--plot-axis)', fontSize: tickSize }} />
+        <YAxis stroke="var(--plot-axis)" tick={{ fill: 'var(--plot-axis)', fontSize: tickSize }} width={axisWidth} />
+        <Tooltip {...tooltipProps} />
+        <Legend wrapperStyle={{ color: 'var(--text)', fontSize: 12 }} />
         {series.map((key, index) => (
           <Line
             key={key}
             type="monotone"
             dataKey={key}
             stroke={CHART_COLORS[index % CHART_COLORS.length]}
-            strokeWidth={2}
+            strokeWidth={2.2}
             dot={false}
           />
         ))}

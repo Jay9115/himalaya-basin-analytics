@@ -1,0 +1,3 @@
+# Embedded inference backend (optional if using LLM_BACKEND=external)
+--extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+llama-cpp-python>=0.3.0

@@ -4,26 +4,65 @@
   height: 100%;
   display: flex;
   flex-direction: column;
+  background: var(--plot-surface);
+  color: var(--text);
 }
 
 .graph-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 15px;
+  margin-bottom: 10px;
   flex-wrap: wrap;
-  gap: 15px;
+  gap: 10px 14px;
+}
+
+.graph-title-block {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 220px;
 }
 
 .graph-actions {
   display: flex;
   gap: 8px;
   align-items: center;
+  flex-wrap: wrap;
+}
+
+.graph-mode-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--input-bg);
+}
+
+.graph-mode-switch button {
+  min-height: 28px;
+  padding: 5px 9px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.graph-mode-switch button.active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #ffffff;
 }
 
 .graph-cut-btn,
 .graph-clear-btn {
-  padding: 6px 10px;
+  min-height: 34px;
+  padding: 6px 11px;
   border-radius: 6px;
   border: 1px solid var(--border);
   background: var(--input-bg);
@@ -48,14 +87,25 @@
 
 .graph-header h3 {
   margin: 0;
-  font-size: 18px;
-  color: var(--accent);
+  font-size: 16px;
+  color: var(--text);
+  font-weight: 750;
+}
+
+.graph-subtitle {
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 .graph-stats {
   display: flex;
-  gap: 20px;
+  gap: 8px 14px;
   flex-wrap: wrap;
+  width: 100%;
+}
+
+.graph-stats.multi {
+  gap: 7px;
 }
 
 .stat {
@@ -63,6 +113,7 @@
   align-items: center;
   gap: 6px;
   font-size: 13px;
+  min-height: 28px;
 }
 
 .stat-label {
@@ -72,10 +123,25 @@
 .stat-value {
   color: var(--text);
   font-weight: 600;
-  padding: 4px 10px;
+  padding: 3px 8px;
   background: var(--badge-bg);
   border-radius: 4px;
   border: 1px solid var(--badge-border);
+}
+
+.stat-swatch,
+.tooltip-swatch {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 10px;
+  border-radius: 2px;
+  display: inline-block;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.stat-range {
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 .stat-value.min {
@@ -94,24 +160,26 @@
 .custom-tooltip {
   background: var(--tooltip-bg);
   border: 1px solid var(--tooltip-border);
-  border-radius: 8px;
-  padding: 12px 15px;
+  border-radius: 6px;
+  padding: 10px 12px;
   color: var(--text);
-  box-shadow: 0 4px 12px var(--shadow);
-  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 24px var(--shadow);
 }
 
 .tooltip-date {
   font-weight: 600;
-  margin-bottom: 8px;
-  padding-bottom: 8px;
+  margin: 0 0 7px 0;
+  padding-bottom: 7px;
   border-bottom: 1px solid var(--border);
-  color: var(--accent);
+  color: var(--text);
   font-size: 13px;
 }
 
 .tooltip-temp {
-  margin-bottom: 5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 5px 0;
   font-size: 13px;
   color: var(--text-muted);
 }
@@ -122,6 +190,9 @@
 }
 
 .tooltip-pixels {
+  margin: 7px 0 0 0;
+  padding-top: 7px;
+  border-top: 1px solid var(--border);
   font-size: 12px;
   color: var(--text-muted);
 }

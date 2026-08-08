@@ -1,9 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Editor from '@monaco-editor/react';
+import Editor, { loader } from '@monaco-editor/react';
+import * as monaco from 'monaco-editor';
 import MapView from './MapView';
 import OperationChartRenderer from './OperationChartRenderer';
 import apiService from '../services/api';
 import './CustomOperationsWorkspace.css';
+
+loader.config({ monaco });
 
 const DEFAULT_CODE = `def run(hb, df, meta):
     if meta.get("large_mode"):

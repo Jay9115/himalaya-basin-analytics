@@ -2,11 +2,12 @@ import hashlib
 import json
 import os
 import subprocess
-import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
+
+from .runtime import resolve_worker_command
 
 
 @dataclass
@@ -39,7 +40,6 @@ class LocalSubprocessSandbox:
     def __init__(self, workspace_root: Path) -> None:
         self.workspace_root = Path(workspace_root)
         self.jobs_root = self.workspace_root / "jobs"
-        self.worker_path = Path(__file__).with_name("worker.py")
         self.jobs_root.mkdir(parents=True, exist_ok=True)
 
     def run(
@@ -70,7 +70,7 @@ class LocalSubprocessSandbox:
         started_at = datetime.now(timezone.utc)
         try:
             completed = subprocess.run(
-                [sys.executable, "-I", str(self.worker_path)],
+                resolve_worker_command("sandbox"),
                 input=json.dumps(request_payload, ensure_ascii=True),
                 capture_output=True,
                 text=True,

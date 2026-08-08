@@ -10,11 +10,61 @@ class APIService {
     });
 
     this.cache = new Map();
-    this.maxCacheSize = 80;
+    this.inFlight = new Map();
+    this.maxCacheSize = 48;
+    // Large map frames dominate browser memory. Keep a small rolling buffer
+    // instead of retaining dozens of 30k-75k point responses.
+    this.maxCacheWeight = 200000;
+    this.cacheWeight = 0;
+    this.cacheGeneration = 0;
+    this.defaultCacheTtlMs = 5 * 60 * 1000;
   }
 
   getCacheKey(endpoint, params) {
     return `${endpoint}?${JSON.stringify(params)}`;
+  }
+
+  getCacheWeight(payload) {
+    const dataPoints = Array.isArray(payload?.data) ? payload.data.length : 0;
+    return Math.max(1, dataPoints);
+  }
+
+  deleteCacheEntry(cacheKey) {
+    const existing = this.cache.get(cacheKey);
+    if (!existing) return;
+    this.cacheWeight -= existing.weight;
+    this.cache.delete(cacheKey);
+  }
+
+  readCache(cacheKey) {
+    const existing = this.cache.get(cacheKey);
+    if (!existing) return undefined;
+    if (existing.expiresAt <= Date.now()) {
+      this.deleteCacheEntry(cacheKey);
+      return undefined;
+    }
+    // Refresh insertion order so eviction behaves as a true LRU cache.
+    this.cache.delete(cacheKey);
+    this.cache.set(cacheKey, existing);
+    return existing.payload;
+  }
+
+  writeCache(cacheKey, payload, ttlMs) {
+    const weight = this.getCacheWeight(payload);
+    if (weight > this.maxCacheWeight) return;
+
+    this.deleteCacheEntry(cacheKey);
+    this.cache.set(cacheKey, {
+      payload,
+      weight,
+      expiresAt: Date.now() + ttlMs,
+    });
+    this.cacheWeight += weight;
+
+    while (this.cache.size > this.maxCacheSize || this.cacheWeight > this.maxCacheWeight) {
+      const oldestKey = this.cache.keys().next().value;
+      this.deleteCacheEntry(oldestKey);
+    }
   }
 
   withDataset(params, dataset) {
@@ -39,24 +89,44 @@ class APIService {
   }
 
   async getWithCache(endpoint, params = {}, config = {}) {
-    const shouldUseCache = !config?.signal;
+    const {
+      cache: shouldUseCache = true,
+      cacheTtlMs = this.defaultCacheTtlMs,
+      ...requestConfig
+    } = config;
     const cacheKey = this.getCacheKey(endpoint, params);
 
-    if (shouldUseCache && this.cache.has(cacheKey)) {
-      return this.cache.get(cacheKey);
+    if (shouldUseCache) {
+      const cached = this.readCache(cacheKey);
+      if (cached !== undefined) return cached;
+
+      // Prefetches do not carry a signal and can safely be shared with the
+      // foreground request for the same frame.
+      const pending = this.inFlight.get(cacheKey);
+      if (pending) return pending;
     }
 
-    const response = await this.client.get(endpoint, { params, ...config });
+    const generation = this.cacheGeneration;
+    const request = this.client.get(endpoint, { params, ...requestConfig })
+      .then((response) => {
+        if (shouldUseCache && generation === this.cacheGeneration) {
+          this.writeCache(cacheKey, response.data, cacheTtlMs);
+        }
+        return response.data;
+      });
 
-    if (shouldUseCache) {
-      this.cache.set(cacheKey, response.data);
-      if (this.cache.size > this.maxCacheSize) {
-        const firstKey = this.cache.keys().next().value;
-        this.cache.delete(firstKey);
+    if (shouldUseCache && !requestConfig.signal) {
+      this.inFlight.set(cacheKey, request);
+      try {
+        return await request;
+      } finally {
+        if (this.inFlight.get(cacheKey) === request) {
+          this.inFlight.delete(cacheKey);
+        }
       }
     }
 
-    return response.data;
+    return request;
   }
 
   async getDatasets() {
@@ -155,11 +225,24 @@ class APIService {
     return this.getWithCache(
       '/data',
       params,
-      { signal }
+      { signal, cacheTtlMs: 2 * 60 * 1000 }
     );
   }
 
-  async getBasinMean(startDate, endDate, elevMin, elevMax, variable, dataset, signal, yearRange, subregionId) {
+  async prefetchData(date, elevMin, elevMax, variable, dataset, yearRange, subregionId) {
+    return this.getData(
+      date,
+      elevMin,
+      elevMax,
+      variable,
+      dataset,
+      undefined,
+      yearRange,
+      subregionId
+    );
+  }
+
+  async getBasinMean(startDate, endDate, elevMin, elevMax, variable, dataset, signal, yearRange, subregionId, bounds) {
     const params = this.withContext(
       {
         start_date: startDate,
@@ -173,6 +256,12 @@ class APIService {
     );
     if (subregionId) {
       params.subregion_id = subregionId;
+    }
+    if (bounds) {
+      params.min_lat = bounds.minLat;
+      params.max_lat = bounds.maxLat;
+      params.min_lon = bounds.minLon;
+      params.max_lon = bounds.maxLon;
     }
     return this.getWithCache(
       '/basin-mean',
@@ -262,7 +351,7 @@ class APIService {
   }
 
   async getOperationJob(jobId, signal) {
-    return this.getWithCache(`/operations/jobs/${encodeURIComponent(jobId)}`, {}, { signal });
+    return this.getWithCache(`/operations/jobs/${encodeURIComponent(jobId)}`, {}, { signal, cache: false });
   }
 
   async cancelOperationJob(jobId, signal) {
@@ -282,6 +371,8 @@ class APIService {
 
   clearCache() {
     this.cache.clear();
+    this.cacheWeight = 0;
+    this.cacheGeneration += 1;
   }
 }
 

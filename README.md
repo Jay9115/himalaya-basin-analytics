@@ -8,6 +8,7 @@ This project includes:
 - ERA5 and CMIP6 parquet datasets
 - PMTiles + GeoJSON map assets
 - Offline packaging script for one-click distribution
+- Dedicated architecture documentation in `SYSTEM_ARCHITECTURE.md`
 
 ## Current Repository Layout
 
@@ -150,3 +151,4 @@ powershell -ExecutionPolicy Bypass -File "D:\ISRO-SWOT\Webapp\himalaya-basin-ana
 - Runtime analysis uses parquet files; CSV files are not required at runtime.
 - Map asset updates should be made inside `Map_handle/` and then packed again.
 - For scientific method details, use the in-app Documentation tab.
+- For software structure, subsystem responsibilities, and journal-friendly diagrams, see `SYSTEM_ARCHITECTURE.md`.

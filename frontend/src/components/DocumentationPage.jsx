@@ -3,89 +3,185 @@ import './DocumentationPage.css';
 
 const sections = [
   { id: 'doc-context', title: '1. Project Context and ISRO SAC Relevance' },
-  { id: 'doc-overview', title: '2. System Overview' },
-  { id: 'doc-sources', title: '3. Data Sources and Provenance' },
-  { id: 'doc-preprocessing', title: '4. Data Preparation and Storage' },
-  { id: 'doc-runtime', title: '5. Runtime Loading and Performance' },
-  { id: 'doc-map', title: '6. Spatial Visualization Method' },
-  { id: 'doc-analytics', title: '7. Time Series, Region, and Hotspot Analysis' },
-  { id: 'doc-api', title: '8. API and Filtering Logic' },
-  { id: 'doc-science-use', title: '9. Scientific Interpretation Guide' },
-  { id: 'doc-limitations', title: '10. Assumptions and Limitations' },
-  { id: 'doc-repro', title: '11. Reproducibility Checklist' },
-  { id: 'doc-references', title: '12. Reference Sources' },
+  { id: 'doc-overview', title: '2. Workflow Modes and System Overview' },
+  { id: 'doc-datasets', title: '3. Supported Datasets and Runtime Assets' },
+  { id: 'doc-sources', title: '4. Data Sources and Provenance' },
+  { id: 'doc-preprocessing', title: '5. Data Preparation and Storage' },
+  { id: 'doc-runtime', title: '6. Runtime Loading and Performance' },
+  { id: 'doc-map', title: '7. Spatial Visualization and Search Tools' },
+  { id: 'doc-analytics', title: '8. Time Series, Region, and Trend Analysis' },
+  { id: 'doc-outcomes', title: '9. Outcome Modules and Precomputed Products' },
+  { id: 'doc-advanced', title: '10. Custom Operations Workspace and Optional LLM Assistance' },
+  { id: 'doc-api', title: '11. API Surface and Filtering Logic' },
+  { id: 'doc-science-use', title: '12. Scientific Interpretation Guide' },
+  { id: 'doc-limitations', title: '13. Assumptions, Limitations, and Reproducibility' },
+  { id: 'doc-references', title: '14. Reference Sources' },
+];
+
+const workflowRows = [
+  {
+    module: 'Interactive Dashboard',
+    purpose: 'Primary live analysis workspace.',
+    notes: 'Supports dataset selection, date slider, elevation filters, basin and glacier search, map rendering, and graphs.',
+  },
+  {
+    module: 'Outcomes',
+    purpose: 'Fast review of saved scientific products.',
+    notes: 'Currently hosts the Long Term Hotspot Analysis module with precomputed ERA5 band means and change layers.',
+  },
+  {
+    module: 'Scientific Documentation',
+    purpose: 'Methodology, implementation notes, and reporting context.',
+    notes: 'Designed for internship reporting, reproducibility, and scientific explanation of the interface.',
+  },
+  {
+    module: 'HB Code Workspace',
+    purpose: 'Programmable analysis inside the dashboard.',
+    notes: 'Uses a Monaco editor, backend code validation, inline execution for small selections, and queued jobs for large selections.',
+  },
+  {
+    module: 'HB Chatbot',
+    purpose: 'Optional local guidance layer.',
+    notes: 'Uses the separate local LLM service on port 8010 to answer questions or draft Python for the current dashboard context.',
+  },
+];
+
+const datasetRows = [
+  {
+    dataset: 'ERA5 Full Shape',
+    storage: 'Parquet',
+    purpose: 'Historical hydro-climatic analysis across the Himalayan basin.',
+    notes: 'Main source for daily map mode, basin means, hotspot trends, and the current outcome module.',
+  },
+  {
+    dataset: 'CMIP6 Full Shape',
+    storage: 'Parquet',
+    purpose: 'Scenario-oriented future climate comparison.',
+    notes: 'Useful for projected temperature, precipitation, and radiation variables under climate scenarios.',
+  },
+  {
+    dataset: 'SPHY Model',
+    storage: 'Parquet',
+    purpose: 'Hydrological model output review.',
+    notes: 'Handled through the same filtering pipeline as other parquet-backed datasets.',
+  },
+  {
+    dataset: 'CHIRPS Precipitation',
+    storage: 'Parquet',
+    purpose: 'Rainfall-focused basin and region analysis.',
+    notes: 'Prepared for fast precipitation exploration over long time ranges.',
+  },
+  {
+    dataset: 'MOD10A1 Monthly Snow/Albedo',
+    storage: 'GeoTIFF',
+    purpose: 'Monthly snow and albedo overview.',
+    notes: 'GeoTIFF-backed mode uses a fixed default elevation when a separate terrain grid is not stored per pixel in the runtime table.',
+  },
+  {
+    dataset: 'Discharge Network',
+    storage: 'GeoParquet',
+    purpose: 'Network-style discharge exploration.',
+    notes: 'Served through a GeoParquet path with the same date and variable validation surface.',
+  },
+  {
+    dataset: 'Uploaded NetCDF Datasets',
+    storage: 'Converted to Parquet',
+    purpose: 'User-supplied exploratory datasets.',
+    notes: 'Added through the upload workflow and then treated as reusable local datasets without modifying the built-in collections.',
+  },
 ];
 
 const sourceRows = [
   {
     source: 'ISRO SAC',
     role: 'Institutional and scientific context',
-    use: 'Remote sensing, GIS, hydrology, cryosphere, and environmental applications.',
+    use: 'Connects the work to remote sensing, GIS, hydrology, cryosphere, and environmental monitoring use cases.',
     link: 'https://www.sac.gov.in/',
   },
   {
     source: 'NASA Earthdata',
     role: 'Discovery and access portal',
-    use: 'Dataset discovery, metadata review, and Earth science archive navigation.',
+    use: 'Used for product discovery, metadata review, and source selection for Earth observation inputs.',
     link: 'https://www.earthdata.nasa.gov/',
   },
   {
     source: 'Earthdata Search',
-    role: 'Search and spatial filtering',
-    use: 'Find NASA products by date, place, and collection before processing.',
+    role: 'Spatial and temporal search',
+    use: 'Supports collection lookup by date, place, and science keyword before preprocessing.',
     link: 'https://search.earthdata.nasa.gov/',
   },
   {
     source: 'Google Earth Engine',
     role: 'Cloud geospatial processing',
-    use: 'Sampling, reprojection, export scripting, and grid-alignment workflows.',
+    use: 'Used for export scripting, reprojection, sampling, and preparation of climate-ready tabular outputs.',
     link: 'https://earthengine.google.com/',
   },
   {
     source: 'Copernicus ERA5-Land',
-    role: 'Land reanalysis dataset',
-    use: 'Historical hydro-climatic variables for basin-scale analysis.',
+    role: 'Historical land reanalysis',
+    use: 'Provides many of the daily basin variables used for temperature, precipitation, snow, radiation, and wind analysis.',
     link: 'https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land',
+  },
+  {
+    source: 'CMIP6 / NEX-GDDP-CMIP6',
+    role: 'Climate projection family',
+    use: 'Supports future climate and scenario-oriented analysis in the same interface.',
+    link: 'https://www.nccs.nasa.gov/services/data-collections/land-based-products/nex-gddp',
   },
   {
     source: 'NSIDC MOD10A1',
     role: 'Snow cover and albedo product',
-    use: 'Daily snow cover, snow albedo, and QA bands at 500 m resolution.',
+    use: 'Provides monthly snow and albedo inputs through GeoTIFF-backed visualization.',
     link: 'https://nsidc.org/data/mod10a1/versions/61',
+  },
+  {
+    source: 'CHIRPS',
+    role: 'Precipitation dataset',
+    use: 'Provides long-term rainfall fields prepared as parquet for quick regional graphing and mapping.',
+    link: 'https://www.chc.ucsb.edu/data/chirps',
   },
   {
     source: 'NASA SRTM',
     role: 'Elevation reference',
-    use: 'Topographic support data for terrain-aware sampling and visualization.',
+    use: 'Provides topographic context for terrain-aware interpretation and preprocessing support.',
     link: 'https://www.earthdata.nasa.gov/data/instruments/srtm',
   },
   {
-    source: 'Project glacier / basin assets',
-    role: 'Vector boundaries',
-    use: 'Basin masks, glacier overlays, and subregion selection in the app.',
+    source: 'Local glacier, basin, and map assets',
+    role: 'Runtime vectors and base overlays',
+    use: 'Provide basin boundaries, glacier lookups, PMTiles boundaries, and precomputed project outputs used directly by the app.',
     link: 'Local project assets',
   },
 ];
 
 const endpointRows = [
-  ['GET /datasets', 'List available datasets', 'none'],
+  ['GET /datasets', 'List available runtime datasets and file counts', 'none'],
   ['GET /years', 'List the years available for the selected dataset', 'dataset'],
   ['GET /dates', 'Build the date index for a chosen dataset and year range', 'dataset, year_start, year_end'],
   ['GET /variables', 'Return variables that exist in the selected scope', 'dataset, year_start, year_end'],
   ['GET /elevation-range', 'Find the valid elevation envelope for the selected scope', 'dataset, year_start, year_end'],
-  ['GET /data', 'Return map-ready points for one date', 'date, elevation band, variable, dataset, year window, region'],
-  ['GET /basin-mean', 'Compute a basin-wide time series', 'date range, elevation, variable, dataset, year window, region'],
-  ['GET /region-mean', 'Compute a region-wise time series', 'year, lat/lon bounds, elevation, variable, dataset, year window, region'],
-  ['GET /stats', 'Return scope-level diagnostics', 'dataset, year window'],
+  ['GET /data', 'Return map-ready points for one date', 'date, elevation range, variable, dataset, year range, subregion'],
+  ['GET /basin-mean', 'Compute a basin-wide time series', 'start_date, end_date, elevation range, variable, dataset, year range, subregion, bounds'],
+  ['GET /region-mean', 'Compute a region-wise time series for a bounding box', 'year, bounds, elevation range, variable, dataset, year range, subregion'],
+  ['GET /stats', 'Return scope-level diagnostics', 'dataset, year range'],
   ['GET /subregions', 'List basin subregions and glacier entries', 'include_glaciers'],
   ['GET /subregions/{id}/geometry', 'Fetch geometry for a selected subregion', 'subregion id'],
   ['GET /glaciers/search', 'Search glacier names and identifiers', 'q, limit'],
   ['GET /glaciers/overview', 'Return glacier polygons for the current map view', 'bbox, zoom'],
-  ['GET /hotspot-trends', 'Compute long-term change hotspots', 'variable, elevation band, dataset, year window, min_years'],
-  ['POST /nc/upload', 'Upload NetCDF and convert it into an app-compatible dataset', 'file, dataset_name'],
+  ['GET /hotspot-trends', 'Compute long-term change hotspots from the active year range', 'variable, elevation range, dataset, year range, subregion, min_years'],
+  ['POST /nc/upload', 'Upload NetCDF and convert it into an app-compatible dataset', 'file, optional dataset_name'],
   ['GET /outcomes', 'List precomputed outcome modules', 'none'],
   ['GET /outcomes/long-term-hotspot/meta', 'Describe the long-term hotspot output bundle', 'none'],
-  ['GET /outcomes/long-term-hotspot/data', 'Load precomputed long-term band means', 'variable, band_id'],
+  ['GET /outcomes/long-term-hotspot/data', 'Load one saved band-mean layer', 'variable, band_id'],
+  ['GET /outcomes/long-term-hotspot/difference', 'Load one later-minus-earlier saved change layer', 'variable, comparison_id'],
+  ['GET /operations/capabilities', 'Describe the custom-operations helper surface and limits', 'none'],
+  ['POST /operations/validate', 'Validate user Python before execution', 'code'],
+  ['POST /operations/plan', 'Estimate whether a selection can run inline or should become a job', 'selection payload'],
+  ['POST /operations/run', 'Run validated Python inline against the active selection', 'code, selection, timeout_seconds'],
+  ['POST /operations/jobs', 'Queue a large analysis job', 'code, selection, timeout_seconds'],
+  ['GET /operations/jobs/{job_id}', 'Poll job status and outputs', 'job id'],
+  ['GET /operations/jobs/{job_id}/logs', 'Read job logs', 'job id'],
+  ['POST /operations/jobs/{job_id}/cancel', 'Cancel a running job', 'job id'],
 ];
 
 const referenceLinks = [
@@ -107,22 +203,32 @@ const referenceLinks = [
   {
     label: 'Google Earth Engine',
     url: 'https://earthengine.google.com/',
-    note: 'Cloud geospatial processing and planetary-scale analysis platform.',
+    note: 'Cloud geospatial processing and export platform used during preprocessing.',
   },
   {
     label: 'Copernicus ERA5-Land',
     url: 'https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land',
-    note: 'Land reanalysis dataset used for hydro-climatic inputs.',
+    note: 'Historical land reanalysis source used by the dashboard and outcome workflows.',
+  },
+  {
+    label: 'NASA NEX-GDDP-CMIP6',
+    url: 'https://www.nccs.nasa.gov/services/data-collections/land-based-products/nex-gddp',
+    note: 'Reference entry point for the projection-oriented climate dataset family.',
   },
   {
     label: 'NSIDC MOD10A1',
     url: 'https://nsidc.org/data/mod10a1/versions/61',
-    note: 'Daily snow cover and albedo product used for snow analysis.',
+    note: 'Monthly snow cover and albedo product used in GeoTIFF-backed mode.',
+  },
+  {
+    label: 'CHIRPS precipitation data',
+    url: 'https://www.chc.ucsb.edu/data/chirps',
+    note: 'Long-term precipitation reference used for rainfall analysis.',
   },
   {
     label: 'NASA SRTM',
     url: 'https://www.earthdata.nasa.gov/data/instruments/srtm',
-    note: 'Global elevation reference for topographic context.',
+    note: 'Global elevation reference for terrain context.',
   },
 ];
 
@@ -154,22 +260,22 @@ function DocumentationPage({ selectedDataset, selectedYearRange, selectedVariabl
     {
       label: 'Institutional focus',
       value: 'ISRO SAC',
-      detail: "The project aligns with SAC's remote sensing and geospatial application work for societal benefit.",
+      detail: "The project aligns with SAC's remote sensing, geospatial analysis, and environmental monitoring mission.",
     },
     {
-      label: 'Primary inputs',
-      value: 'ERA5-Land + CMIP6',
-      detail: 'Historical land reanalysis and future climate projections for Himalayan basin analysis.',
+      label: 'Workflow modes',
+      value: 'Dashboard + Outcomes + Docs + Code',
+      detail: 'The app now combines live analysis, saved scientific products, in-app methodology notes, and programmable Python workflows.',
     },
     {
-      label: 'Supplementary data',
-      value: 'NASA Earthdata + Earth Engine',
-      detail: 'Used for dataset discovery, elevation support, snow products, and preprocessing exports.',
+      label: 'Dataset coverage',
+      value: '6 built-ins + NetCDF uploads',
+      detail: 'ERA5, CMIP6, SPHY, CHIRPS, MOD10A1, discharge, and user-uploaded NetCDF datasets converted into local runtime format.',
     },
     {
-      label: 'Outputs',
-      value: 'Maps + graphs + hotspots',
-      detail: 'Daily map views, basin and region means, glacier analysis, and long-term trend layers.',
+      label: 'Advanced tools',
+      value: 'Hotspots + glaciers + custom Python',
+      detail: 'Includes glacier overlays, trend hotspot analysis, precomputed outcomes, and an optional local assistant for code help.',
     },
   ];
 
@@ -192,14 +298,14 @@ function DocumentationPage({ selectedDataset, selectedYearRange, selectedVariabl
             <p className="docs-hero-kicker">ISRO SAC internship documentation</p>
             <h1>Scientific Methods and Implementation Notes</h1>
             <p>
-              This page explains how the Himalayan Basin Analytics WebApp turns large climate,
-              snow, glacier, elevation, and model datasets into an interactive local analysis
-              workflow for research and internship reporting.
+              This page explains how the Himalayan Basin Analytics WebApp turns climate,
+              cryosphere, hydrology, terrain, glacier, and model datasets into an interactive
+              research workflow for basin-scale analysis and internship reporting.
             </p>
             <p>
-              The documentation is intentionally detailed so the report reflects the real scope
-              of the work: ISRO SAC context, NASA Earthdata and Google Earth Engine sourcing,
-              preprocessing, map rendering, hotspot analysis, and offline deployment.
+              The documentation has been updated to match the current application surface:
+              live dashboard analysis, outcome modules, uploaded NetCDF support, glacier-aware
+              search tools, custom Python analysis, and the optional local LLM helper.
             </p>
           </div>
 
@@ -230,76 +336,132 @@ function DocumentationPage({ selectedDataset, selectedYearRange, selectedVariabl
           <h2>1. Project Context and ISRO SAC Relevance</h2>
           <p>
             Space Applications Centre (SAC), Ahmedabad is one of the major centres of ISRO and
-            focuses on the design of space-borne instruments and the development of space
-            technology applications for societal benefit. The centre's public mission includes
-            communication, broadcasting, navigation, disaster monitoring, meteorology,
-            oceanography, environment monitoring, and natural resources survey.
+            works across communication, meteorology, environmental monitoring, navigation,
+            disaster support, natural resources, and geospatial applications. A Himalayan basin
+            analytics platform fits that mission because it organizes spatial climate and
+            cryosphere information into a usable decision and research interface.
           </p>
           <p>
-            The internship project fits that mission naturally because it transforms spatial
-            climate and cryosphere data into a usable geospatial analysis environment. Instead of
-            keeping the data in disconnected CSV, raster, or NetCDF files, the WebApp provides a
-            common viewing layer where basin patterns, glacier boundaries, elevation filters, and
-            time-series summaries can be explored quickly.
+            The project is valuable not just as a software exercise. It reduces repeated manual
+            data wrangling, makes Earth observation and reanalysis products easier to compare,
+            and creates a common interface for basin boundaries, glaciers, elevation filters,
+            time series, and hotspot summaries.
           </p>
           <div className="docs-callout">
             <div className="docs-callout-title">Why this matters at SAC</div>
             <p>
-              The value of the project is not only software convenience. It reduces repeated
-              manual data wrangling, makes satellite and reanalysis products easier to inspect,
-              and supports the type of remote-sensing and GIS work that SAC is known for.
+              The app bridges remote-sensing data preparation and interactive interpretation.
+              That is especially useful in mountain environments where data products are large,
+              mixed in format, and often difficult to compare quickly without a dedicated tool.
             </p>
           </div>
           <ul>
-            <li>SAC is a major ISRO R and D centre with strong ties to earth observation and geoscience workflows.</li>
-            <li>The project supports basin-scale studies that are useful in hydrology, snow, glacier, and climate analysis.</li>
-            <li>The app is designed to help researchers compare multiple data sources without opening every raw file manually.</li>
+            <li>SAC relevance comes from the combination of earth observation, geospatial filtering, and environmental interpretation.</li>
+            <li>The platform supports hydrology, snow, glacier, climate, and terrain-driven basin studies in one interface.</li>
+            <li>The documentation view is intended to help convert implementation work into scientific reporting language.</li>
           </ul>
           <a className="docs-top-link" href="#doc-top">Back to top</a>
         </section>
 
         <section id="doc-overview">
-          <h2>2. System Overview</h2>
+          <h2>2. Workflow Modes and System Overview</h2>
           <p>
-            The platform is a local-first geospatial analytics tool for Himalayan basin climate
-            and hydro-meteorological analysis. It combines a FastAPI backend with a React,
-            Deck.GL, and MapLibre frontend so that filtering, aggregation, and visualization stay
-            responsive even when the underlying datasets are large.
+            The current application is no longer a map-only dashboard. It is a multi-workflow
+            local-first platform built from a FastAPI backend, a React plus Deck.GL plus
+            MapLibre frontend, local scientific datasets, and optional extension services.
           </p>
+          <table className="docs-table">
+            <thead>
+              <tr>
+                <th>Workflow</th>
+                <th>Purpose</th>
+                <th>How it is used</th>
+              </tr>
+            </thead>
+            <tbody>
+              {workflowRows.map((row) => (
+                <tr key={row.module}>
+                  <td>{row.module}</td>
+                  <td>{row.purpose}</td>
+                  <td>{row.notes}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
           <div className="docs-callout">
             <div className="docs-callout-title">Core design idea</div>
             <p>
-              The backend does the heavy scientific work, the frontend does the interaction and
-              rendering, and the storage layer keeps the runtime lightweight by serving only the
-              files that are needed for the active dataset and year window.
+              Heavy filtering and aggregation stay in the backend, while the frontend focuses on
+              interaction, map rendering, comparison, and reporting. Larger or repeatable
+              scientific products can also be saved as outcome bundles instead of being computed
+              from scratch during every dashboard session.
             </p>
           </div>
           <ol>
-            <li>User selects a dataset, year range, variable, and elevation band.</li>
-            <li>The backend indexes only the selected scope and returns filtered responses.</li>
-            <li>The frontend renders the map, legend, time slider, graph, and region overlays.</li>
-            <li>Long-term hotspot mode uses the full selected year window to compute trend intensity.</li>
+            <li>User chooses either the interactive dashboard or a precomputed outcome module from the start screen.</li>
+            <li>For live analysis, the app narrows the dataset by year window before indexing dates and variables.</li>
+            <li>The dashboard exposes map, region, glacier, elevation, and time-series controls for the selected scope.</li>
+            <li>The code workspace can run validated Python against the active selection or queue a larger job when the selection is too large for inline execution.</li>
           </ol>
           <ul>
-            <li>Backend responsibility: indexing, filtering, aggregation, and API responses.</li>
-            <li>Frontend responsibility: map rendering, legend generation, time navigation, region selection, and UI interaction.</li>
-            <li>Execution mode: analytics runs locally by default, with optional packaged offline deployment.</li>
+            <li>Frontend responsibilities: workflow selection, map rendering, time navigation, graphing, and in-app documentation.</li>
+            <li>Backend responsibilities: indexing, schema validation, subsetting, aggregation, hotspot computation, uploads, and operation-job orchestration.</li>
+            <li>Deployment style: local-first by design, with optional hosted backend use through frontend environment configuration.</li>
           </ul>
           <a className="docs-top-link" href="#doc-top">Back to top</a>
         </section>
 
-        <section id="doc-sources">
-          <h2>3. Data Sources and Provenance</h2>
+        <section id="doc-datasets">
+          <h2>3. Supported Datasets and Runtime Assets</h2>
           <p>
-            The app uses a layered data stack. Some data are obtained from public science portals
-            such as NASA Earthdata and Copernicus, some are prepared in Google Earth Engine, and
-            some are maintained as local project assets for basin boundaries, glacier polygons,
-            and analysis outputs.
+            The live app now serves several dataset families rather than only ERA5 and CMIP6.
+            Each dataset uses the same high-level filtering interface, but the storage type may
+            differ across Parquet, GeoTIFF, GeoParquet, and uploaded NetCDF conversions.
           </p>
+          <table className="docs-table">
+            <thead>
+              <tr>
+                <th>Dataset</th>
+                <th>Runtime storage</th>
+                <th>Main purpose</th>
+                <th>Implementation notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {datasetRows.map((row) => (
+                <tr key={row.dataset}>
+                  <td>{row.dataset}</td>
+                  <td>{row.storage}</td>
+                  <td>{row.purpose}</td>
+                  <td>{row.notes}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <h3>3.1 Runtime spatial assets</h3>
+          <ul>
+            <li><code>Map_handle/india_admin.pmtiles</code> provides vector-style administrative and context layers.</li>
+            <li><code>Map_handle/upper_indus_basin.geojson</code> provides the basin mask and subregion reference structure.</li>
+            <li>Local glacier folders under <code>Glacier_shp/</code> provide named glacier selections and overview polygons.</li>
+            <li>Outcome bundles under <code>Outcomes/Long_term_hotspot/Outputs</code> provide saved raster-like point layers for quick comparison.</li>
+          </ul>
+          <h3>3.2 Upload pathway</h3>
           <p>
-            In practice, Earthdata was used for discovery and metadata review, while Earth Engine
-            was used for scripted preprocessing, sampling, and export workflows. The runtime app
-            then consumes the prepared outputs locally.
+            Users can now upload NetCDF files directly from the home screen. The backend accepts
+            common NetCDF extensions, attempts to detect time and latitude/longitude metadata,
+            converts numeric spatial variables into parquet, and registers the result as a new
+            local dataset without overwriting the packaged collections.
+          </p>
+          <a className="docs-top-link" href="#doc-top">Back to top</a>
+        </section>
+
+        <section id="doc-sources">
+          <h2>4. Data Sources and Provenance</h2>
+          <p>
+            The application uses a layered data stack. Some inputs come from public science
+            portals such as NASA Earthdata, Copernicus, NSIDC, and CHIRPS; some are prepared in
+            Google Earth Engine; and some are runtime project assets such as glacier polygons,
+            basin boundaries, PMTiles, and saved outcomes.
           </p>
 
           <table className="docs-table">
@@ -329,85 +491,78 @@ function DocumentationPage({ selectedDataset, selectedYearRange, selectedVariabl
             </tbody>
           </table>
 
-          <h3>3.1 Key data classes used in the app</h3>
+          <h3>4.1 Practical provenance chain</h3>
+          <p>
+            In this project, Earthdata is mainly the discovery and metadata layer, while Earth
+            Engine is the preparation layer for aligned exports. The app itself is then the local
+            runtime layer that serves those prepared outputs interactively. That distinction is
+            important because preprocessing decisions made before runtime directly affect the
+            interpretation of the final map and graph outputs.
+          </p>
+          <h3>4.2 Data classes represented in the app</h3>
           <ul>
-            <li>ERA5-Land for historical land reanalysis variables such as temperature, precipitation, snowfall, snow depth, SWE, solar radiation, and wind speed.</li>
-            <li>CMIP6 and NEX-GDDP-CMIP6 for future climate projections and scenario comparison.</li>
-            <li>MOD10A1 snow cover and albedo for satellite-based snow analysis.</li>
-            <li>SRTM elevation for terrain-aware interpretation and map context.</li>
-            <li>Glacier and basin polygons for spatial filtering and regional comparison.</li>
-            <li>User-uploaded NetCDF files for additional exploratory datasets.</li>
+            <li>Historical reanalysis fields such as temperature, precipitation, snow depth, SWE, and radiation.</li>
+            <li>Future climate projection variables for scenario-oriented comparison.</li>
+            <li>Snow and albedo products delivered through GeoTIFF-backed monthly views.</li>
+            <li>Precipitation-specific datasets for rainfall analysis.</li>
+            <li>Hydrological model or discharge-network style outputs.</li>
+            <li>Local basin and glacier vectors used for spatial selection and map interpretation.</li>
+            <li>User-uploaded NetCDF datasets converted into reusable local runtime assets.</li>
           </ul>
-
-          <h3>3.2 Why Earthdata and Earth Engine matter here</h3>
-          <p>
-            NASA Earthdata acts as the discovery layer for Earth observation products, while
-            Google Earth Engine acts as the processing layer that can sample, reproject, and
-            export geospatial data at scale. That pairing is important for mountain basin work
-            because the source datasets are not just large, they are also mixed in format and
-            spatial resolution.
-          </p>
-          <p>
-            For this internship, that meant a practical workflow where elevation and snow products
-            could be reviewed from NASA sources, then aligned to the target climate grid through
-            Earth Engine export scripts before the application consumed them in parquet or raster
-            form.
-          </p>
-
           <a className="docs-top-link" href="#doc-top">Back to top</a>
         </section>
 
         <section id="doc-preprocessing">
-          <h2>4. Data Preparation and Storage</h2>
+          <h2>5. Data Preparation and Storage</h2>
           <p>
-            The preprocessing pipeline converts large raw files into a format that the app can
-            query quickly. The main strategy is to avoid repeated heavy parsing at runtime and to
-            make the data easier to filter by date, variable, elevation, and region.
+            The preprocessing pipeline is designed to reduce runtime friction. Large raw exports
+            are converted into formats that the backend can query quickly, while map and outcome
+            assets are stored in forms that can be loaded incrementally instead of as one large
+            in-memory bundle.
           </p>
-          <h3>4.1 Conversion strategy</h3>
+          <h3>5.1 Main preparation strategy</h3>
           <ol>
-            <li>Raw yearly CSV files are exported from Google Earth Engine with date, lat/lon, elevation, and climate variables.</li>
-            <li>CSV files are converted to parquet using chunked reading and Snappy compression for fast local IO.</li>
-            <li>Date parsing is strict, so invalid strings are rejected instead of being silently coerced.</li>
-            <li>Numeric columns are auto-cast only when the values are consistently numeric.</li>
-            <li>Geometry and system columns such as <code>.geo</code> and <code>system:index</code> are excluded from runtime analytics columns.</li>
+            <li>Raw climate or model outputs are exported with time, lon/lat, elevation, and variable fields whenever possible.</li>
+            <li>Tabular scientific data are converted to parquet using chunked reading and compression.</li>
+            <li>Runtime columns are normalized so the backend can identify date, latitude, longitude, and elevation candidates reliably.</li>
+            <li>System or geometry helper columns that should not drive analytics are excluded from the scientific variable list.</li>
+            <li>NetCDF uploads are converted into the same runtime-friendly structure used by the dashboard.</li>
           </ol>
 
-          <h3>4.2 Grid alignment and unit handling</h3>
-          <p>
-            Earth Engine export scripts explicitly align DEM and climate pixels before sampling.
-            That means the elevation layer is reprojected to the target grid before it is joined
-            with climate variables. This keeps the terrain context consistent within each dataset.
-          </p>
+          <h3>5.2 Storage classes used in the current app</h3>
           <table className="docs-table">
             <thead>
               <tr>
-                <th>Dataset</th>
-                <th>Target grid source</th>
-                <th>DEM alignment method</th>
-                <th>Sampling scale</th>
-                <th>Output notes</th>
+                <th>Storage type</th>
+                <th>Used for</th>
+                <th>Runtime behavior</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td>ERA5-Land</td>
-                <td><code>era5Land.first().projection()</code></td>
-                <td><code>resample('bilinear')</code> + <code>reproject(..., scale: 11000)</code></td>
-                <td>11,000 m</td>
-                <td>Coordinates derived from pixel lon/lat bands, geometry usually removed in export.</td>
+                <td>Parquet</td>
+                <td>ERA5, CMIP6, SPHY, CHIRPS, uploaded NetCDF</td>
+                <td>Best suited for column projection, year filtering, date indexing, and fast aggregation.</td>
               </tr>
               <tr>
-                <td>CMIP6</td>
-                <td><code>cmip6.first().projection()</code></td>
-                <td><code>resample('bilinear')</code> + <code>reproject(..., scale: 25000)</code></td>
-                <td>25,000 m</td>
-                <td>Geometries may be used during extraction and later removed in exported fields.</td>
+                <td>GeoTIFF</td>
+                <td>MOD10A1 monthly snow and albedo</td>
+                <td>Read through a GeoTIFF-backed adapter and exposed through the same map and graph surface.</td>
+              </tr>
+              <tr>
+                <td>GeoParquet</td>
+                <td>Discharge network and some vector-like sources</td>
+                <td>Supports geometry-aware loading while preserving a tabular filtering interface.</td>
+              </tr>
+              <tr>
+                <td>PMTiles / GeoJSON / shapefile assets</td>
+                <td>Maps, basin boundaries, glaciers, region geometry</td>
+                <td>Used for context layers, selection overlays, geometry fetches, and glacier overview rendering.</td>
               </tr>
             </tbody>
           </table>
 
-          <h3>4.3 Representative conversions</h3>
+          <h3>5.3 Representative unit conversions</h3>
           <table className="docs-table">
             <thead>
               <tr>
@@ -434,138 +589,205 @@ function DocumentationPage({ selectedDataset, selectedYearRange, selectedVariabl
           </table>
 
           <p>
-            Practical implication: ERA5-Land and CMIP6 outputs are internally consistent with
-            their own native analysis scales, but they are not on the same spatial resolution.
-            Any cross-dataset comparison should mention that difference explicitly.
+            Cross-dataset comparison should still be done carefully because datasets can differ
+            in native grid, temporal aggregation, variable definition, and preprocessing history.
           </p>
           <a className="docs-top-link" href="#doc-top">Back to top</a>
         </section>
 
         <section id="doc-runtime">
-          <h2>5. Runtime Loading and Performance</h2>
+          <h2>6. Runtime Loading and Performance</h2>
           <p>
-            The runtime design keeps the user experience responsive by loading only the data that
-            is necessary for the current dataset, date, year window, variable, and elevation band.
-            That approach matters because the underlying Himalayan data files can be large.
+            The runtime strategy is based on loading only the subset needed for the active
+            dashboard state. That includes dataset, year window, date, variable, elevation
+            filter, and optional subregion or glacier selection.
           </p>
           <ul>
-            <li>User first selects dataset and year range on the home screen.</li>
-            <li>Backend filters files by year tokens in the filename and then by parsed date values.</li>
-            <li>If a filename has no detectable year token, it is still considered during indexing.</li>
-            <li>Backend keeps a small index cache by year-window key for fast switching.</li>
-            <li>Parquet reads use projected columns and filter predicates to minimize memory and IO.</li>
-            <li>Frontend cancels stale requests during slider changes to avoid unnecessary work.</li>
-            <li>Responses are compressed when payloads are large.</li>
+            <li>The app asks for the year window first so indexing stays narrower and faster.</li>
+            <li>Backend dataset state keeps cached indexes by scope rather than rescanning every file on every interaction.</li>
+            <li>Parquet reads use column projection and predicate-style filtering to reduce IO and memory load.</li>
+            <li>Frontend requests are cached with a small LRU-style policy so recent frames can be revisited without refetching everything.</li>
+            <li>Stale requests are canceled during fast slider movement and mode changes.</li>
+            <li>Map responses are capped for browser smoothness, especially for dense datasets and GeoTIFF-backed layers.</li>
+            <li>The frontend can talk to either a local backend or a hosted backend through <code>VITE_API_URL</code>.</li>
           </ul>
           <div className="docs-callout">
             <div className="docs-callout-title">Performance principle</div>
             <p>
-              The app does not try to move every point to the browser at once. It asks the backend
-              for only the currently relevant subset, which is the main reason the dashboard stays
-              usable for research-sized datasets.
+              The browser is never intended to hold the full scientific archive at once. The app
+              stays responsive because the backend serves only the active slice of the dataset and
+              the frontend keeps only a small rolling cache of recent results.
             </p>
           </div>
           <a className="docs-top-link" href="#doc-top">Back to top</a>
         </section>
 
         <section id="doc-map">
-          <h2>6. Spatial Visualization Method</h2>
-          <h3>6.1 Layer stack</h3>
+          <h2>7. Spatial Visualization and Search Tools</h2>
+          <h3>7.1 Layer stack</h3>
           <ol>
-            <li>Base map style with light or dark theme support.</li>
-            <li>India PMTiles vector boundaries and labels where glyphs are available.</li>
-            <li>Basin polygon overlay.</li>
-            <li>Selected glacier or subregion boundary overlay.</li>
-            <li>Data points rendered with Deck.GL scatter symbols.</li>
-            <li>Selection rectangle or manual region overlay.</li>
+            <li>Base map theme and UI theme selection.</li>
+            <li>PMTiles-based India context boundaries and labels where glyphs are available.</li>
+            <li>Basin overlay for the main watershed context.</li>
+            <li>Selected subregion or glacier boundary overlay.</li>
+            <li>Scientific points rendered with Deck.GL scatter symbols.</li>
+            <li>Optional rectangle-selection preview or custom operation result layer.</li>
           </ol>
 
-          <h3>6.2 Color classification</h3>
+          <h3>7.2 Search and region tools</h3>
+          <ul>
+            <li>Search supports basin subregions and named glacier entries from the same search surface.</li>
+            <li>Coordinate tools support direct latitude and longitude lookup.</li>
+            <li>Rectangle selection supports local region-of-interest graphing.</li>
+            <li>Glacier overview mode loads viewport-limited glacier polygons and intentionally waits for a suitable zoom level.</li>
+            <li>Subregion geometry can be fetched directly when a basin or glacier item is selected.</li>
+          </ul>
+
+          <h3>7.3 Color classification</h3>
           <p>
-            For the currently loaded day and filters, the app computes data minimum and maximum
-            values and then splits them into equal-interval bins. The legend is therefore dynamic
-            and relative to the current view, not a fixed climatology scale.
+            For the current filtered layer, the app computes the minimum and maximum values and
+            then divides the range into equal-interval bins. The legend is therefore dynamic and
+            relative to the current filtered view.
           </p>
           <pre className="docs-code">{`p20 = min + 0.2 * (max - min)
 p40 = min + 0.4 * (max - min)
 p60 = min + 0.6 * (max - min)
 p80 = min + 0.8 * (max - min)`}</pre>
           <p>
-            Colors move from blue for lower values to red for higher values. If all values are
-            identical in a view, the app uses a fallback single-color behavior.
+            In daily mode the legend expresses low-to-high values. In hotspot or difference
+            views, the same map machinery is reused, but the scientific meaning becomes trend
+            slope or later-minus-earlier change rather than a single daily measurement.
           </p>
-
-          <h3>6.3 Map geometry behavior</h3>
-          <ul>
-            <li>Point positions use stored lon/lat directly, so there is no interpolation on the map.</li>
-            <li>Point radius is fixed in map units for visual consistency during navigation.</li>
-            <li>Theme changes affect both UI styling and the basemap style.</li>
-            <li>Glacier mode helps separate glacier-specific interpretation from basin-wide analysis.</li>
-          </ul>
           <a className="docs-top-link" href="#doc-top">Back to top</a>
         </section>
 
         <section id="doc-analytics">
-          <h2>7. Time Series, Region, and Hotspot Analysis</h2>
-          <h3>7.1 Basin mean graph</h3>
+          <h2>8. Time Series, Region, and Trend Analysis</h2>
+          <h3>8.1 Basin mean graph</h3>
           <p>
-            In basin mode, the backend groups all points inside the selected year range and
-            elevation band and computes a daily mean for each date. This provides a compact view
-            of basin-scale temporal behavior for the selected variable.
+            Basin mode groups the selected points by date and computes a daily mean for the
+            active variable. This gives a compact temporal summary for the currently selected
+            dataset, year range, elevation band, and optional subregion context.
           </p>
-          <h3>7.2 Region mean graph</h3>
+          <h3>8.2 Region and glacier-focused analysis</h3>
           <p>
-            If a rectangle or subregion is selected, the graph is recomputed only for points that
-            satisfy the spatial bounds and elevation filter. This is useful for comparing local
-            behavior across glacier-fed areas or smaller hydrological units.
+            When a rectangle, basin subregion, or glacier region is active, the backend narrows
+            the selected points before aggregation. That makes it possible to compare local
+            behavior within glacier-fed areas or smaller hydrological units instead of always
+            looking only at the full basin.
           </p>
-          <h3>7.3 Temporal navigation</h3>
+          <h3>8.3 Daily map mode versus hotspot mode</h3>
           <ul>
-            <li>Play and Pause animate the selected date sequence one frame at a time.</li>
-            <li>The date slider and date input let the user jump to a specific day.</li>
-            <li>Graph cut mode uses two clicks to create a time zoom window.</li>
-            <li>Only one variable is active at a time, so comparisons stay controlled.</li>
+            <li>Daily mode shows the selected date frame and moves directly with the time slider.</li>
+            <li>Hotspot mode uses the full year range to fit a trend at each location.</li>
+            <li>The hotspot controls include a minimum yearly coverage threshold so trend fitting ignores weak annual support.</li>
+            <li>In hotspot mode the time slider still moves the graph marker, but it does not change the fitted trend map itself.</li>
           </ul>
-          <h3>7.4 Hotspot mode and long-term outcomes</h3>
-          <p>
-            Hotspot mode uses the full selected year window to fit trends at each grid point. The
-            app computes the trend slope, summarizes overall strength, and classifies locations
-            using percentile thresholds such as P70, P85, and P95.
-          </p>
           <pre className="docs-code">{`Y = aX + b
 
 Y = annual mean value
 X = year
 a = trend slope
 b = intercept`}</pre>
-          <p>
-            The minimum yearly coverage setting is important because it keeps the trend estimate
-            meaningful by excluding points with too few annual observations.
-          </p>
           <div className="docs-callout">
             <div className="docs-callout-title">Interpretation note</div>
             <p>
-              Hotspot mode shows trend intensity, not a daily anomaly map. The time slider still
-              moves the graph marker, but the trend computation itself uses the full selected year
-              window.
+              A hotspot layer is not a daily anomaly layer. It is a summary of long-range change
+              intensity computed over the full selected year window for the active dataset and
+              filter set.
             </p>
           </div>
           <a className="docs-top-link" href="#doc-top">Back to top</a>
         </section>
 
-        <section id="doc-api">
-          <h2>8. API and Filtering Logic</h2>
+        <section id="doc-outcomes">
+          <h2>9. Outcome Modules and Precomputed Products</h2>
           <p>
-            The API is intentionally small and focused on the operations needed by the app:
-            discover the dataset, build the available year and date scope, filter by elevation and
-            spatial region, and return either map points or aggregated time-series values.
+            The outcomes workflow is intended for scientific products that should open quickly
+            and compare consistently without recomputing them during normal dashboard use. The
+            current implementation includes a dedicated Long Term Hotspot Analysis module.
+          </p>
+          <h3>9.1 Current outcome module</h3>
+          <ul>
+            <li>Outcome name: Long Term Hotspot Analysis.</li>
+            <li>Source dataset: ERA5.</li>
+            <li>Primary outputs: saved 25-year spatial mean bands and saved later-minus-earlier difference layers.</li>
+            <li>Metadata endpoint: <code>/outcomes/long-term-hotspot/meta</code>.</li>
+            <li>Data endpoints: <code>/outcomes/long-term-hotspot/data</code> and <code>/outcomes/long-term-hotspot/difference</code>.</li>
+          </ul>
+          <h3>9.2 Why saved outcomes help</h3>
+          <p>
+            Precomputed outputs are useful when the same spatial summaries are revisited often.
+            They reduce repeated read and aggregation cost, keep comparisons stable, and provide a
+            cleaner presentation surface for review sessions and reporting.
+          </p>
+          <h3>9.3 Regeneration path</h3>
+          <p>
+            Outcome bundles are generated from scripts in
+            <code>Outcomes/Long_term_hotspot/Scripts</code>, especially
+            <code>compute_era5_band_means.py</code> and
+            <code>compute_band_differences.py</code>. After regeneration, the backend reloads the
+            saved parquet and JSON metadata so the outcome viewer can expose the new bands or
+            comparisons.
+          </p>
+          <a className="docs-top-link" href="#doc-top">Back to top</a>
+        </section>
+
+        <section id="doc-advanced">
+          <h2>10. Custom Operations Workspace and Optional LLM Assistance</h2>
+          <p>
+            The dashboard now contains an HB code workspace that allows users to run controlled
+            Python analysis directly against the active selection. This is useful for custom plots,
+            quick summaries, experimental metrics, and exportable derived tables without leaving
+            the application.
+          </p>
+          <h3>10.1 Code workspace behavior</h3>
+          <ul>
+            <li>The editor uses Monaco and opens in a side panel within the dashboard.</li>
+            <li>User code is validated first through the backend security layer before execution.</li>
+            <li>Small selections run inline through <code>/operations/run</code>.</li>
+            <li>Large selections are planned first and then queued as jobs through <code>/operations/jobs</code>.</li>
+            <li>Outputs can include terminal text, numeric tiles, tables, charts, exports, and map layers rendered back into the dashboard.</li>
+          </ul>
+          <h3>10.2 Supported helper patterns</h3>
+          <p>
+            Current helper functions support outputs such as <code>hb.table</code>,
+            <code>hb.number</code>, <code>hb.chart</code>, <code>hb.chart_line</code>,
+            <code>hb.chart_scatter</code>, <code>hb.chart_histogram</code>,
+            <code>hb.map_points</code>, <code>hb.export_csv</code>, and
+            <code>hb.export_json</code>. Large job mode also supports chunk-aware workflows and
+            aggregate helpers for long date ranges.
+          </p>
+          <h3>10.3 Security model</h3>
+          <p>
+            The operation runner is intentionally restricted. It uses AST validation, restricted
+            imports, subprocess isolation, timeouts, output caps, and controlled exports. That
+            makes it suitable for local-first or supervised use even though it is not intended as
+            an unrestricted general Python shell.
+          </p>
+          <h3>10.4 Optional LLM helper</h3>
+          <p>
+            The chatbot tab is optional and separate from the main backend. It talks to the local
+            LLM service on port <code>8010</code>, can answer questions about the current
+            dashboard context, and can draft code that users may insert directly into the editor.
+            If the service is not running, the rest of the dashboard still works normally.
+          </p>
+          <a className="docs-top-link" href="#doc-top">Back to top</a>
+        </section>
+
+        <section id="doc-api">
+          <h2>11. API Surface and Filtering Logic</h2>
+          <p>
+            The API has expanded beyond dataset discovery and live map requests. It now includes
+            outcome retrieval, NetCDF upload support, glacier search, and a dedicated custom
+            operations surface for programmable analysis.
           </p>
           <table className="docs-table">
             <thead>
               <tr>
                 <th>Endpoint</th>
                 <th>Purpose</th>
-                <th>Main filters</th>
+                <th>Main filters or inputs</th>
               </tr>
             </thead>
             <tbody>
@@ -579,69 +801,68 @@ b = intercept`}</pre>
             </tbody>
           </table>
           <p>
-            The filtering order is important. The backend first narrows the dataset and year
-            range, then applies date and elevation filters, and finally applies the selected
-            region or glacier geometry if one is present. That keeps the response smaller and
-            reduces unnecessary processing.
+            The usual filtering order is dataset, year range, and variable scope first; then date
+            or date range; then elevation; and finally optional subregion or geometry narrowing.
+            This ordering keeps payloads smaller and reduces unnecessary processing.
           </p>
           <p>
-            Elevation is clamped to app-defined bounds, and invalid ranges are rejected before
-            the query runs. This prevents silent errors and keeps the UI predictable.
+            GeoTIFF-backed and GeoParquet-backed datasets share the same high-level API surface,
+            but their internal loading path differs from ordinary parquet-backed datasets. That is
+            one reason the documentation should state not just the endpoint used, but also the
+            dataset family involved.
           </p>
           <a className="docs-top-link" href="#doc-top">Back to top</a>
         </section>
 
         <section id="doc-science-use">
-          <h2>9. Scientific Interpretation Guide</h2>
+          <h2>12. Scientific Interpretation Guide</h2>
           <ul>
-            <li>Use basin mode for domain-scale temporal behavior under a chosen elevation range.</li>
-            <li>Use region mode for local anomaly checks, glacier comparison, and sub-basin study.</li>
-            <li>Compare only like with like: same variable, same dataset family, and the same year window.</li>
-            <li>Report whether a result comes from ERA5-Land reanalysis, CMIP6 scenario data, MOD10A1 snow products, or user-uploaded NetCDF.</li>
-            <li>Use point count as confidence context because low counts can indicate sparse valid cells under tight filters.</li>
-            <li>Document the selected spatial filter, elevation band, and year range in any scientific write-up.</li>
+            <li>Use basin mode for domain-scale behavior under a clearly stated elevation range and year window.</li>
+            <li>Use region, sub-basin, or glacier selection when the scientific question is local rather than basin-wide.</li>
+            <li>State whether the result comes from live daily analysis, hotspot fitting, or a saved outcome module.</li>
+            <li>Report the exact dataset family, because ERA5, CMIP6, MOD10A1, CHIRPS, SPHY, discharge, and uploaded NetCDF datasets are not interchangeable.</li>
+            <li>Document the spatial filter, year range, active variable, and elevation bounds for every exported figure or chart.</li>
+            <li>For hotspot interpretation, remember that the map shows trend slope or change intensity, not a single daily state.</li>
           </ul>
           <div className="docs-callout">
             <div className="docs-callout-title">Good reporting habit</div>
             <p>
-              Whenever results are shared, the data source should be stated clearly. For example,
-              mention whether the figure comes from NASA Earthdata-derived SRTM, Earth Engine
-              processed MOD10A1, Copernicus ERA5-Land, or CMIP6 scenario data.
+              A strong report caption should mention the workflow mode, dataset family, variable,
+              date or year window, elevation filter, and whether the layer is a raw daily value,
+              an aggregated mean, a hotspot slope, or a precomputed difference map.
             </p>
           </div>
           <a className="docs-top-link" href="#doc-top">Back to top</a>
         </section>
 
         <section id="doc-limitations">
-          <h2>10. Assumptions and Limitations</h2>
+          <h2>13. Assumptions, Limitations, and Reproducibility</h2>
+          <h3>13.1 Main limitations</h3>
           <ul>
             <li>Daily means are arithmetic means across selected points; area-weighted averaging is not currently applied.</li>
-            <li>Color bins are dynamic by current filtered extent, so two days may not use the same absolute thresholds.</li>
-            <li>Outputs depend on source dataset resolution and the preprocessing choices made in Earth Engine or the local converter.</li>
-            <li>Some annual files can have fewer than 365 records because of source calendar behavior or export structure.</li>
-            <li>Dense raster map responses may be capped for browser smoothness, which affects display density but not the raw source file.</li>
+            <li>Color bins are dynamic for the current filtered view, so legends are not fixed across all dates or all datasets.</li>
+            <li>Cross-dataset comparisons can be misleading if differences in grid size, preprocessing, or temporal aggregation are ignored.</li>
+            <li>GeoTIFF-backed and GeoParquet-backed datasets may use fallback elevation behavior that differs from parquet datasets with explicit per-point elevation.</li>
+            <li>Large map responses are intentionally capped for browser performance, so display density may be lower than the raw stored point count.</li>
+            <li>Custom operations are sandboxed and intentionally limited; they are not a replacement for unrestricted scientific computing environments.</li>
           </ul>
-          <a className="docs-top-link" href="#doc-top">Back to top</a>
-        </section>
-
-        <section id="doc-repro">
-          <h2>11. Reproducibility Checklist</h2>
+          <h3>13.2 Reproducibility checklist</h3>
           <ol>
-            <li>Record dataset name, variable, year range, elevation range, and region bounds used in the analysis.</li>
-            <li>Store the exact parquet file set and app version used for the run.</li>
-            <li>Keep the Earth Engine export script version and unit conversion factors for audit trail purposes.</li>
-            <li>Verify units before cross-dataset comparison.</li>
-            <li>When publishing results, state whether values come from ERA5-Land, CMIP6, MOD10A1, or a user-uploaded NetCDF file.</li>
-            <li>Keep the selected glacier or basin geometry name in the project notes if spatial filtering was used.</li>
+            <li>Record the workflow mode used: dashboard, hotspot mode, outcome module, or custom operation.</li>
+            <li>Record dataset name, variable, year range, elevation range, and region or glacier selection.</li>
+            <li>Keep the exact source file set or generated upload dataset used for the session.</li>
+            <li>For outcomes, record the band or comparison identifier used in the viewer.</li>
+            <li>For custom operations, keep the executed Python code and any exported result files.</li>
+            <li>When using the chatbot, treat generated code as draft assistance and preserve the final edited code version that was actually run.</li>
           </ol>
           <a className="docs-top-link" href="#doc-top">Back to top</a>
         </section>
 
         <section id="doc-references">
-          <h2>12. Reference Sources</h2>
+          <h2>14. Reference Sources</h2>
           <p>
-            The following official sources are the most relevant references for the data and
-            platform context used in this app.
+            The following official references are the most relevant public sources for the data
+            families and platform context represented in this app.
           </p>
           <table className="docs-table">
             <thead>
@@ -664,10 +885,13 @@ b = intercept`}</pre>
             </tbody>
           </table>
           <p>
-            For the working implementation, the most useful internal reference is the app itself:
-            the backend routes in <code>backend/main.py</code>, the client calls in
-            <code>frontend/src/services/api.js</code>, and the dashboard logic in
-            <code>frontend/src/App.jsx</code>.
+            For implementation detail, the most relevant internal references are
+            <code> backend/main.py </code> for the API and dataset registry,
+            <code> frontend/src/services/api.js </code> for the client calls,
+            <code> frontend/src/App.jsx </code> for workflow orchestration,
+            <code> frontend/src/components/OutcomeLongTermHotspotPage.jsx </code> for the
+            outcome viewer, and <code>backend/custom_operations/README.md</code> plus
+            <code>LLM_service/README.md</code> for the advanced analysis surfaces.
           </p>
           <a className="docs-top-link" href="#doc-top">Back to top</a>
         </section>

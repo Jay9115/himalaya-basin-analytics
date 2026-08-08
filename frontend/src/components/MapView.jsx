@@ -48,7 +48,7 @@ const buildOfflineBaseStyle = (theme, glyphsUrl) => {
         id: 'offline-background',
         type: 'background',
         paint: {
-          'background-color': theme === 'dark' ? '#080b12' : '#eef3f8',
+          'background-color': theme === 'dark' ? '#11161b' : '#f8faf9',
         },
       },
     ],
@@ -91,6 +91,13 @@ const shouldHideBaseLayer = (layerId, layerType) => {
 };
 
 const paletteStops = {
+  cividis: [
+    [0, 34, 78],
+    [50, 91, 121],
+    [108, 127, 116],
+    [172, 160, 105],
+    [238, 205, 84],
+  ],
   viridis: [
     [68, 1, 84],
     [59, 82, 139],
@@ -117,15 +124,22 @@ const paletteStops = {
     [255, 255, 255],
     [202, 0, 32],
   ],
+  scientific_diverging: [
+    [49, 54, 149],
+    [116, 173, 209],
+    [247, 247, 247],
+    [244, 109, 67],
+    [165, 0, 38],
+  ],
 };
 
 const clamp01 = (value) => Math.max(0, Math.min(1, value));
 
 const getPaletteStops = (style, fallback = 'viridis') => {
   if (style?.palette) {
-    return paletteStops[String(style.palette).toLowerCase()] || paletteStops[fallback] || paletteStops.viridis;
+    return paletteStops[String(style.palette).toLowerCase()] || paletteStops[fallback] || paletteStops.cividis;
   }
-  return paletteStops[fallback] || paletteStops.viridis;
+  return paletteStops[fallback] || paletteStops.cividis;
 };
 
 const parseColor = (color, alpha) => {
@@ -149,7 +163,7 @@ const parseColor = (color, alpha) => {
 };
 
 const interpolateColor = (stops, ratio, alpha) => {
-  const safeStops = stops && stops.length >= 2 ? stops : paletteStops.viridis;
+  const safeStops = stops && stops.length >= 2 ? stops : paletteStops.cividis;
   const scaled = clamp01(ratio) * (safeStops.length - 1);
   const lower = Math.floor(scaled);
   const upper = Math.min(safeStops.length - 1, lower + 1);
@@ -165,7 +179,7 @@ const getColorForValue = (value, min, max, style = null) => {
   if (!Number.isFinite(value)) return [120, 120, 120, 80];
   const fixedColor = parseColor(style?.color, alpha);
   if (fixedColor) return fixedColor;
-  const palette = getPaletteStops(style, 'viridis');
+  const palette = getPaletteStops(style, 'cividis');
   const styledMin = Number.isFinite(Number(style?.vmin)) ? Number(style.vmin) : min;
   const styledMax = Number.isFinite(Number(style?.vmax)) ? Number(style.vmax) : max;
   const ratio = styledMax <= styledMin ? 0.5 : (value - styledMin) / (styledMax - styledMin);
@@ -177,7 +191,7 @@ const getColorForTrend = (value, maxAbs) => {
     return [140, 140, 140, 140];
   }
   const normalized = Math.max(-1, Math.min(1, value / maxAbs));
-  return interpolateColor(paletteStops.blue_red, (normalized + 1) / 2, 220);
+  return interpolateColor(paletteStops.scientific_diverging, (normalized + 1) / 2, 224);
 };
 
 const getDatumValue = (item) => {
@@ -265,11 +279,9 @@ function MapView({
     const controller = new AbortController();
     const loadBasinBoundary = async () => {
       try {
-        const separator = basinGeoJsonUrl.includes('?') ? '&' : '?';
-        const requestUrl = `${basinGeoJsonUrl}${separator}_ts=${Date.now()}`;
-        const response = await fetch(requestUrl, {
+        const response = await fetch(basinGeoJsonUrl, {
           signal: controller.signal,
-          cache: 'no-store',
+          cache: 'force-cache',
         });
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`);
@@ -397,11 +409,11 @@ function MapView({
     const map = mapRef.current?.getMap?.();
     if (!map || !map.isStyleLoaded()) return;
 
-    const stateLineColor = theme === 'dark' ? '#7e6f62' : '#8a7d72';
-    const districtLineColor = theme === 'dark' ? '#66594f' : '#9f9388';
-    const stateLabelColor = theme === 'dark' ? '#d3c7bc' : '#5f5146';
-    const districtLabelColor = theme === 'dark' ? '#c5b7aa' : '#726458';
-    const labelHalo = theme === 'dark' ? '#0f1218' : '#f3f4f6';
+    const stateLineColor = theme === 'dark' ? '#8ea2b0' : '#6f7f8a';
+    const districtLineColor = theme === 'dark' ? '#667986' : '#9aa7b0';
+    const stateLabelColor = theme === 'dark' ? '#d6dee5' : '#40505c';
+    const districtLabelColor = theme === 'dark' ? '#c2ccd4' : '#5f6c78';
+    const labelHalo = theme === 'dark' ? '#11161b' : '#ffffff';
     const beforeId = findFirstSymbolLayer(map);
     const addLayer = (layerConfig, beforeLayerId) => {
       if (beforeLayerId) {
@@ -446,7 +458,7 @@ function MapView({
           paint: {
             'line-color': stateLineColor,
             'line-width': ['interpolate', ['linear'], ['zoom'], 3, 0.55, 10, 1.15],
-            'line-opacity': 0.62,
+            'line-opacity': 0.58,
           },
         },
         beforeId
@@ -464,7 +476,7 @@ function MapView({
           paint: {
             'line-color': districtLineColor,
             'line-width': ['interpolate', ['linear'], ['zoom'], 5, 0.12, 10, 0.45],
-            'line-opacity': 0.35,
+            'line-opacity': 0.28,
           },
         },
         beforeId
@@ -606,9 +618,9 @@ function MapView({
 
   const legendPalette = useMemo(() => {
     if (analysisMode === 'hotspot') {
-      return paletteStops.blue_red;
+      return paletteStops.scientific_diverging;
     }
-    return getPaletteStops(layerStyle, 'viridis');
+    return getPaletteStops(layerStyle, 'cividis');
   }, [analysisMode, layerStyle]);
 
   const legendRange = useMemo(() => {
@@ -628,7 +640,7 @@ function MapView({
   }, [analysisMode, trendRange.maxAbs, valueRange.min, valueRange.max]);
 
   const legendGradient = useMemo(() => {
-    const safeStops = legendPalette && legendPalette.length >= 2 ? legendPalette : paletteStops.viridis;
+    const safeStops = legendPalette && legendPalette.length >= 2 ? legendPalette : paletteStops.cividis;
     const step = 100 / (safeStops.length - 1);
     return `linear-gradient(90deg, ${safeStops
       .map(([r, g, b], index) => `rgb(${r}, ${g}, ${b}) ${Math.round(index * step)}%`)
@@ -648,8 +660,8 @@ function MapView({
           stroked: true,
           filled: true,
           pickable: false,
-          getFillColor: theme === 'dark' ? [70, 150, 180, 6] : [35, 110, 140, 8],
-          getLineColor: theme === 'dark' ? [130, 185, 215, 150] : [45, 100, 130, 165],
+          getFillColor: theme === 'dark' ? [42, 157, 143, 10] : [42, 157, 143, 12],
+          getLineColor: theme === 'dark' ? [150, 203, 195, 180] : [0, 84, 120, 185],
           lineWidthUnits: 'pixels',
           lineWidthMinPixels: 1,
           lineWidthMaxPixels: 2,
@@ -668,8 +680,8 @@ function MapView({
           filled: true,
           pickable: true,
           autoHighlight: false,
-          getFillColor: theme === 'dark' ? [166, 223, 255, 36] : [118, 191, 236, 42],
-          getLineColor: theme === 'dark' ? [213, 240, 255, 165] : [58, 135, 194, 180],
+          getFillColor: theme === 'dark' ? [186, 219, 229, 42] : [134, 189, 205, 46],
+          getLineColor: theme === 'dark' ? [229, 241, 245, 178] : [44, 112, 135, 190],
           lineWidthUnits: 'pixels',
           lineWidthMinPixels: 0.7,
           lineWidthMaxPixels: 1.7,
@@ -687,8 +699,8 @@ function MapView({
           stroked: true,
           filled: true,
           pickable: false,
-          getFillColor: theme === 'dark' ? [255, 190, 92, 26] : [255, 164, 52, 28],
-          getLineColor: theme === 'dark' ? [255, 214, 145, 235] : [187, 96, 22, 230],
+          getFillColor: theme === 'dark' ? [213, 73, 91, 28] : [196, 60, 78, 30],
+          getLineColor: theme === 'dark' ? [255, 190, 190, 235] : [170, 35, 52, 230],
           lineWidthUnits: 'pixels',
           lineWidthMinPixels: 1.5,
           lineWidthMaxPixels: 4,
@@ -713,15 +725,15 @@ function MapView({
           pickable: true,
           stroked: true,
           filled: true,
-          opacity: 0.86,
+          opacity: 0.92,
           getFillColor: (feature) => getColorForValue(getDatumValue(feature), valueRange.min, valueRange.max, layerStyle),
-          getLineColor: theme === 'dark' ? [10, 16, 24, 80] : [255, 255, 255, 95],
+          getLineColor: theme === 'dark' ? [17, 22, 27, 95] : [255, 255, 255, 120],
           lineWidthUnits: 'pixels',
           lineWidthMinPixels: 0.05,
           lineWidthMaxPixels: 0.45,
           getLineWidth: 0.18,
           updateTriggers: {
-            getFillColor: [valueRange.min, valueRange.max],
+            getFillColor: [valueRange.min, valueRange.max, layerStyle],
             getLineColor: [theme],
           },
           parameters: { depthTest: false },
@@ -737,7 +749,7 @@ function MapView({
       id: 'variable-scatter',
       data: pointData,
       pickable: true,
-      opacity: analysisMode === 'hotspot' ? 0.82 : 0.7,
+      opacity: analysisMode === 'hotspot' ? 0.86 : 0.78,
       stroked: false,
       filled: true,
       radiusScale: 1,
@@ -776,6 +788,7 @@ function MapView({
     theme,
     analysisMode,
     trendRange,
+    layerStyle,
   ]);
 
   const deckController = useMemo(() => {
@@ -785,7 +798,7 @@ function MapView({
     };
   }, [selectionEnabled]);
 
-  const getTooltip = ({ object }) => {
+  const getTooltip = useCallback(({ object }) => {
     if (!object) return null;
 
     if (object?.properties?.kind === 'glacier') {
@@ -906,7 +919,7 @@ function MapView({
         fontSize: '14px',
       },
     };
-  };
+  }, [analysisMode, currentDate, variableLabel]);
 
   const getLocalPoint = useCallback((event) => {
     if (!containerRef.current) return null;
@@ -1097,12 +1110,12 @@ function MapView({
         bottom: '20px',
         right: '20px',
         background: 'var(--map-overlay-bg)',
-        padding: '15px',
-        borderRadius: '8px',
+        padding: '12px 13px',
+        borderRadius: '6px',
         color: 'var(--map-overlay-text)',
         fontSize: '12px',
-        backdropFilter: 'blur(10px)',
         border: '1px solid var(--map-overlay-border)',
+        boxShadow: '0 8px 24px var(--shadow)',
       }}>
         <div style={{ fontWeight: 'bold', marginBottom: '10px' }}>
           {analysisMode === 'hotspot' ? 'Trend Hotspots (Slope / Year)' : `${variableLabel || 'Value'} Scale`}
@@ -1111,7 +1124,7 @@ function MapView({
           <div
             style={{
               height: '12px',
-              borderRadius: '999px',
+              borderRadius: '2px',
               background: legendGradient,
               border: '1px solid var(--map-overlay-border)',
             }}
@@ -1149,13 +1162,13 @@ function MapView({
         top: '20px',
         left: '20px',
         background: 'var(--map-overlay-bg)',
-        padding: '12px 20px',
-        borderRadius: '8px',
+        padding: '10px 14px',
+        borderRadius: '6px',
         color: 'var(--map-overlay-text)',
-        fontSize: '18px',
-        fontWeight: 'bold',
-        backdropFilter: 'blur(10px)',
+        fontSize: '15px',
+        fontWeight: '700',
         border: '1px solid var(--map-overlay-border)',
+        boxShadow: '0 8px 24px var(--shadow)',
       }}>
         {analysisMode === 'hotspot' ? 'Long-Term Hotspot Analysis' : `Date: ${currentDate}`}
       </div>

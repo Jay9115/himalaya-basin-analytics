@@ -1,7 +1,6 @@
 import hashlib
 import json
 import subprocess
-import sys
 import threading
 import time
 import traceback
@@ -13,6 +12,7 @@ from typing import Any, Dict, Optional
 
 from .data_access import OperationDataLoader
 from .planner import OperationExecutionPlanner
+from .runtime import resolve_worker_command
 from .sandbox import SandboxLimits
 from .schemas import OperationJobCreateRequest
 
@@ -33,7 +33,6 @@ class LocalLargeOperationJobManager:
         self.planner = planner
         self.workspace_root = Path(workspace_root)
         self.jobs_root = self.workspace_root / "jobs"
-        self.worker_path = Path(__file__).with_name("large_worker.py")
         self.jobs_root.mkdir(parents=True, exist_ok=True)
         self.executor = ThreadPoolExecutor(max_workers=max(1, int(max_workers or 1)))
         self.cancel_events: Dict[str, threading.Event] = {}
@@ -267,7 +266,7 @@ class LocalLargeOperationJobManager:
         )
 
         process = subprocess.Popen(
-            [sys.executable, "-I", str(self.worker_path)],
+            resolve_worker_command("large"),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
