@@ -2,22 +2,22 @@
 .time-slider {
   display: flex;
   align-items: center;
-  gap: 20px;
-  padding: 10px 0;
+  gap: 10px;
+  padding: 0;
 }
 
 .playback-controls {
   display: flex;
-  gap: 8px;
+  gap: 5px;
 }
 
 .control-btn {
-  min-width: 64px;
-  height: 40px;
+  min-width: 52px;
+  height: 28px;
   border: none;
   background: var(--input-bg);
   color: var(--text);
-  border-radius: 8px;
+  border-radius: 5px;
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
@@ -25,13 +25,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 12px;
+  padding: 0 8px;
 }
 
 .control-btn:hover:not(:disabled) {
   background: var(--hover-bg);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 8px var(--shadow);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 5px var(--shadow);
 }
 
 .control-btn:disabled {
@@ -42,7 +42,7 @@
 .play-btn {
   background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
   color: #ffffff;
-  min-width: 80px;
+  min-width: 58px;
 }
 
 .play-btn:hover {
@@ -54,7 +54,7 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 3px;
 }
 
 .slider-label {
@@ -67,7 +67,7 @@
 .current-date-display {
   color: var(--accent);
   font-weight: 600;
-  font-size: 14px;
+  font-size: 12px;
 }
 
 .date-slider {
@@ -116,7 +116,7 @@
 }
 
 .slider-info {
-  font-size: 12px;
+  font-size: 10px;
   color: var(--text-muted);
   text-align: center;
 }
@@ -125,17 +125,17 @@
 .speed-controls {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
 }
 
 .speed-label {
-  font-size: 13px;
+  font-size: 11px;
   color: var(--text-muted);
   white-space: nowrap;
 }
 
 .speed-btn {
-  padding: 8px 14px;
+  padding: 4px 7px;
   border: 1px solid var(--border);
   background: transparent;
   color: var(--text-muted);
@@ -162,22 +162,22 @@
 .date-input-container {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 5px;
 }
 
 .date-input-container label {
-  font-size: 13px;
+  font-size: 11px;
   color: var(--text-muted);
   white-space: nowrap;
 }
 
 .date-input {
-  padding: 8px 12px;
+  padding: 4px 7px;
   background: var(--input-bg);
   border: 1px solid var(--input-border);
   border-radius: 6px;
   color: var(--text);
-  font-size: 13px;
+  font-size: 11px;
   cursor: pointer;
   transition: all 0.2s ease;
 }

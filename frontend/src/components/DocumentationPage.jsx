@@ -11,11 +11,12 @@ const sections = [
   { id: 'doc-map', title: '7. Spatial Visualization and Search Tools' },
   { id: 'doc-analytics', title: '8. Time Series, Region, and Trend Analysis' },
   { id: 'doc-outcomes', title: '9. Outcome Modules and Precomputed Products' },
-  { id: 'doc-advanced', title: '10. Custom Operations Workspace and Optional LLM Assistance' },
-  { id: 'doc-api', title: '11. API Surface and Filtering Logic' },
-  { id: 'doc-science-use', title: '12. Scientific Interpretation Guide' },
-  { id: 'doc-limitations', title: '13. Assumptions, Limitations, and Reproducibility' },
-  { id: 'doc-references', title: '14. Reference Sources' },
+  { id: 'doc-research', title: '10. General Research Toolkit' },
+  { id: 'doc-advanced', title: '11. Custom Operations Workspace and Optional LLM Assistance' },
+  { id: 'doc-api', title: '12. API Surface and Filtering Logic' },
+  { id: 'doc-science-use', title: '13. Scientific Interpretation Guide' },
+  { id: 'doc-limitations', title: '14. Assumptions, Limitations, and Reproducibility' },
+  { id: 'doc-references', title: '15. Reference Sources' },
 ];
 
 const workflowRows = [
@@ -38,6 +39,11 @@ const workflowRows = [
     module: 'HB Code Workspace',
     purpose: 'Programmable analysis inside the dashboard.',
     notes: 'Uses a Monaco editor, backend code validation, inline execution for small selections, and queued jobs for large selections.',
+  },
+  {
+    module: 'Research Toolkit',
+    purpose: 'Guided, reproducible methods inside the live dashboard.',
+    notes: 'Applies robust trends, anomalies, change detection, emergence, compound footprints, and cross-dataset relationships to arbitrary numeric variables.',
   },
   {
     module: 'HB Chatbot',
@@ -161,8 +167,7 @@ const endpointRows = [
   ['GET /variables', 'Return variables that exist in the selected scope', 'dataset, year_start, year_end'],
   ['GET /elevation-range', 'Find the valid elevation envelope for the selected scope', 'dataset, year_start, year_end'],
   ['GET /data', 'Return map-ready points for one date', 'date, elevation range, variable, dataset, year range, subregion'],
-  ['GET /basin-mean', 'Compute a basin-wide time series', 'start_date, end_date, elevation range, variable, dataset, year range, subregion, bounds'],
-  ['GET /region-mean', 'Compute a region-wise time series for a bounding box', 'year, bounds, elevation range, variable, dataset, year range, subregion'],
+  ['GET /basin-mean', 'Compute a basin-wide time series', 'start_date, end_date, elevation range, variable, dataset, year range, subregion or ROI polygon'],
   ['GET /stats', 'Return scope-level diagnostics', 'dataset, year range'],
   ['GET /subregions', 'List basin subregions and glacier entries', 'include_glaciers'],
   ['GET /subregions/{id}/geometry', 'Fetch geometry for a selected subregion', 'subregion id'],
@@ -182,6 +187,10 @@ const endpointRows = [
   ['GET /operations/jobs/{job_id}', 'Poll job status and outputs', 'job id'],
   ['GET /operations/jobs/{job_id}/logs', 'Read job logs', 'job id'],
   ['POST /operations/jobs/{job_id}/cancel', 'Cancel a running job', 'job id'],
+  ['GET /research/framework/capabilities', 'Describe reusable guided methods and figure types', 'none'],
+  ['POST /research/framework/analyze', 'Run a generalized multi-variable research workflow', 'variables, aggregations, period, baseline, elevation, subregion, bounds, methods'],
+  ['POST /research/framework/figures', 'Render publication figures from a derived run', 'run_id, figure_type, dpi'],
+  ['GET /research/framework/runs/{run_id}/{artifact}', 'Download derived tables, metadata, or figures', 'run id, declared artifact path'],
 ];
 
 const referenceLinks = [
@@ -631,14 +640,14 @@ function DocumentationPage({ selectedDataset, selectedYearRange, selectedVariabl
             <li>Basin overlay for the main watershed context.</li>
             <li>Selected subregion or glacier boundary overlay.</li>
             <li>Scientific points rendered with Deck.GL scatter symbols.</li>
-            <li>Optional rectangle-selection preview or custom operation result layer.</li>
+            <li>Optional ROI polygon, selected subregion, glacier boundary, or custom operation result layer.</li>
           </ol>
 
           <h3>7.2 Search and region tools</h3>
           <ul>
             <li>Search supports basin subregions and named glacier entries from the same search surface.</li>
             <li>Coordinate tools support direct latitude and longitude lookup.</li>
-            <li>Rectangle selection supports local region-of-interest graphing.</li>
+            <li>The ROI polygon supports local region-of-interest graphing and variable loading.</li>
             <li>Glacier overview mode loads viewport-limited glacier polygons and intentionally waits for a suitable zoom level.</li>
             <li>Subregion geometry can be fetched directly when a basin or glacier item is selected.</li>
           </ul>
@@ -658,6 +667,27 @@ p80 = min + 0.8 * (max - min)`}</pre>
             views, the same map machinery is reused, but the scientific meaning becomes trend
             slope or later-minus-earlier change rather than a single daily measurement.
           </p>
+
+          <h3>7.4 Snapshot and print layout</h3>
+          <p>
+            The Snapshot button in the map canvas opens a publication-layout workflow without
+            adding work to normal map rendering. The tool is downloaded only when it is opened.
+            Drag a print crop area to isolate the required map view; the rest of
+            the application is dimmed while the selected area remains clear.
+          </p>
+          <ul>
+            <li>Configure A4, A3, Letter, or square pages in portrait or landscape orientation.</li>
+            <li>Add a map title, subtitle, legend, scale bar, north arrow, coordinates, timestamp, and frame.</li>
+            <li>Publication exports render regular climate observations as native grid-cell footprints rather than circular dots, with opaque values and reference boundaries redrawn above the data.</li>
+            <li>Choose fit or fill behavior, page margins, background color, and 96, 150, or 300 DPI output.</li>
+            <li>Export PNG, JPEG, or SVG, or use the system print dialog for printing and Save as PDF.</li>
+            <li>The print-layout module is isolated from data requests and analytical state, so opening or closing it does not refetch scientific data.</li>
+            <li>Dynamic labels accept fields such as <code>[% region %]</code>, <code>[% variable %]</code>, <code>[% date %]</code>, and user-defined layout variables.</li>
+            <li>Reusable named templates are stored locally and can restore the complete layout configuration.</li>
+            <li>An optional projected coordinate grid supports automatic or explicit degree intervals and solid or dashed styles.</li>
+            <li>Atlas mode batch-renders up to ten basin subregions, highlights each current feature, and sends the resulting multi-page document to Print / Save as PDF.</li>
+            <li>Report mode can append a structured metadata page containing region, variable, date, value range, extent, scale, author, organization, and output specification.</li>
+          </ul>
           <a className="docs-top-link" href="#doc-top">Back to top</a>
         </section>
 
@@ -671,7 +701,7 @@ p80 = min + 0.8 * (max - min)`}</pre>
           </p>
           <h3>8.2 Region and glacier-focused analysis</h3>
           <p>
-            When a rectangle, basin subregion, or glacier region is active, the backend narrows
+            When the ROI polygon, basin subregion, or glacier region is active, the backend narrows
             the selected points before aggregation. That makes it possible to compare local
             behavior within glacier-fed areas or smaller hydrological units instead of always
             looking only at the full basin.
@@ -733,39 +763,81 @@ b = intercept`}</pre>
           <a className="docs-top-link" href="#doc-top">Back to top</a>
         </section>
 
+        <section id="doc-research">
+          <h2>10. General Research Toolkit</h2>
+          <p>
+            The Research button is part of the live dashboard, not a separate study module. It
+            receives the current dataset, response variable, year range, elevation filter,
+            subregion, and ROI polygon. Researchers can add up to three related variables
+            from any other loaded dataset and choose the annual reducer for each variable.
+          </p>
+          <h3>10.1 Reusable methods</h3>
+          <ul>
+            <li>Area-weighted regional series and baseline-standardized anomalies.</li>
+            <li>Pixelwise Theil–Sen slopes with regional HAC and Mann–Kendall inference.</li>
+            <li>Persistent time of emergence and Pettitt shift screening with false-discovery-rate control.</li>
+            <li>Regional Pearson/Spearman relations, lead–lag sensitivity, spatial cross-sections, and local temporal correlation.</li>
+            <li>Joint positive or negative standardized anomaly footprints for the first related variable.</li>
+          </ul>
+          <h3>10.2 Cross-dataset behavior</h3>
+          <p>
+            Related data are sampled to the response grid by nearest cell. Every run records the
+            source and response pixel counts plus median and maximum coordinate offsets. Static
+            environmental covariates such as terrain are treated as spatial drivers even when
+            their reference year lies outside the active temporal window.
+          </p>
+          <h3>10.3 Reproducibility and data protection</h3>
+          <p>
+            Source datasets are read-only. Each run writes its request, summary, annual series,
+            pixel metrics, relationship table, and optional 600-dpi PNG/TIFF/PDF figures to a new
+            directory under <code>Outcomes/Research_Framework/runs</code>. Statistical
+            association, lag, emergence, and detected shifts are diagnostics and do not by
+            themselves establish environmental causation.
+          </p>
+          <a className="docs-top-link" href="#doc-top">Back to top</a>
+        </section>
+
         <section id="doc-advanced">
-          <h2>10. Custom Operations Workspace and Optional LLM Assistance</h2>
+          <h2>11. Custom Operations Workspace and Optional LLM Assistance</h2>
           <p>
             The dashboard now contains an HB code workspace that allows users to run controlled
             Python analysis directly against the active selection. This is useful for custom plots,
             quick summaries, experimental metrics, and exportable derived tables without leaving
             the application.
           </p>
-          <h3>10.1 Code workspace behavior</h3>
+          <h3>11.1 Code workspace behavior</h3>
           <ul>
             <li>The editor uses Monaco and opens in a side panel within the dashboard.</li>
             <li>User code is validated first through the backend security layer before execution.</li>
             <li>Small selections run inline through <code>/operations/run</code>.</li>
-            <li>Large selections are planned first and then queued as jobs through <code>/operations/jobs</code>.</li>
+            <li>
+              Large Parquet selections are planned first and then queued through
+              <code>/operations/jobs</code>. The isolated worker scans the original files in place;
+              it does not copy or deserialize the selected source rows into a job dataframe.
+            </li>
             <li>Outputs can include terminal text, numeric tiles, tables, charts, exports, and map layers rendered back into the dashboard.</li>
           </ul>
-          <h3>10.2 Supported helper patterns</h3>
+          <h3>11.2 Supported helper patterns</h3>
           <p>
             Current helper functions support outputs such as <code>hb.table</code>,
             <code>hb.number</code>, <code>hb.chart</code>, <code>hb.chart_line</code>,
             <code>hb.chart_scatter</code>, <code>hb.chart_histogram</code>,
             <code>hb.map_points</code>, <code>hb.export_csv</code>, and
-            <code>hb.export_json</code>. Large job mode also supports chunk-aware workflows and
-            aggregate helpers for long date ranges.
+            <code>hb.export_json</code>. For large jobs, use <code>hb.sql</code> for lazy,
+            data-local queries and <code>hb.export_query</code> to stream CSV or Parquet artifacts
+            directly from the analytical engine. <code>hb.aggregate</code> and
+            <code>hb.iter_data</code> are available for structured aggregation and bounded-batch
+            custom logic. Interactive results are capped at 250,000 rows; exports are not forced
+            through the browser boundary.
           </p>
-          <h3>10.3 Security model</h3>
+          <h3>11.3 Security model</h3>
           <p>
             The operation runner is intentionally restricted. It uses AST validation, restricted
             imports, subprocess isolation, timeouts, output caps, and controlled exports. That
             makes it suitable for local-first or supervised use even though it is not intended as
             an unrestricted general Python shell.
           </p>
-          <h3>10.4 Optional LLM helper</h3>
+          <h3>11.4 Optional LLM helper</h3>
           <p>
             The chatbot tab is optional and separate from the main backend. It talks to the local
             LLM service on port <code>8010</code>, can answer questions about the current
@@ -776,7 +848,7 @@ b = intercept`}</pre>
         </section>
 
         <section id="doc-api">
-          <h2>11. API Surface and Filtering Logic</h2>
+          <h2>12. API Surface and Filtering Logic</h2>
           <p>
             The API has expanded beyond dataset discovery and live map requests. It now includes
             outcome retrieval, NetCDF upload support, glacier search, and a dedicated custom
@@ -815,7 +887,7 @@ b = intercept`}</pre>
         </section>
 
         <section id="doc-science-use">
-          <h2>12. Scientific Interpretation Guide</h2>
+          <h2>13. Scientific Interpretation Guide</h2>
           <ul>
             <li>Use basin mode for domain-scale behavior under a clearly stated elevation range and year window.</li>
             <li>Use region, sub-basin, or glacier selection when the scientific question is local rather than basin-wide.</li>
@@ -836,8 +908,8 @@ b = intercept`}</pre>
         </section>
 
         <section id="doc-limitations">
-          <h2>13. Assumptions, Limitations, and Reproducibility</h2>
-          <h3>13.1 Main limitations</h3>
+          <h2>14. Assumptions, Limitations, and Reproducibility</h2>
+          <h3>14.1 Main limitations</h3>
           <ul>
             <li>Daily means are arithmetic means across selected points; area-weighted averaging is not currently applied.</li>
             <li>Color bins are dynamic for the current filtered view, so legends are not fixed across all dates or all datasets.</li>
@@ -846,7 +918,7 @@ b = intercept`}</pre>
             <li>Large map responses are intentionally capped for browser performance, so display density may be lower than the raw stored point count.</li>
             <li>Custom operations are sandboxed and intentionally limited; they are not a replacement for unrestricted scientific computing environments.</li>
           </ul>
-          <h3>13.2 Reproducibility checklist</h3>
+          <h3>14.2 Reproducibility checklist</h3>
           <ol>
             <li>Record the workflow mode used: dashboard, hotspot mode, outcome module, or custom operation.</li>
             <li>Record dataset name, variable, year range, elevation range, and region or glacier selection.</li>
@@ -859,7 +931,7 @@ b = intercept`}</pre>
         </section>
 
         <section id="doc-references">
-          <h2>14. Reference Sources</h2>
+          <h2>15. Reference Sources</h2>
           <p>
             The following official references are the most relevant public sources for the data
             families and platform context represented in this app.

@@ -1,0 +1,924 @@
+{
+  "run_id": "20260901T113810Z-90d5827b",
+  "created_at": "2026-09-01T11:38:10.770368+00:00",
+  "framework": "Generalized selection-aware research workflow",
+  "selection": {
+    "variables": [
+      {
+        "dataset": "chirps",
+        "variable": "precipitation_mm",
+        "aggregation": "sum",
+        "label": null,
+        "unit": null,
+        "direction": "positive"
+      },
+      {
+        "dataset": "era5",
+        "variable": "temperature_C",
+        "aggregation": "mean",
+        "label": null,
+        "unit": null,
+        "direction": "positive"
+      }
+    ],
+    "year_start": 1981,
+    "year_end": 1982,
+    "baseline_start": 1981,
+    "baseline_end": 1981,
+    "recent_start": 1981,
+    "elev_min": 500.0,
+    "elev_max": 9000.0,
+    "subregion_id": null,
+    "bounds": {
+      "min_lat": 28.053049086865077,
+      "max_lat": 28.460910283873456,
+      "min_lon": 85.28851114451848,
+      "max_lon": 85.80994541494485
+    },
+    "methods": [
+      "descriptive",
+      "emergence",
+      "relationships"
+    ],
+    "anomaly_threshold": 1.0,
+    "emergence_threshold": 0.75,
+    "emergence_window": 9,
+    "persistence_fraction": 0.8,
+    "max_map_points": 18000,
+    "sector": "all"
+  },
+  "dataset": {
+    "id": "chirps",
+    "label": "CHIRPS Precipitation"
+  },
+  "variable": {
+    "id": "precipitation_mm",
+    "label": "Precipitation Mm",
+    "unit": "native units"
+  },
+  "variables": [
+    {
+      "key": "v1_chirps_precipitation_mm",
+      "role": "response",
+      "dataset": {
+        "id": "chirps",
+        "label": "CHIRPS Precipitation"
+      },
+      "id": "precipitation_mm",
+      "label": "Precipitation Mm",
+      "unit": "native units",
+      "aggregation": "sum",
+      "direction": "positive",
+      "years": [
+        1981,
+        1982
+      ],
+      "year_count": 2,
+      "pixel_count": 80
+    },
+    {
+      "key": "v2_era5_temperature_C",
+      "role": "related",
+      "dataset": {
+        "id": "era5",
+        "label": "ERA5 Full Shape"
+      },
+      "id": "temperature_C",
+      "label": "Temperature C",
+      "unit": "native units",
+      "aggregation": "mean",
+      "direction": "positive",
+      "years": [
+        1981,
+        1982
+      ],
+      "year_count": 2,
+      "pixel_count": 20
+    }
+  ],
+  "coverage": {
+    "available_years": [
+      1981,
+      1982
+    ],
+    "year_count": 2,
+    "baseline_years": [
+      1981
+    ],
+    "pixel_count": 80,
+    "recent_period": [
+      1981,
+      1982
+    ]
+  },
+  "headline": {
+    "regional_sen_slope_per_decade": null,
+    "regional_hac_p": null,
+    "recent_mean_anomaly_z": null,
+    "spatial_fdr_trend_area_percent": null,
+    "persistent_emerged_area_percent": 0.0,
+    "median_emergence_year": null,
+    "pettitt_fdr_area_percent": null,
+    "median_fdr_change_year": null,
+    "largest_signal_year": null,
+    "largest_signal_area_percent": null
+  },
+  "regional_statistics": {
+    "n": 2
+  },
+  "annual_series": [
+    {
+      "year": 1981,
+      "value": 1892.620590302388,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.0,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1892.620590302388,
+      "v2_era5_temperature_C__value": -0.46025659498818744
+    },
+    {
+      "year": 1982,
+      "value": 1282.7671564305806,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": -609.8534338718075,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1282.7671564305806,
+      "v2_era5_temperature_C__value": -0.4270379758298147
+    }
+  ],
+  "group_summary": [
+    {
+      "group": "Selected domain",
+      "pixels": 80,
+      "mean_trend_per_decade": null,
+      "trend_fdr_area_percent": null,
+      "recent_anomaly_z": null,
+      "emerged_area_percent": 0.0,
+      "change_fdr_area_percent": null
+    },
+    {
+      "group": "1500\u20132999 m",
+      "pixels": 9,
+      "mean_trend_per_decade": null,
+      "trend_fdr_area_percent": null,
+      "recent_anomaly_z": null,
+      "emerged_area_percent": 0.0,
+      "change_fdr_area_percent": null
+    },
+    {
+      "group": "3000\u20134499 m",
+      "pixels": 28,
+      "mean_trend_per_decade": null,
+      "trend_fdr_area_percent": null,
+      "recent_anomaly_z": null,
+      "emerged_area_percent": 0.0,
+      "change_fdr_area_percent": null
+    },
+    {
+      "group": "\u22654500 m",
+      "pixels": 43,
+      "mean_trend_per_decade": null,
+      "trend_fdr_area_percent": null,
+      "recent_anomaly_z": null,
+      "emerged_area_percent": 0.0,
+      "change_fdr_area_percent": null
+    }
+  ],
+  "relationships": [
+    {
+      "key": "v2_era5_temperature_C",
+      "dataset": {
+        "id": "era5",
+        "label": "ERA5 Full Shape"
+      },
+      "variable": {
+        "id": "temperature_C",
+        "label": "Temperature C",
+        "unit": "native units",
+        "aggregation": "mean"
+      },
+      "regional": {
+        "n": 2
+      },
+      "spatial": {
+        "n": 80,
+        "response_metric": "mean response",
+        "pearson_r": -0.04550603491408597,
+        "pearson_p": 0.6885524813678469,
+        "spearman_rho": -0.22358396514196266,
+        "spearman_p": 0.04619170759696997,
+        "response_per_driver_unit": -5.066501251301163,
+        "regression_r_squared": 0.002070799213602019
+      },
+      "lag_correlations": [
+        {
+          "lag_years": -5,
+          "related_leads_response": 0,
+          "n": 0,
+          "pearson_r": null,
+          "pearson_p": null
+        },
+        {
+          "lag_years": -4,
+          "related_leads_response": 0,
+          "n": 0,
+          "pearson_r": null,
+          "pearson_p": null
+        },
+        {
+          "lag_years": -3,
+          "related_leads_response": 0,
+          "n": 0,
+          "pearson_r": null,
+          "pearson_p": null
+        },
+        {
+          "lag_years": -2,
+          "related_leads_response": 0,
+          "n": 0,
+          "pearson_r": null,
+          "pearson_p": null
+        },
+        {
+          "lag_years": -1,
+          "related_leads_response": 0,
+          "n": 1,
+          "pearson_r": null,
+          "pearson_p": null
+        },
+        {
+          "lag_years": 0,
+          "related_leads_response": 0,
+          "n": 2,
+          "pearson_r": null,
+          "pearson_p": null
+        },
+        {
+          "lag_years": 1,
+          "related_leads_response": 1,
+          "n": 1,
+          "pearson_r": null,
+          "pearson_p": null
+        },
+        {
+          "lag_years": 2,
+          "related_leads_response": 1,
+          "n": 0,
+          "pearson_r": null,
+          "pearson_p": null
+        },
+        {
+          "lag_years": 3,
+          "related_leads_response": 1,
+          "n": 0,
+          "pearson_r": null,
+          "pearson_p": null
+        },
+        {
+          "lag_years": 4,
+          "related_leads_response": 1,
+          "n": 0,
+          "pearson_r": null,
+          "pearson_p": null
+        },
+        {
+          "lag_years": 5,
+          "related_leads_response": 1,
+          "n": 0,
+          "pearson_r": null,
+          "pearson_p": null
+        }
+      ],
+      "local": {
+        "median_r": 0.9999999999999999,
+        "fdr_significant_area_percent": null,
+        "median_common_years": 2.0
+      },
+      "harmonization": {
+        "method": "nearest-cell sampling to response grid",
+        "median_offset_degrees": 0.036539638243912424,
+        "maximum_offset_degrees": 0.08815669618518546,
+        "response_pixels": 80,
+        "source_pixels": 20,
+        "variable_key": "v2_era5_temperature_C",
+        "dataset": "era5",
+        "variable": "temperature_C"
+      }
+    }
+  ],
+  "harmonization": [
+    {
+      "method": "nearest-cell sampling to response grid",
+      "median_offset_degrees": 0.036539638243912424,
+      "maximum_offset_degrees": 0.08815669618518546,
+      "response_pixels": 80,
+      "source_pixels": 20,
+      "variable_key": "v2_era5_temperature_C",
+      "dataset": "era5",
+      "variable": "temperature_C"
+    }
+  ],
+  "layers": [
+    {
+      "id": "emergence",
+      "label": "Persistent signal emergence year",
+      "sequential": 1,
+      "point_count": 0,
+      "min": null,
+      "max": null,
+      "data": []
+    },
+    {
+      "id": "relationship_1",
+      "label": "Local temporal correlation: Temperature C",
+      "sequential": 0,
+      "point_count": 80,
+      "min": -1.0,
+      "max": 1.0,
+      "data": [
+        {
+          "lat": 28.0749,
+          "lon": 85.3262,
+          "elev": 2770.0,
+          "value": -0.9999999999999998,
+          "significant": 0
+        },
+        {
+          "lat": 28.0749,
+          "lon": 85.3762,
+          "elev": 3723.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.0749,
+          "lon": 85.4262,
+          "elev": 4421.0,
+          "value": 0.9999999999999998,
+          "significant": 0
+        },
+        {
+          "lat": 28.0749,
+          "lon": 85.4762,
+          "elev": 4391.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.0749,
+          "lon": 85.5262,
+          "elev": 3868.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.0749,
+          "lon": 85.5762,
+          "elev": 3739.0,
+          "value": 0.9999999999999999,
+          "significant": 0
+        },
+        {
+          "lat": 28.0749,
+          "lon": 85.6262,
+          "elev": 3753.0,
+          "value": 0.9999999999999999,
+          "significant": 0
+        },
+        {
+          "lat": 28.0749,
+          "lon": 85.6762,
+          "elev": 3814.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.0749,
+          "lon": 85.7262,
+          "elev": 3939.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.0749,
+          "lon": 85.7762,
+          "elev": 3428.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.1249,
+          "lon": 85.3262,
+          "elev": 2555.0,
+          "value": -1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.1249,
+          "lon": 85.3762,
+          "elev": 2995.0,
+          "value": 0.9999999999999999,
+          "significant": 0
+        },
+        {
+          "lat": 28.1249,
+          "lon": 85.4262,
+          "elev": 3968.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.1249,
+          "lon": 85.4762,
+          "elev": 4898.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.1249,
+          "lon": 85.5262,
+          "elev": 4790.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.1249,
+          "lon": 85.5762,
+          "elev": 4437.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.1249,
+          "lon": 85.6262,
+          "elev": 4927.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.1249,
+          "lon": 85.6762,
+          "elev": 4761.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.1249,
+          "lon": 85.7262,
+          "elev": 4489.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.1249,
+          "lon": 85.7762,
+          "elev": 4599.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.1749,
+          "lon": 85.3262,
+          "elev": 2047.0,
+          "value": -1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.1749,
+          "lon": 85.3762,
+          "elev": 2617.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.1749,
+          "lon": 85.4262,
+          "elev": 3446.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.1749,
+          "lon": 85.4762,
+          "elev": 4355.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.1749,
+          "lon": 85.5262,
+          "elev": 4894.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.1749,
+          "lon": 85.5762,
+          "elev": 4729.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.1749,
+          "lon": 85.6262,
+          "elev": 4897.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.1749,
+          "lon": 85.6762,
+          "elev": 5080.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.1749,
+          "lon": 85.7262,
+          "elev": 5318.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.1749,
+          "lon": 85.7762,
+          "elev": 5599.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.2249,
+          "lon": 85.3262,
+          "elev": 2780.0,
+          "value": -1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.2249,
+          "lon": 85.3762,
+          "elev": 2540.0,
+          "value": -1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.2249,
+          "lon": 85.4262,
+          "elev": 4140.0,
+          "value": -1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.2249,
+          "lon": 85.4762,
+          "elev": 4774.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.2249,
+          "lon": 85.5262,
+          "elev": 4579.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.2249,
+          "lon": 85.5762,
+          "elev": 4532.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.2249,
+          "lon": 85.6262,
+          "elev": 4945.0,
+          "value": 0.9999999999999998,
+          "significant": 0
+        },
+        {
+          "lat": 28.2249,
+          "lon": 85.6762,
+          "elev": 4788.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.2249,
+          "lon": 85.7262,
+          "elev": 5359.0,
+          "value": 0.9999999999999999,
+          "significant": 0
+        },
+        {
+          "lat": 28.2249,
+          "lon": 85.7762,
+          "elev": 5505.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.2749,
+          "lon": 85.3262,
+          "elev": 2995.0,
+          "value": -1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.2749,
+          "lon": 85.3762,
+          "elev": 2537.0,
+          "value": -1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.2749,
+          "lon": 85.4262,
+          "elev": 3686.0,
+          "value": -1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.2749,
+          "lon": 85.4762,
+          "elev": 5142.0,
+          "value": 0.9999999999999999,
+          "significant": 0
+        },
+        {
+          "lat": 28.2749,
+          "lon": 85.5262,
+          "elev": 5433.0,
+          "value": 0.9999999999999999,
+          "significant": 0
+        },
+        {
+          "lat": 28.2749,
+          "lon": 85.5762,
+          "elev": 5240.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.2749,
+          "lon": 85.6262,
+          "elev": 5525.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.2749,
+          "lon": 85.6762,
+          "elev": 5355.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.2749,
+          "lon": 85.7262,
+          "elev": 5257.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.2749,
+          "lon": 85.7762,
+          "elev": 5502.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.3249,
+          "lon": 85.3262,
+          "elev": 3007.0,
+          "value": -1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.3249,
+          "lon": 85.3762,
+          "elev": 3219.0,
+          "value": -0.9999999999999998,
+          "significant": 0
+        },
+        {
+          "lat": 28.3249,
+          "lon": 85.4262,
+          "elev": 3090.0,
+          "value": -1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.3249,
+          "lon": 85.4762,
+          "elev": 3671.0,
+          "value": -1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.3249,
+          "lon": 85.5262,
+          "elev": 4313.0,
+          "value": -1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.3249,
+          "lon": 85.5762,
+          "elev": 4914.0,
+          "value": -1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.3249,
+          "lon": 85.6262,
+          "elev": 5504.0,
+          "value": -0.9999999999999999,
+          "significant": 0
+        },
+        {
+          "lat": 28.3249,
+          "lon": 85.6762,
+          "elev": 5487.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.3249,
+          "lon": 85.7262,
+          "elev": 5719.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.3249,
+          "lon": 85.7762,
+          "elev": 6091.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.3749,
+          "lon": 85.3262,
+          "elev": 3038.0,
+          "value": -1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.3749,
+          "lon": 85.3762,
+          "elev": 3149.0,
+          "value": -0.9999999999999998,
+          "significant": 0
+        },
+        {
+          "lat": 28.3749,
+          "lon": 85.4262,
+          "elev": 3553.0,
+          "value": -1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.3749,
+          "lon": 85.4762,
+          "elev": 3921.0,
+          "value": -1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.3749,
+          "lon": 85.5262,
+          "elev": 4639.0,
+          "value": -1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.3749,
+          "lon": 85.5762,
+          "elev": 5275.0,
+          "value": -0.9999999999999999,
+          "significant": 0
+        },
+        {
+          "lat": 28.3749,
+          "lon": 85.6262,
+          "elev": 5193.0,
+          "value": -1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.3749,
+          "lon": 85.6762,
+          "elev": 5816.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.3749,
+          "lon": 85.7262,
+          "elev": 6453.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.3749,
+          "lon": 85.7762,
+          "elev": 6585.0,
+          "value": 1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.4249,
+          "lon": 85.3262,
+          "elev": 3503.0,
+          "value": -0.9999999999999999,
+          "significant": 0
+        },
+        {
+          "lat": 28.4249,
+          "lon": 85.3762,
+          "elev": 3733.0,
+          "value": -1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.4249,
+          "lon": 85.4262,
+          "elev": 3915.0,
+          "value": -1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.4249,
+          "lon": 85.4762,
+          "elev": 4750.0,
+          "value": -1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.4249,
+          "lon": 85.5262,
+          "elev": 5246.0,
+          "value": -0.9999999999999998,
+          "significant": 0
+        },
+        {
+          "lat": 28.4249,
+          "lon": 85.5762,
+          "elev": 5305.0,
+          "value": -1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.4249,
+          "lon": 85.6262,
+          "elev": 5656.0,
+          "value": -0.9999999999999999,
+          "significant": 0
+        },
+        {
+          "lat": 28.4249,
+          "lon": 85.6762,
+          "elev": 5865.0,
+          "value": -1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.4249,
+          "lon": 85.7262,
+          "elev": 6009.0,
+          "value": -1.0,
+          "significant": 0
+        },
+        {
+          "lat": 28.4249,
+          "lon": 85.7762,
+          "elev": 5930.0,
+          "value": -1.0,
+          "significant": 0
+        }
+      ]
+    }
+  ],
+  "interpretation_guardrails": [
+    "Association, lag, emergence, and change points do not establish causal attribution.",
+    "Related grids are harmonized by nearest-cell sampling and the reported offsets must be evaluated against native resolution.",
+    "Pettitt identifies one candidate distributional shift; FDR controls multiplicity but not spatial dependence or product uncertainty.",
+    "Short records and baselines below 10 years materially weaken robust inference.",
+    "Direction controls anomaly interpretation only; raw observations are never modified."
+  ],
+  "exports": {
+    "annual_csv": "/research/framework/runs/20260901T113810Z-90d5827b/annual_series.csv",
+    "pixel_parquet": "/research/framework/runs/20260901T113810Z-90d5827b/pixel_metrics.parquet",
+    "relationships_csv": "/research/framework/runs/20260901T113810Z-90d5827b/relationships.csv",
+    "summary_json": "/research/framework/runs/20260901T113810Z-90d5827b/summary.json",
+    "request_json": "/research/framework/runs/20260901T113810Z-90d5827b/request.json"
+  },
+  "provenance": {
+    "raw_data_modified": 0,
+    "output_directory": "Outcomes\\Research_Framework\\runs\\20260901T113810Z-90d5827b",
+    "aggregation_level": "annual pixel",
+    "response_grid": "chirps/precipitation_mm"
+  }
+}

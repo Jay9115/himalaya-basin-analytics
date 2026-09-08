@@ -1,0 +1,37 @@
+{
+  "variables": [
+    {
+      "dataset": "chirps",
+      "variable": "precipitation_mm",
+      "aggregation": "sum",
+      "label": null,
+      "unit": null,
+      "direction": "positive"
+    }
+  ],
+  "year_start": 1981,
+  "year_end": 2026,
+  "baseline_start": 1981,
+  "baseline_end": 1990,
+  "recent_start": 2012,
+  "elev_min": 500.0,
+  "elev_max": 9000.0,
+  "subregion_id": null,
+  "bounds": {
+    "min_lat": 28.053,
+    "max_lat": 28.4609,
+    "min_lon": 85.2885,
+    "max_lon": 85.8099
+  },
+  "methods": [
+    "descriptive",
+    "anomaly",
+    "trend",
+    "change_point"
+  ],
+  "anomaly_threshold": 1.0,
+  "emergence_threshold": 0.75,
+  "emergence_window": 9,
+  "persistence_fraction": 0.8,
+  "max_map_points": 18000
+}

@@ -1,6 +1,7 @@
 import json
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 import pandas as pd
@@ -102,7 +103,6 @@ class OperationDataLoader:
                         break
                     normalized = dict(row)
                     normalized["dataset"] = resolved.state["id"]
-                    resolved = self.resolve_selection(selection)
                     normalized["date"] = date_key
                     normalized["variable"] = variable
                     normalized["value"] = normalized.get("value")
@@ -122,6 +122,94 @@ class OperationDataLoader:
             "columns": list(frame.columns),
         }
         return frame, meta
+
+    def build_lazy_source_manifest(self, selection: OperationSelection) -> Optional[Dict[str, Any]]:
+        """Describe a trusted Parquet selection without materializing its rows.
+
+        The manifest is consumed only by the isolated large worker. Raw source
+        paths are never exposed to user code or returned through the API.
+        Non-tabular storage keeps using the existing chunked fallback.
+        """
+        resolved = self.resolve_selection(selection)
+        if not resolved.dates:
+            raise HTTPException(
+                status_code=404,
+                detail="No indexed data exists for the requested date selection.",
+            )
+        if str(resolved.state.get("storage") or "parquet").lower() != "parquet":
+            return None
+
+        dataset_root = Path(resolved.state["path"]).resolve()
+        source_files: List[str] = []
+        seen_files = set()
+        for date_key in resolved.dates:
+            for raw_path in resolved.state["date_index"].get(date_key, []):
+                path = Path(raw_path).resolve()
+                if path.suffix.lower() != ".parquet" or not path.is_file():
+                    raise RuntimeError(f"Invalid indexed Parquet source: {path}")
+                if path != dataset_root and dataset_root not in path.parents:
+                    raise RuntimeError(f"Indexed source escaped dataset root: {path}")
+                path_key = str(path)
+                if path_key not in seen_files:
+                    seen_files.add(path_key)
+                    source_files.append(path_key)
+
+        if not source_files:
+            raise HTTPException(status_code=404, detail="No Parquet files matched the selected dates.")
+
+        state = resolved.state
+        physical_columns = {
+            "date": str(state.get("date_col") or "date"),
+            "lat": str(state.get("lat_col") or "lat"),
+            "lon": str(state.get("lon_col") or "lon"),
+            "elev": str(state.get("elev_col") or "elev"),
+        }
+        variables = [
+            {"name": str(variable), "column": str(variable)}
+            for variable in resolved.variables
+        ]
+
+        requested_dates = resolved.requested_dates
+        date_filter: Dict[str, Any]
+        if requested_dates:
+            date_filter = {"mode": "list", "dates": resolved.dates}
+        else:
+            date_filter = {
+                "mode": "range",
+                "start": resolved.dates[0],
+                "end": resolved.dates[-1],
+            }
+
+        return {
+            "kind": "parquet",
+            "dataset": str(state["id"]),
+            "dataset_label": str(state["label"]),
+            "root": str(dataset_root),
+            "files": source_files,
+            "representative_file": source_files[0],
+            "physical_columns": physical_columns,
+            "variables": variables,
+            "filter": {
+                "date": date_filter,
+                "elev_min": float(resolved.elev_min),
+                "elev_max": float(resolved.elev_max),
+            },
+            "subregion": self._serialize_subregion(resolved.subregion),
+            "logical_columns": [
+                "dataset",
+                "date",
+                "lat",
+                "lon",
+                "elev",
+                "variable",
+                "value",
+                *[
+                    variable
+                    for variable in resolved.variables
+                    if variable not in {"dataset", "date", "lat", "lon", "elev", "variable", "value"}
+                ],
+            ],
+        }
 
     def resolve_selection(self, selection: OperationSelection) -> ResolvedOperationSelection:
         requested_dates = self._requested_dates(selection)
@@ -309,6 +397,34 @@ class OperationDataLoader:
         ordered = base_columns + [column for column in variables if column in frame.columns]
         extras = [column for column in frame.columns if column not in ordered]
         return frame[ordered + extras]
+
+    def _serialize_subregion(self, subregion: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        if not subregion:
+            return None
+
+        polygons = []
+        for polygon in subregion.get("polygons") or []:
+            outer = polygon.get("outer")
+            holes = polygon.get("holes") or []
+            polygons.append(
+                {
+                    "outer": outer.tolist() if hasattr(outer, "tolist") else outer,
+                    "holes": [hole.tolist() if hasattr(hole, "tolist") else hole for hole in holes],
+                }
+            )
+
+        bounds = subregion.get("bounds") or {}
+        return {
+            "id": str(subregion.get("id") or ""),
+            "label": str(subregion.get("label") or subregion.get("id") or "subregion"),
+            "bounds": {
+                "min_lat": float(bounds["min_lat"]),
+                "max_lat": float(bounds["max_lat"]),
+                "min_lon": float(bounds["min_lon"]),
+                "max_lon": float(bounds["max_lon"]),
+            },
+            "polygons": polygons,
+        }
 
 
 def dataframe_to_worker_payload(frame: pd.DataFrame) -> Dict[str, Any]:

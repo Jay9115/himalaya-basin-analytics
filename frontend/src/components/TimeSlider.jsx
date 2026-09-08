@@ -42,18 +42,20 @@ function TimeSlider({
           onClick={handlePrevious}
           disabled={currentIndex === 0}
           title="Previous day"
+          aria-label="Previous day"
           type="button"
         >
-          Prev
+          ‹
         </button>
         
         <button 
           className="control-btn play-btn" 
           onClick={onPlayPause}
           title={isPlaying ? 'Pause' : 'Play'}
+          aria-label={isPlaying ? 'Pause' : 'Play'}
           type="button"
         >
-          {isPlaying ? 'Pause' : 'Play'}
+          {isPlaying ? 'Ⅱ' : '▶'}
         </button>
         
         <button 
@@ -61,9 +63,10 @@ function TimeSlider({
           onClick={handleNext}
           disabled={currentIndex === dates.length - 1}
           title="Next day"
+          aria-label="Next day"
           type="button"
         >
-          Next
+          ›
         </button>
       </div>
 

@@ -1,6 +1,13 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://jay9115-himalaya-web-backend.hf.space';
+const isLocalBrowser = typeof window !== 'undefined'
+  && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+// Local development and the offline desktop build must use the matching local
+// FastAPI process. The hosted API remains the fallback for remote deployments.
+const DEFAULT_API_BASE_URL = (import.meta.env.DEV || isLocalBrowser)
+  ? 'http://127.0.0.1:8000'
+  : 'https://jay9115-himalaya-web-backend.hf.space';
+const API_BASE_URL = import.meta.env.VITE_API_URL || DEFAULT_API_BASE_URL;
 
 class APIService {
   constructor() {
@@ -137,22 +144,91 @@ class APIService {
     return this.getWithCache('/outcomes');
   }
 
+  async getProjects() {
+    return this.getWithCache('/projects', {}, { cache: false });
+  }
+
+  async createProject(payload) {
+    const response = await this.client.post('/projects', payload);
+    return response.data;
+  }
+
+  async getProject(projectId) {
+    const response = await this.client.get(`/projects/${encodeURIComponent(projectId)}`);
+    return response.data;
+  }
+
+  async saveProject(projectId, workspace, code) {
+    const response = await this.client.put(
+      `/projects/${encodeURIComponent(projectId)}/workspace`,
+      { workspace, code }
+    );
+    return response.data;
+  }
+
+  async updateProject(projectId, changes) {
+    const response = await this.client.patch(`/projects/${encodeURIComponent(projectId)}`, changes);
+    return response.data;
+  }
+
+  async archiveProject(projectId) {
+    const response = await this.client.post(`/projects/${encodeURIComponent(projectId)}/archive`);
+    return response.data;
+  }
+
+  async deleteProject(projectId) {
+    const response = await this.client.delete(`/projects/${encodeURIComponent(projectId)}`);
+    return response.data;
+  }
+
   async getLongTermHotspotMeta() {
     return this.getWithCache('/outcomes/long-term-hotspot/meta');
   }
 
-  async getLongTermHotspotData(variable, bandId, signal) {
+  async getLongTermHotspotData(variable, bandId, signal, aoi) {
+    const params = { variable, band_id: bandId };
+    if (aoi) Object.assign(params, this.withAoi({}, aoi));
     return this.getWithCache(
       '/outcomes/long-term-hotspot/data',
-      { variable, band_id: bandId },
+      params,
       { signal }
     );
   }
 
-  async getLongTermHotspotDifference(variable, comparisonId, signal) {
+  async getLongTermHotspotDifference(variable, comparisonId, signal, aoi) {
+    const params = { variable, comparison_id: comparisonId };
+    if (aoi) Object.assign(params, this.withAoi({}, aoi));
     return this.getWithCache(
       '/outcomes/long-term-hotspot/difference',
-      { variable, comparison_id: comparisonId },
+      params,
+      { signal }
+    );
+  }
+
+  outcomePath(outcomeId) {
+    return String(outcomeId || 'long_term_hotspot').replaceAll('_', '-');
+  }
+
+  async getOutcomeMeta(outcomeId) {
+    return this.getWithCache(`/outcomes/${this.outcomePath(outcomeId)}/meta`);
+  }
+
+  async getOutcomeData(outcomeId, variable, bandId, signal, aoi) {
+    const params = { variable, band_id: bandId };
+    if (aoi) Object.assign(params, this.withAoi({}, aoi));
+    return this.getWithCache(
+      `/outcomes/${this.outcomePath(outcomeId)}/data`,
+      params,
+      { signal }
+    );
+  }
+
+  async getOutcomeDifference(outcomeId, variable, comparisonId, signal, aoi) {
+    const params = { variable, comparison_id: comparisonId };
+    if (aoi) Object.assign(params, this.withAoi({}, aoi));
+    return this.getWithCache(
+      `/outcomes/${this.outcomePath(outcomeId)}/difference`,
+      params,
       { signal }
     );
   }
@@ -208,7 +284,22 @@ class APIService {
     return this.getWithCache(`/subregions/${encoded}/geometry`, {}, { signal });
   }
 
-  async getData(date, elevMin, elevMax, variable, dataset, signal, yearRange, subregionId) {
+  withAoi(params, aoi) {
+    if (!aoi?.geometry) return params;
+    return {
+      ...params,
+      aoi_geojson: JSON.stringify({
+        type: 'Feature',
+        properties: {
+          id: aoi.id,
+          label: aoi.name || aoi.label || 'ROI',
+        },
+        geometry: aoi.geometry,
+      }),
+    };
+  }
+
+  async getData(date, elevMin, elevMax, variable, dataset, signal, yearRange, subregionId, aoi) {
     const params = this.withContext(
       {
         date,
@@ -219,7 +310,9 @@ class APIService {
       dataset,
       yearRange
     );
-    if (subregionId) {
+    if (aoi) {
+      Object.assign(params, this.withAoi({}, aoi));
+    } else if (subregionId) {
       params.subregion_id = subregionId;
     }
     return this.getWithCache(
@@ -229,7 +322,7 @@ class APIService {
     );
   }
 
-  async prefetchData(date, elevMin, elevMax, variable, dataset, yearRange, subregionId) {
+  async prefetchData(date, elevMin, elevMax, variable, dataset, yearRange, subregionId, aoi) {
     return this.getData(
       date,
       elevMin,
@@ -238,11 +331,12 @@ class APIService {
       dataset,
       undefined,
       yearRange,
-      subregionId
+      subregionId,
+      aoi
     );
   }
 
-  async getBasinMean(startDate, endDate, elevMin, elevMax, variable, dataset, signal, yearRange, subregionId, bounds) {
+  async getBasinMean(startDate, endDate, elevMin, elevMax, variable, dataset, signal, yearRange, subregionId, aoi) {
     const params = this.withContext(
       {
         start_date: startDate,
@@ -254,42 +348,13 @@ class APIService {
       dataset,
       yearRange
     );
-    if (subregionId) {
+    if (aoi) {
+      Object.assign(params, this.withAoi({}, aoi));
+    } else if (subregionId) {
       params.subregion_id = subregionId;
-    }
-    if (bounds) {
-      params.min_lat = bounds.minLat;
-      params.max_lat = bounds.maxLat;
-      params.min_lon = bounds.minLon;
-      params.max_lon = bounds.maxLon;
     }
     return this.getWithCache(
       '/basin-mean',
-      params,
-      { signal }
-    );
-  }
-
-  async getRegionMean(year, bounds, elevMin, elevMax, variable, dataset, signal, yearRange, subregionId) {
-    const params = this.withContext(
-      {
-        year,
-        min_lat: bounds.minLat,
-        max_lat: bounds.maxLat,
-        min_lon: bounds.minLon,
-        max_lon: bounds.maxLon,
-        elev_min: elevMin,
-        elev_max: elevMax,
-        variable,
-      },
-      dataset,
-      yearRange
-    );
-    if (subregionId) {
-      params.subregion_id = subregionId;
-    }
-    return this.getWithCache(
-      '/region-mean',
       params,
       { signal }
     );
@@ -299,7 +364,7 @@ class APIService {
     return this.getWithCache('/stats', this.withContext({}, dataset, yearRange));
   }
 
-  async getHotspotTrends(elevMin, elevMax, variable, dataset, signal, yearRange, subregionId, minYears = 3) {
+  async getHotspotTrends(elevMin, elevMax, variable, dataset, signal, yearRange, subregionId, minYears = 3, aoi) {
     const params = this.withContext(
       {
         elev_min: elevMin,
@@ -310,7 +375,9 @@ class APIService {
       dataset,
       yearRange
     );
-    if (subregionId) {
+    if (aoi) {
+      Object.assign(params, this.withAoi({}, aoi));
+    } else if (subregionId) {
       params.subregion_id = subregionId;
     }
     return this.getWithCache(
@@ -322,6 +389,50 @@ class APIService {
 
   async getOperationCapabilities() {
     return this.getWithCache('/operations/capabilities');
+  }
+
+  async getResearchCapabilities() {
+    return this.getWithCache('/research/capabilities', {}, { cacheTtlMs: 30 * 60 * 1000 });
+  }
+
+  async runResearchAnalysis(payload, signal) {
+    const response = await this.client.post('/research/analyze', payload, {
+      signal,
+      timeout: 0,
+    });
+    return response.data;
+  }
+
+  async createResearchFigure(payload, signal) {
+    const response = await this.client.post('/research/figures', payload, {
+      signal,
+      timeout: 0,
+    });
+    return response.data;
+  }
+
+  async getResearchFrameworkCapabilities() {
+    return this.getWithCache('/research/framework/capabilities', {}, { cacheTtlMs: 30 * 60 * 1000 });
+  }
+
+  async runResearchFramework(payload, signal) {
+    const response = await this.client.post('/research/framework/analyze', payload, {
+      signal,
+      timeout: 0,
+    });
+    return response.data;
+  }
+
+  async createResearchFrameworkFigure(payload, signal) {
+    const response = await this.client.post('/research/framework/figures', payload, {
+      signal,
+      timeout: 0,
+    });
+    return response.data;
+  }
+
+  getResearchArtifactUrl(path) {
+    return this.getOperationExportUrl(path);
   }
 
   async validateOperationCode(code, signal) {

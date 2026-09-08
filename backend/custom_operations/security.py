@@ -5,6 +5,7 @@ from typing import Dict, List, Set
 
 MAX_AST_NODES = 4000
 MAX_CODE_CHARS = 20000
+LARGE_DATA_METHODS = {"aggregate", "export_query", "iter_data", "sample", "sql", "to_frame"}
 
 ALLOWED_IMPORT_ROOTS: Set[str] = {
     "math",
@@ -199,7 +200,7 @@ class OperationSecurityVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Attribute(self, node: ast.Attribute) -> None:
-        if node.attr.startswith("__") or node.attr in BLOCKED_ATTRS:
+        if node.attr.startswith("_") or node.attr in BLOCKED_ATTRS:
             self._error(node, f"Attribute '{node.attr}' is not allowed.")
         self.generic_visit(node)
 
@@ -279,3 +280,57 @@ def validate_python_code(code: str) -> SecurityValidationResult:
         "This validator is a defense-in-depth check. Production deployments should use a container or microVM runner.",
     ]
     return SecurityValidationResult(ok=not visitor.errors, errors=visitor.errors, warnings=warnings)
+
+
+def validate_large_operation_code(code: str) -> SecurityValidationResult:
+    """Reject definitely eager large-data code before a worker scans any data."""
+    try:
+        tree = ast.parse(code, mode="exec")
+    except SyntaxError as exc:
+        return SecurityValidationResult(
+            ok=False,
+            errors=[{"line": exc.lineno, "column": exc.offset, "message": exc.msg}],
+        )
+
+    run_function = next(
+        (node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "run"),
+        None,
+    )
+    data_names = {"df", "data"}
+    if run_function is not None:
+        parameters = [item.arg for item in run_function.args.args]
+        if len(parameters) >= 2 and parameters[1].lower() not in {"meta", "context", "selection"}:
+            data_names.add(parameters[1])
+
+    uses_eager_data_name = any(
+        isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and node.id in data_names
+        for node in ast.walk(tree)
+    )
+    local_methods = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        if isinstance(node.func.value, ast.Name) and node.func.value.id in {"hb", "df", "data"}:
+            if node.func.attr in LARGE_DATA_METHODS:
+                local_methods.add(node.func.attr)
+
+    if uses_eager_data_name and not local_methods:
+        return SecurityValidationResult(
+            ok=False,
+            errors=[
+                {
+                    "line": getattr(run_function, "lineno", None),
+                    "column": getattr(run_function, "col_offset", None),
+                    "message": (
+                        "This selection is too large for eager pandas dataframe code. "
+                        "Use hb.sql(...), hb.aggregate(...), hb.iter_data(), hb.sample(...), "
+                        "hb.to_frame(max_rows=...), or hb.export_query(...)."
+                    ),
+                }
+            ],
+        )
+
+    return SecurityValidationResult(
+        ok=True,
+        warnings=["Large selection will run against a data-local lazy relation."],
+    )

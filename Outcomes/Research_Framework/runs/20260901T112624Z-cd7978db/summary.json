@@ -1,0 +1,1713 @@
+{
+  "run_id": "20260901T112624Z-cd7978db",
+  "created_at": "2026-09-01T11:26:24.867077+00:00",
+  "framework": "Generalized selection-aware research workflow",
+  "selection": {
+    "variables": [
+      {
+        "dataset": "chirps",
+        "variable": "precipitation_mm",
+        "aggregation": "sum",
+        "label": null,
+        "unit": null,
+        "direction": "positive"
+      }
+    ],
+    "year_start": 1981,
+    "year_end": 2026,
+    "baseline_start": 1981,
+    "baseline_end": 1990,
+    "recent_start": 2012,
+    "elev_min": 500.0,
+    "elev_max": 9000.0,
+    "subregion_id": null,
+    "bounds": {
+      "min_lat": 28.053,
+      "max_lat": 28.4609,
+      "min_lon": 85.2885,
+      "max_lon": 85.8099
+    },
+    "methods": [
+      "descriptive",
+      "anomaly",
+      "trend",
+      "change_point"
+    ],
+    "anomaly_threshold": 1.0,
+    "emergence_threshold": 0.75,
+    "emergence_window": 9,
+    "persistence_fraction": 0.8,
+    "max_map_points": 18000,
+    "sector": "all"
+  },
+  "dataset": {
+    "id": "chirps",
+    "label": "CHIRPS Precipitation"
+  },
+  "variable": {
+    "id": "precipitation_mm",
+    "label": "Precipitation Mm",
+    "unit": "native units"
+  },
+  "variables": [
+    {
+      "key": "v1_chirps_precipitation_mm",
+      "role": "response",
+      "dataset": {
+        "id": "chirps",
+        "label": "CHIRPS Precipitation"
+      },
+      "id": "precipitation_mm",
+      "label": "Precipitation Mm",
+      "unit": "native units",
+      "aggregation": "sum",
+      "direction": "positive",
+      "years": [
+        1981,
+        2026
+      ],
+      "year_count": 46,
+      "pixel_count": 80
+    }
+  ],
+  "coverage": {
+    "available_years": [
+      1981,
+      1982,
+      1983,
+      1984,
+      1985,
+      1986,
+      1987,
+      1988,
+      1989,
+      1990,
+      1991,
+      1992,
+      1993,
+      1994,
+      1995,
+      1996,
+      1997,
+      1998,
+      1999,
+      2000,
+      2001,
+      2002,
+      2003,
+      2004,
+      2005,
+      2006,
+      2007,
+      2008,
+      2009,
+      2010,
+      2011,
+      2012,
+      2013,
+      2014,
+      2015,
+      2016,
+      2017,
+      2018,
+      2019,
+      2020,
+      2021,
+      2022,
+      2023,
+      2024,
+      2025,
+      2026
+    ],
+    "year_count": 46,
+    "baseline_years": [
+      1981,
+      1982,
+      1983,
+      1984,
+      1985,
+      1986,
+      1987,
+      1988,
+      1989,
+      1990
+    ],
+    "pixel_count": 80,
+    "recent_period": [
+      2012,
+      2026
+    ]
+  },
+  "headline": {
+    "regional_sen_slope_per_decade": 16.960334794942874,
+    "regional_hac_p": 0.7657491148431017,
+    "recent_mean_anomaly_z": 0.1192634978518324,
+    "spatial_fdr_trend_area_percent": 0.0,
+    "persistent_emerged_area_percent": 0.0,
+    "median_emergence_year": null,
+    "pettitt_fdr_area_percent": 0.0,
+    "median_fdr_change_year": null,
+    "largest_signal_year": 2010,
+    "largest_signal_area_percent": 100.0
+  },
+  "regional_statistics": {
+    "n": 46,
+    "sen_slope_per_decade": 16.960334794942874,
+    "sen_ci_low_per_decade": -40.18884911089127,
+    "sen_ci_high_per_decade": 83.17575714125874,
+    "ols_slope_per_decade": 15.310724309189485,
+    "ols_p": 0.691154238472206,
+    "hac_p": 0.7657491148431017,
+    "mann_kendall_tau": 0.05507246376811595,
+    "mann_kendall_p": 0.5894145254666981,
+    "pettitt_year": 1998.0,
+    "pettitt_p": 0.41058619591226736
+  },
+  "annual_series": [
+    {
+      "year": 1981,
+      "value": 1892.620590302388,
+      "z_mean": 1.5656375110159484,
+      "signal_area_percent": 97.49940911712459,
+      "anomaly": 417.8427416967181,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1892.620590302388
+    },
+    {
+      "year": 1982,
+      "value": 1282.7671564305806,
+      "z_mean": -0.7186694216637349,
+      "signal_area_percent": 0.0,
+      "anomaly": -192.0106921750894,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1282.7671564305806
+    },
+    {
+      "year": 1983,
+      "value": 1327.4308793719706,
+      "z_mean": -0.52903497433154,
+      "signal_area_percent": 0.0,
+      "anomaly": -147.34696923369938,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1327.4308793719706
+    },
+    {
+      "year": 1984,
+      "value": 1868.4503643059584,
+      "z_mean": 1.4149595595518654,
+      "signal_area_percent": 78.7444323220945,
+      "anomaly": 393.6725157002884,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1868.4503643059584
+    },
+    {
+      "year": 1985,
+      "value": 1517.9631527107988,
+      "z_mean": 0.145828410761091,
+      "signal_area_percent": 3.756144289183805,
+      "anomaly": 43.18530410512881,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1517.9631527107988
+    },
+    {
+      "year": 1986,
+      "value": 1536.3157551039264,
+      "z_mean": 0.22129707317462824,
+      "signal_area_percent": 2.5035129273668435,
+      "anomaly": 61.53790649825646,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1536.3157551039264
+    },
+    {
+      "year": 1987,
+      "value": 1374.288560882125,
+      "z_mean": -0.3540023727256723,
+      "signal_area_percent": 0.0,
+      "anomaly": -100.48928772354498,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1374.288560882125
+    },
+    {
+      "year": 1988,
+      "value": 1559.8749192820737,
+      "z_mean": 0.3225770550161151,
+      "signal_area_percent": 1.249709318216066,
+      "anomaly": 85.09707067640375,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1559.8749192820737
+    },
+    {
+      "year": 1989,
+      "value": 1076.2576556406307,
+      "z_mean": -1.4733916161966973,
+      "signal_area_percent": 0.0,
+      "anomaly": -398.5201929650393,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1076.2576556406307
+    },
+    {
+      "year": 1990,
+      "value": 1311.8094520262487,
+      "z_mean": -0.5952012246020021,
+      "signal_area_percent": 0.0,
+      "anomaly": -162.96839657942132,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1311.8094520262487
+    },
+    {
+      "year": 1991,
+      "value": 716.7494149997257,
+      "z_mean": -2.7880652055051964,
+      "signal_area_percent": 0.0,
+      "anomaly": -758.0284336059443,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 716.7494149997257
+    },
+    {
+      "year": 1992,
+      "value": 994.0450568320642,
+      "z_mean": -1.7981522626805198,
+      "signal_area_percent": 0.0,
+      "anomaly": -480.73279177360575,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 994.0450568320642
+    },
+    {
+      "year": 1993,
+      "value": 1173.0781835351354,
+      "z_mean": -1.120169252958392,
+      "signal_area_percent": 0.0,
+      "anomaly": -301.6996650705346,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1173.0781835351354
+    },
+    {
+      "year": 1994,
+      "value": 1352.4341555789454,
+      "z_mean": -0.45354138620101264,
+      "signal_area_percent": 0.0,
+      "anomaly": -122.34369302672462,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1352.4341555789454
+    },
+    {
+      "year": 1995,
+      "value": 1506.7401477547583,
+      "z_mean": 0.12555910855204205,
+      "signal_area_percent": 3.756144289183805,
+      "anomaly": 31.962299149088267,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1506.7401477547583
+    },
+    {
+      "year": 1996,
+      "value": 1463.0649757626845,
+      "z_mean": -0.0500014803099793,
+      "signal_area_percent": 0.0,
+      "anomaly": -11.712872842985462,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1463.0649757626845
+    },
+    {
+      "year": 1997,
+      "value": 1378.1163510360686,
+      "z_mean": -0.33557918044135365,
+      "signal_area_percent": 0.0,
+      "anomaly": -96.66149756960135,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1378.1163510360686
+    },
+    {
+      "year": 1998,
+      "value": 1303.5055228884678,
+      "z_mean": -0.633724850052924,
+      "signal_area_percent": 0.0,
+      "anomaly": -171.2723257172022,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1303.5055228884678
+    },
+    {
+      "year": 1999,
+      "value": 1549.2936190385851,
+      "z_mean": 0.30251609200121626,
+      "signal_area_percent": 0.0,
+      "anomaly": 74.51577043291513,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1549.2936190385851
+    },
+    {
+      "year": 2000,
+      "value": 1577.2202835929274,
+      "z_mean": 0.33767399033068257,
+      "signal_area_percent": 12.518147902256576,
+      "anomaly": 102.44243498725746,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1577.2202835929274
+    },
+    {
+      "year": 2001,
+      "value": 1439.546290562134,
+      "z_mean": -0.1366716968377204,
+      "signal_area_percent": 0.0,
+      "anomaly": -35.2315580435361,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1439.546290562134
+    },
+    {
+      "year": 2002,
+      "value": 1530.5400963869743,
+      "z_mean": 0.19039795370536416,
+      "signal_area_percent": 0.0,
+      "anomaly": 55.76224778130427,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1530.5400963869743
+    },
+    {
+      "year": 2003,
+      "value": 1605.4235875965885,
+      "z_mean": 0.5044703802336139,
+      "signal_area_percent": 12.518147902256576,
+      "anomaly": 130.64573899091852,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1605.4235875965885
+    },
+    {
+      "year": 2004,
+      "value": 1613.9523278287968,
+      "z_mean": 0.5186881887235626,
+      "signal_area_percent": 7.5105387821005305,
+      "anomaly": 139.1744792231268,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1613.9523278287968
+    },
+    {
+      "year": 2005,
+      "value": 1561.1479992145553,
+      "z_mean": 0.30427422883188526,
+      "signal_area_percent": 6.246785366291388,
+      "anomaly": 86.3701506088853,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1561.1479992145553
+    },
+    {
+      "year": 2006,
+      "value": 1330.9992779041572,
+      "z_mean": -0.5063187982292507,
+      "signal_area_percent": 0.0,
+      "anomaly": -143.77857070151276,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1330.9992779041572
+    },
+    {
+      "year": 2007,
+      "value": 1664.8600898391887,
+      "z_mean": 0.7052144844491579,
+      "signal_area_percent": 15.011122996774482,
+      "anomaly": 190.08224123351874,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1664.8600898391887
+    },
+    {
+      "year": 2008,
+      "value": 1540.3349353944955,
+      "z_mean": 0.23597716411479147,
+      "signal_area_percent": 2.4970674833785704,
+      "anomaly": 65.55708678882547,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1540.3349353944955
+    },
+    {
+      "year": 2009,
+      "value": 1172.3016349171796,
+      "z_mean": -1.0925992532391404,
+      "signal_area_percent": 0.0,
+      "anomaly": -302.47621368849036,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1172.3016349171796
+    },
+    {
+      "year": 2010,
+      "value": 1870.1189977678207,
+      "z_mean": 1.4881037576509293,
+      "signal_area_percent": 100.0,
+      "anomaly": 395.3411491621507,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1870.1189977678207
+    },
+    {
+      "year": 2011,
+      "value": 1467.4405663270238,
+      "z_mean": -0.04513129315135811,
+      "signal_area_percent": 1.2520480963946017,
+      "anomaly": -7.337282278646171,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1467.4405663270238
+    },
+    {
+      "year": 2012,
+      "value": 1513.7239732002738,
+      "z_mean": 0.15136893304304513,
+      "signal_area_percent": 1.2491222432864184,
+      "anomaly": 38.946124594603816,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1513.7239732002738
+    },
+    {
+      "year": 2013,
+      "value": 1442.5555309816853,
+      "z_mean": -0.08308530522839547,
+      "signal_area_percent": 0.0,
+      "anomaly": -32.222317623984736,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1442.5555309816853
+    },
+    {
+      "year": 2014,
+      "value": 1511.4312691652697,
+      "z_mean": 0.1430456631323633,
+      "signal_area_percent": 5.008192385578407,
+      "anomaly": 36.65342055959968,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1511.4312691652697
+    },
+    {
+      "year": 2015,
+      "value": 1462.408332466427,
+      "z_mean": -0.018281670573399668,
+      "signal_area_percent": 0.0,
+      "anomaly": -12.369516139242933,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1462.408332466427
+    },
+    {
+      "year": 2016,
+      "value": 2487.8611288355733,
+      "z_mean": 3.762046019782992,
+      "signal_area_percent": 100.0,
+      "anomaly": 1013.0832802299033,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 2487.8611288355733
+    },
+    {
+      "year": 2017,
+      "value": 1205.7087123729748,
+      "z_mean": -1.0010214532282928,
+      "signal_area_percent": 0.0,
+      "anomaly": -269.0691362326952,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1205.7087123729748
+    },
+    {
+      "year": 2018,
+      "value": 2356.8519747679966,
+      "z_mean": 3.2347378791535855,
+      "signal_area_percent": 100.0,
+      "anomaly": 882.0741261623266,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 2356.8519747679966
+    },
+    {
+      "year": 2019,
+      "value": 1815.5769575671684,
+      "z_mean": 1.3099228573768256,
+      "signal_area_percent": 76.25614523575507,
+      "anomaly": 340.7991089614984,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1815.5769575671684
+    },
+    {
+      "year": 2020,
+      "value": 1208.5481094948561,
+      "z_mean": -0.9702644439226153,
+      "signal_area_percent": 0.0,
+      "anomaly": -266.22973911081385,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1208.5481094948561
+    },
+    {
+      "year": 2021,
+      "value": 1668.5877681315346,
+      "z_mean": 0.6978624337934932,
+      "signal_area_percent": 23.77898212378693,
+      "anomaly": 193.80991952586464,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1668.5877681315346
+    },
+    {
+      "year": 2022,
+      "value": 1196.9960446195034,
+      "z_mean": -1.0289240265117943,
+      "signal_area_percent": 0.0,
+      "anomaly": -277.78180398616655,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1196.9960446195034
+    },
+    {
+      "year": 2023,
+      "value": 1554.2290851805983,
+      "z_mean": 0.2841992806148892,
+      "signal_area_percent": 0.0,
+      "anomaly": 79.45123657492832,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1554.2290851805983
+    },
+    {
+      "year": 2024,
+      "value": 1277.6011344076805,
+      "z_mean": -0.711781115958244,
+      "signal_area_percent": 0.0,
+      "anomaly": -197.17671419798944,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1277.6011344076805
+    },
+    {
+      "year": 2025,
+      "value": 1439.242830969256,
+      "z_mean": -0.12233059251848208,
+      "signal_area_percent": 0.0,
+      "anomaly": -35.53501763641407,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 1439.242830969256
+    },
+    {
+      "year": 2026,
+      "value": 421.8753977761673,
+      "z_mean": -3.8585419911784857,
+      "signal_area_percent": 0.0,
+      "anomaly": -1052.9024508295026,
+      "compound_area_percent": null,
+      "v1_chirps_precipitation_mm__value": 421.8753977761673
+    }
+  ],
+  "group_summary": [
+    {
+      "group": "Selected domain",
+      "pixels": 80,
+      "mean_trend_per_decade": 17.61687245638904,
+      "trend_fdr_area_percent": 0.0,
+      "recent_anomaly_z": 0.1192634978518324,
+      "emerged_area_percent": 0.0,
+      "change_fdr_area_percent": 0.0
+    },
+    {
+      "group": "1500\u20132999 m",
+      "pixels": 9,
+      "mean_trend_per_decade": 16.846495668071068,
+      "trend_fdr_area_percent": 0.0,
+      "recent_anomaly_z": 0.23020632070733416,
+      "emerged_area_percent": 0.0,
+      "change_fdr_area_percent": 0.0
+    },
+    {
+      "group": "3000\u20134499 m",
+      "pixels": 28,
+      "mean_trend_per_decade": 13.581914545626665,
+      "trend_fdr_area_percent": 0.0,
+      "recent_anomaly_z": 0.11351337995873317,
+      "emerged_area_percent": 0.0,
+      "change_fdr_area_percent": 0.0
+    },
+    {
+      "group": "\u22654500 m",
+      "pixels": 43,
+      "mean_trend_per_decade": 20.407013921971316,
+      "trend_fdr_area_percent": 0.0,
+      "recent_anomaly_z": 0.09976870191173848,
+      "emerged_area_percent": 0.0,
+      "change_fdr_area_percent": 0.0
+    }
+  ],
+  "relationships": [],
+  "harmonization": [],
+  "layers": [
+    {
+      "id": "trend",
+      "label": "Theil\u2013Sen trend per decade",
+      "sequential": 0,
+      "point_count": 80,
+      "min": -15.882033109664917,
+      "max": 50.26534080505371,
+      "data": [
+        {
+          "lat": 28.0749,
+          "lon": 85.3262,
+          "elev": 2770.0,
+          "value": 25.671114921569824,
+          "significant": 0
+        },
+        {
+          "lat": 28.0749,
+          "lon": 85.3762,
+          "elev": 3723.0,
+          "value": 11.688246726989746,
+          "significant": 0
+        },
+        {
+          "lat": 28.0749,
+          "lon": 85.4262,
+          "elev": 4421.0,
+          "value": 23.57517957687378,
+          "significant": 0
+        },
+        {
+          "lat": 28.0749,
+          "lon": 85.4762,
+          "elev": 4391.0,
+          "value": 33.115074634552,
+          "significant": 0
+        },
+        {
+          "lat": 28.0749,
+          "lon": 85.5262,
+          "elev": 3868.0,
+          "value": 14.275692701339722,
+          "significant": 0
+        },
+        {
+          "lat": 28.0749,
+          "lon": 85.5762,
+          "elev": 3739.0,
+          "value": 4.973333477973938,
+          "significant": 0
+        },
+        {
+          "lat": 28.0749,
+          "lon": 85.6262,
+          "elev": 3753.0,
+          "value": 10.923908948898315,
+          "significant": 0
+        },
+        {
+          "lat": 28.0749,
+          "lon": 85.6762,
+          "elev": 3814.0,
+          "value": 28.191113471984863,
+          "significant": 0
+        },
+        {
+          "lat": 28.0749,
+          "lon": 85.7262,
+          "elev": 3939.0,
+          "value": 33.81215810775757,
+          "significant": 0
+        },
+        {
+          "lat": 28.0749,
+          "lon": 85.7762,
+          "elev": 3428.0,
+          "value": 18.67944836616516,
+          "significant": 0
+        },
+        {
+          "lat": 28.1249,
+          "lon": 85.3262,
+          "elev": 2555.0,
+          "value": 23.5117769241333,
+          "significant": 0
+        },
+        {
+          "lat": 28.1249,
+          "lon": 85.3762,
+          "elev": 2995.0,
+          "value": 14.660130739212036,
+          "significant": 0
+        },
+        {
+          "lat": 28.1249,
+          "lon": 85.4262,
+          "elev": 3968.0,
+          "value": 16.635990142822266,
+          "significant": 0
+        },
+        {
+          "lat": 28.1249,
+          "lon": 85.4762,
+          "elev": 4898.0,
+          "value": 12.648999691009521,
+          "significant": 0
+        },
+        {
+          "lat": 28.1249,
+          "lon": 85.5262,
+          "elev": 4790.0,
+          "value": 17.37836241722107,
+          "significant": 0
+        },
+        {
+          "lat": 28.1249,
+          "lon": 85.5762,
+          "elev": 4437.0,
+          "value": 9.900898337364197,
+          "significant": 0
+        },
+        {
+          "lat": 28.1249,
+          "lon": 85.6262,
+          "elev": 4927.0,
+          "value": 10.605851411819458,
+          "significant": 0
+        },
+        {
+          "lat": 28.1249,
+          "lon": 85.6762,
+          "elev": 4761.0,
+          "value": 15.856341123580933,
+          "significant": 0
+        },
+        {
+          "lat": 28.1249,
+          "lon": 85.7262,
+          "elev": 4489.0,
+          "value": 19.616053104400635,
+          "significant": 0
+        },
+        {
+          "lat": 28.1249,
+          "lon": 85.7762,
+          "elev": 4599.0,
+          "value": 13.618642091751099,
+          "significant": 0
+        },
+        {
+          "lat": 28.1749,
+          "lon": 85.3262,
+          "elev": 2047.0,
+          "value": 9.833438992500305,
+          "significant": 0
+        },
+        {
+          "lat": 28.1749,
+          "lon": 85.3762,
+          "elev": 2617.0,
+          "value": 10.436726808547974,
+          "significant": 0
+        },
+        {
+          "lat": 28.1749,
+          "lon": 85.4262,
+          "elev": 3446.0,
+          "value": 19.356709718704224,
+          "significant": 0
+        },
+        {
+          "lat": 28.1749,
+          "lon": 85.4762,
+          "elev": 4355.0,
+          "value": 25.643057823181152,
+          "significant": 0
+        },
+        {
+          "lat": 28.1749,
+          "lon": 85.5262,
+          "elev": 4894.0,
+          "value": 41.619768142700195,
+          "significant": 0
+        },
+        {
+          "lat": 28.1749,
+          "lon": 85.5762,
+          "elev": 4729.0,
+          "value": 27.396106719970703,
+          "significant": 0
+        },
+        {
+          "lat": 28.1749,
+          "lon": 85.6262,
+          "elev": 4897.0,
+          "value": 33.92983913421631,
+          "significant": 0
+        },
+        {
+          "lat": 28.1749,
+          "lon": 85.6762,
+          "elev": 5080.0,
+          "value": 23.8670015335083,
+          "significant": 0
+        },
+        {
+          "lat": 28.1749,
+          "lon": 85.7262,
+          "elev": 5318.0,
+          "value": 19.23684000968933,
+          "significant": 0
+        },
+        {
+          "lat": 28.1749,
+          "lon": 85.7762,
+          "elev": 5599.0,
+          "value": 8.814830780029297,
+          "significant": 0
+        },
+        {
+          "lat": 28.2249,
+          "lon": 85.3262,
+          "elev": 2780.0,
+          "value": 16.978867053985596,
+          "significant": 0
+        },
+        {
+          "lat": 28.2249,
+          "lon": 85.3762,
+          "elev": 2540.0,
+          "value": 16.050220727920532,
+          "significant": 0
+        },
+        {
+          "lat": 28.2249,
+          "lon": 85.4262,
+          "elev": 4140.0,
+          "value": 20.029304027557373,
+          "significant": 0
+        },
+        {
+          "lat": 28.2249,
+          "lon": 85.4762,
+          "elev": 4774.0,
+          "value": 29.453513622283936,
+          "significant": 0
+        },
+        {
+          "lat": 28.2249,
+          "lon": 85.5262,
+          "elev": 4579.0,
+          "value": 31.838090419769287,
+          "significant": 0
+        },
+        {
+          "lat": 28.2249,
+          "lon": 85.5762,
+          "elev": 4532.0,
+          "value": 15.922764539718628,
+          "significant": 0
+        },
+        {
+          "lat": 28.2249,
+          "lon": 85.6262,
+          "elev": 4945.0,
+          "value": 24.7053861618042,
+          "significant": 0
+        },
+        {
+          "lat": 28.2249,
+          "lon": 85.6762,
+          "elev": 4788.0,
+          "value": 15.87910532951355,
+          "significant": 0
+        },
+        {
+          "lat": 28.2249,
+          "lon": 85.7262,
+          "elev": 5359.0,
+          "value": -2.823461890220642,
+          "significant": 0
+        },
+        {
+          "lat": 28.2249,
+          "lon": 85.7762,
+          "elev": 5505.0,
+          "value": 14.034212827682495,
+          "significant": 0
+        },
+        {
+          "lat": 28.2749,
+          "lon": 85.3262,
+          "elev": 2995.0,
+          "value": 17.671825885772705,
+          "significant": 0
+        },
+        {
+          "lat": 28.2749,
+          "lon": 85.3762,
+          "elev": 2537.0,
+          "value": 16.79444432258606,
+          "significant": 0
+        },
+        {
+          "lat": 28.2749,
+          "lon": 85.4262,
+          "elev": 3686.0,
+          "value": 6.9689857959747314,
+          "significant": 0
+        },
+        {
+          "lat": 28.2749,
+          "lon": 85.4762,
+          "elev": 5142.0,
+          "value": 3.39519202709198,
+          "significant": 0
+        },
+        {
+          "lat": 28.2749,
+          "lon": 85.5262,
+          "elev": 5433.0,
+          "value": 15.070840120315552,
+          "significant": 0
+        },
+        {
+          "lat": 28.2749,
+          "lon": 85.5762,
+          "elev": 5240.0,
+          "value": 24.795334339141846,
+          "significant": 0
+        },
+        {
+          "lat": 28.2749,
+          "lon": 85.6262,
+          "elev": 5525.0,
+          "value": 25.33975601196289,
+          "significant": 0
+        },
+        {
+          "lat": 28.2749,
+          "lon": 85.6762,
+          "elev": 5355.0,
+          "value": 13.79610538482666,
+          "significant": 0
+        },
+        {
+          "lat": 28.2749,
+          "lon": 85.7262,
+          "elev": 5257.0,
+          "value": 20.153162479400635,
+          "significant": 0
+        },
+        {
+          "lat": 28.2749,
+          "lon": 85.7762,
+          "elev": 5502.0,
+          "value": 42.328715324401855,
+          "significant": 0
+        },
+        {
+          "lat": 28.3249,
+          "lon": 85.3262,
+          "elev": 3007.0,
+          "value": 22.10808515548706,
+          "significant": 0
+        },
+        {
+          "lat": 28.3249,
+          "lon": 85.3762,
+          "elev": 3219.0,
+          "value": 19.545704126358032,
+          "significant": 0
+        },
+        {
+          "lat": 28.3249,
+          "lon": 85.4262,
+          "elev": 3090.0,
+          "value": 12.605679035186768,
+          "significant": 0
+        },
+        {
+          "lat": 28.3249,
+          "lon": 85.4762,
+          "elev": 3671.0,
+          "value": 9.99138057231903,
+          "significant": 0
+        },
+        {
+          "lat": 28.3249,
+          "lon": 85.5262,
+          "elev": 4313.0,
+          "value": 14.885867834091187,
+          "significant": 0
+        },
+        {
+          "lat": 28.3249,
+          "lon": 85.5762,
+          "elev": 4914.0,
+          "value": 19.80446696281433,
+          "significant": 0
+        },
+        {
+          "lat": 28.3249,
+          "lon": 85.6262,
+          "elev": 5504.0,
+          "value": 22.013604640960693,
+          "significant": 0
+        },
+        {
+          "lat": 28.3249,
+          "lon": 85.6762,
+          "elev": 5487.0,
+          "value": 27.606663703918457,
+          "significant": 0
+        },
+        {
+          "lat": 28.3249,
+          "lon": 85.7262,
+          "elev": 5719.0,
+          "value": 35.9791898727417,
+          "significant": 0
+        },
+        {
+          "lat": 28.3249,
+          "lon": 85.7762,
+          "elev": 6091.0,
+          "value": 50.26534080505371,
+          "significant": 0
+        },
+        {
+          "lat": 28.3749,
+          "lon": 85.3262,
+          "elev": 3038.0,
+          "value": -2.3483215272426605,
+          "significant": 0
+        },
+        {
+          "lat": 28.3749,
+          "lon": 85.3762,
+          "elev": 3149.0,
+          "value": -1.926729530096054,
+          "significant": 0
+        },
+        {
+          "lat": 28.3749,
+          "lon": 85.4262,
+          "elev": 3553.0,
+          "value": -15.882033109664917,
+          "significant": 0
+        },
+        {
+          "lat": 28.3749,
+          "lon": 85.4762,
+          "elev": 3921.0,
+          "value": -6.360387802124023,
+          "significant": 0
+        },
+        {
+          "lat": 28.3749,
+          "lon": 85.5262,
+          "elev": 4639.0,
+          "value": 2.453271746635437,
+          "significant": 0
+        },
+        {
+          "lat": 28.3749,
+          "lon": 85.5762,
+          "elev": 5275.0,
+          "value": -2.7167394757270813,
+          "significant": 0
+        },
+        {
+          "lat": 28.3749,
+          "lon": 85.6262,
+          "elev": 5193.0,
+          "value": 6.530743837356567,
+          "significant": 0
+        },
+        {
+          "lat": 28.3749,
+          "lon": 85.6762,
+          "elev": 5816.0,
+          "value": 14.83250617980957,
+          "significant": 0
+        },
+        {
+          "lat": 28.3749,
+          "lon": 85.7262,
+          "elev": 6453.0,
+          "value": 17.0656156539917,
+          "significant": 0
+        },
+        {
+          "lat": 28.3749,
+          "lon": 85.7762,
+          "elev": 6585.0,
+          "value": 23.53379487991333,
+          "significant": 0
+        },
+        {
+          "lat": 28.4249,
+          "lon": 85.3262,
+          "elev": 3503.0,
+          "value": 15.825703144073486,
+          "significant": 0
+        },
+        {
+          "lat": 28.4249,
+          "lon": 85.3762,
+          "elev": 3733.0,
+          "value": 6.264275908470154,
+          "significant": 0
+        },
+        {
+          "lat": 28.4249,
+          "lon": 85.4262,
+          "elev": 3915.0,
+          "value": 7.979409694671631,
+          "significant": 0
+        },
+        {
+          "lat": 28.4249,
+          "lon": 85.4762,
+          "elev": 4750.0,
+          "value": 12.98225998878479,
+          "significant": 0
+        },
+        {
+          "lat": 28.4249,
+          "lon": 85.5262,
+          "elev": 5246.0,
+          "value": 16.100836992263794,
+          "significant": 0
+        },
+        {
+          "lat": 28.4249,
+          "lon": 85.5762,
+          "elev": 5305.0,
+          "value": 19.804117679595947,
+          "significant": 0
+        },
+        {
+          "lat": 28.4249,
+          "lon": 85.6262,
+          "elev": 5656.0,
+          "value": 34.31087255477905,
+          "significant": 0
+        },
+        {
+          "lat": 28.4249,
+          "lon": 85.6762,
+          "elev": 5865.0,
+          "value": 25.23738384246826,
+          "significant": 0
+        },
+        {
+          "lat": 28.4249,
+          "lon": 85.7262,
+          "elev": 6009.0,
+          "value": 21.698777675628662,
+          "significant": 0
+        },
+        {
+          "lat": 28.4249,
+          "lon": 85.7762,
+          "elev": 5930.0,
+          "value": 31.15264892578125,
+          "significant": 0
+        }
+      ]
+    },
+    {
+      "id": "anomaly",
+      "label": "Recent anomaly (2012\u20132026; baseline SD)",
+      "sequential": 0,
+      "point_count": 80,
+      "min": -0.2846807396635501,
+      "max": 0.5731275755585915,
+      "data": [
+        {
+          "lat": 28.0749,
+          "lon": 85.3262,
+          "elev": 2770.0,
+          "value": 0.3757289245434186
+        },
+        {
+          "lat": 28.0749,
+          "lon": 85.3762,
+          "elev": 3723.0,
+          "value": 0.3452445741576893
+        },
+        {
+          "lat": 28.0749,
+          "lon": 85.4262,
+          "elev": 4421.0,
+          "value": 0.24470094276096865
+        },
+        {
+          "lat": 28.0749,
+          "lon": 85.4762,
+          "elev": 4391.0,
+          "value": 0.43352100700048624
+        },
+        {
+          "lat": 28.0749,
+          "lon": 85.5262,
+          "elev": 3868.0,
+          "value": 0.2524203165395727
+        },
+        {
+          "lat": 28.0749,
+          "lon": 85.5762,
+          "elev": 3739.0,
+          "value": 0.13184131408600283
+        },
+        {
+          "lat": 28.0749,
+          "lon": 85.6262,
+          "elev": 3753.0,
+          "value": 0.28703471656798885
+        },
+        {
+          "lat": 28.0749,
+          "lon": 85.6762,
+          "elev": 3814.0,
+          "value": 0.3913311751819313
+        },
+        {
+          "lat": 28.0749,
+          "lon": 85.7262,
+          "elev": 3939.0,
+          "value": 0.47470742692771234
+        },
+        {
+          "lat": 28.0749,
+          "lon": 85.7762,
+          "elev": 3428.0,
+          "value": 0.2851291457524013
+        },
+        {
+          "lat": 28.1249,
+          "lon": 85.3262,
+          "elev": 2555.0,
+          "value": 0.3574743643586488
+        },
+        {
+          "lat": 28.1249,
+          "lon": 85.3762,
+          "elev": 2995.0,
+          "value": 0.2776051475042658
+        },
+        {
+          "lat": 28.1249,
+          "lon": 85.4262,
+          "elev": 3968.0,
+          "value": 0.2560225917572116
+        },
+        {
+          "lat": 28.1249,
+          "lon": 85.4762,
+          "elev": 4898.0,
+          "value": 0.19601470243101057
+        },
+        {
+          "lat": 28.1249,
+          "lon": 85.5262,
+          "elev": 4790.0,
+          "value": 0.14640006243376724
+        },
+        {
+          "lat": 28.1249,
+          "lon": 85.5762,
+          "elev": 4437.0,
+          "value": 0.07859181417994048
+        },
+        {
+          "lat": 28.1249,
+          "lon": 85.6262,
+          "elev": 4927.0,
+          "value": 0.11576878876989631
+        },
+        {
+          "lat": 28.1249,
+          "lon": 85.6762,
+          "elev": 4761.0,
+          "value": 0.12997445975416852
+        },
+        {
+          "lat": 28.1249,
+          "lon": 85.7262,
+          "elev": 4489.0,
+          "value": 0.25893806089671967
+        },
+        {
+          "lat": 28.1249,
+          "lon": 85.7762,
+          "elev": 4599.0,
+          "value": 0.0825382998479686
+        },
+        {
+          "lat": 28.1749,
+          "lon": 85.3262,
+          "elev": 2047.0,
+          "value": 0.19666419933303164
+        },
+        {
+          "lat": 28.1749,
+          "lon": 85.3762,
+          "elev": 2617.0,
+          "value": 0.14996986126041556
+        },
+        {
+          "lat": 28.1749,
+          "lon": 85.4262,
+          "elev": 3446.0,
+          "value": 0.2244163617021394
+        },
+        {
+          "lat": 28.1749,
+          "lon": 85.4762,
+          "elev": 4355.0,
+          "value": 0.1878682045543597
+        },
+        {
+          "lat": 28.1749,
+          "lon": 85.5262,
+          "elev": 4894.0,
+          "value": 0.2071445151536931
+        },
+        {
+          "lat": 28.1749,
+          "lon": 85.5762,
+          "elev": 4729.0,
+          "value": 0.17695837395246347
+        },
+        {
+          "lat": 28.1749,
+          "lon": 85.6262,
+          "elev": 4897.0,
+          "value": 0.10862117055397592
+        },
+        {
+          "lat": 28.1749,
+          "lon": 85.6762,
+          "elev": 5080.0,
+          "value": 0.04850024878156214
+        },
+        {
+          "lat": 28.1749,
+          "lon": 85.7262,
+          "elev": 5318.0,
+          "value": 0.06606434376791033
+        },
+        {
+          "lat": 28.1749,
+          "lon": 85.7762,
+          "elev": 5599.0,
+          "value": -0.09550022250556325
+        },
+        {
+          "lat": 28.2249,
+          "lon": 85.3262,
+          "elev": 2780.0,
+          "value": 0.14364661674103857
+        },
+        {
+          "lat": 28.2249,
+          "lon": 85.3762,
+          "elev": 2540.0,
+          "value": 0.21159650349041695
+        },
+        {
+          "lat": 28.2249,
+          "lon": 85.4262,
+          "elev": 4140.0,
+          "value": 0.11892081677782894
+        },
+        {
+          "lat": 28.2249,
+          "lon": 85.4762,
+          "elev": 4774.0,
+          "value": 0.039584983370691544
+        },
+        {
+          "lat": 28.2249,
+          "lon": 85.5262,
+          "elev": 4579.0,
+          "value": 0.08613953224701162
+        },
+        {
+          "lat": 28.2249,
+          "lon": 85.5762,
+          "elev": 4532.0,
+          "value": -0.016066819859803606
+        },
+        {
+          "lat": 28.2249,
+          "lon": 85.6262,
+          "elev": 4945.0,
+          "value": 0.03456786228871923
+        },
+        {
+          "lat": 28.2249,
+          "lon": 85.6762,
+          "elev": 4788.0,
+          "value": -0.06034526303598856
+        },
+        {
+          "lat": 28.2249,
+          "lon": 85.7262,
+          "elev": 5359.0,
+          "value": -0.1572189997528938
+        },
+        {
+          "lat": 28.2249,
+          "lon": 85.7762,
+          "elev": 5505.0,
+          "value": -0.1327988110858472
+        },
+        {
+          "lat": 28.2749,
+          "lon": 85.3262,
+          "elev": 2995.0,
+          "value": 0.15031640309058725
+        },
+        {
+          "lat": 28.2749,
+          "lon": 85.3762,
+          "elev": 2537.0,
+          "value": 0.20849313031699587
+        },
+        {
+          "lat": 28.2749,
+          "lon": 85.4262,
+          "elev": 3686.0,
+          "value": 0.044712254641481555
+        },
+        {
+          "lat": 28.2749,
+          "lon": 85.4762,
+          "elev": 5142.0,
+          "value": 0.0018034197464546152
+        },
+        {
+          "lat": 28.2749,
+          "lon": 85.5262,
+          "elev": 5433.0,
+          "value": 0.1887963250911678
+        },
+        {
+          "lat": 28.2749,
+          "lon": 85.5762,
+          "elev": 5240.0,
+          "value": 0.17929958307084182
+        },
+        {
+          "lat": 28.2749,
+          "lon": 85.6262,
+          "elev": 5525.0,
+          "value": 0.18451305202001758
+        },
+        {
+          "lat": 28.2749,
+          "lon": 85.6762,
+          "elev": 5355.0,
+          "value": 0.11922252313691209
+        },
+        {
+          "lat": 28.2749,
+          "lon": 85.7262,
+          "elev": 5257.0,
+          "value": 0.1988288829163067
+        },
+        {
+          "lat": 28.2749,
+          "lon": 85.7762,
+          "elev": 5502.0,
+          "value": 0.4905482215033931
+        },
+        {
+          "lat": 28.3249,
+          "lon": 85.3262,
+          "elev": 3007.0,
+          "value": 0.20723635752044312
+        },
+        {
+          "lat": 28.3249,
+          "lon": 85.3762,
+          "elev": 3219.0,
+          "value": 0.10144936059996436
+        },
+        {
+          "lat": 28.3249,
+          "lon": 85.4262,
+          "elev": 3090.0,
+          "value": 0.04351687573080021
+        },
+        {
+          "lat": 28.3249,
+          "lon": 85.4762,
+          "elev": 3671.0,
+          "value": 0.06227840635592725
+        },
+        {
+          "lat": 28.3249,
+          "lon": 85.5262,
+          "elev": 4313.0,
+          "value": 0.23236692195278866
+        },
+        {
+          "lat": 28.3249,
+          "lon": 85.5762,
+          "elev": 4914.0,
+          "value": 0.17384906404316666
+        },
+        {
+          "lat": 28.3249,
+          "lon": 85.6262,
+          "elev": 5504.0,
+          "value": 0.1428551936464834
+        },
+        {
+          "lat": 28.3249,
+          "lon": 85.6762,
+          "elev": 5487.0,
+          "value": 0.23668508597521465
+        },
+        {
+          "lat": 28.3249,
+          "lon": 85.7262,
+          "elev": 5719.0,
+          "value": 0.31265120122942275
+        },
+        {
+          "lat": 28.3249,
+          "lon": 85.7762,
+          "elev": 6091.0,
+          "value": 0.5731275755585915
+        },
+        {
+          "lat": 28.3749,
+          "lon": 85.3262,
+          "elev": 3038.0,
+          "value": -0.19055669388299581
+        },
+        {
+          "lat": 28.3749,
+          "lon": 85.3762,
+          "elev": 3149.0,
+          "value": -0.2846807396635501
+        },
+        {
+          "lat": 28.3749,
+          "lon": 85.4262,
+          "elev": 3553.0,
+          "value": -0.2781568435154592
+        },
+        {
+          "lat": 28.3749,
+          "lon": 85.4762,
+          "elev": 3921.0,
+          "value": -0.27661314827418504
+        },
+        {
+          "lat": 28.3749,
+          "lon": 85.5262,
+          "elev": 4639.0,
+          "value": -0.00366262432349466
+        },
+        {
+          "lat": 28.3749,
+          "lon": 85.5762,
+          "elev": 5275.0,
+          "value": -0.02782679995386979
+        },
+        {
+          "lat": 28.3749,
+          "lon": 85.6262,
+          "elev": 5193.0,
+          "value": 0.00627718676065611
+        },
+        {
+          "lat": 28.3749,
+          "lon": 85.6762,
+          "elev": 5816.0,
+          "value": 0.08222440856969776
+        },
+        {
+          "lat": 28.3749,
+          "lon": 85.7262,
+          "elev": 6453.0,
+          "value": 0.030871068463273144
+        },
+        {
+          "lat": 28.3749,
+          "lon": 85.7762,
+          "elev": 6585.0,
+          "value": 0.24754421267049936
+        },
+        {
+          "lat": 28.4249,
+          "lon": 85.3262,
+          "elev": 3503.0,
+          "value": -0.08251683217477615
+        },
+        {
+          "lat": 28.4249,
+          "lon": 85.3762,
+          "elev": 3733.0,
+          "value": -0.1806464928993126
+        },
+        {
+          "lat": 28.4249,
+          "lon": 85.4262,
+          "elev": 3915.0,
+          "value": -0.19713763918660154
+        },
+        {
+          "lat": 28.4249,
+          "lon": 85.4762,
+          "elev": 4750.0,
+          "value": -0.12203682905201921
+        },
+        {
+          "lat": 28.4249,
+          "lon": 85.5262,
+          "elev": 5246.0,
+          "value": 0.0027855323297282315
+        },
+        {
+          "lat": 28.4249,
+          "lon": 85.5762,
+          "elev": 5305.0,
+          "value": 0.03373914476785315
+        },
+        {
+          "lat": 28.4249,
+          "lon": 85.6262,
+          "elev": 5656.0,
+          "value": 0.05899653038712508
+        },
+        {
+          "lat": 28.4249,
+          "lon": 85.6762,
+          "elev": 5865.0,
+          "value": 0.044785455550272246
+        },
+        {
+          "lat": 28.4249,
+          "lon": 85.7262,
+          "elev": 6009.0,
+          "value": 0.001227945395729287
+        },
+        {
+          "lat": 28.4249,
+          "lon": 85.7762,
+          "elev": 5930.0,
+          "value": 0.15632241068569558
+        }
+      ]
+    },
+    {
+      "id": "change_point",
+      "label": "FDR-significant shift year",
+      "sequential": 1,
+      "point_count": 0,
+      "min": null,
+      "max": null,
+      "data": []
+    }
+  ],
+  "interpretation_guardrails": [
+    "Association, lag, emergence, and change points do not establish causal attribution.",
+    "Related grids are harmonized by nearest-cell sampling and the reported offsets must be evaluated against native resolution.",
+    "Pettitt identifies one candidate distributional shift; FDR controls multiplicity but not spatial dependence or product uncertainty.",
+    "Short records and baselines below 10 years materially weaken robust inference.",
+    "Direction controls anomaly interpretation only; raw observations are never modified."
+  ],
+  "exports": {
+    "annual_csv": "/research/framework/runs/20260901T112624Z-cd7978db/annual_series.csv",
+    "pixel_parquet": "/research/framework/runs/20260901T112624Z-cd7978db/pixel_metrics.parquet",
+    "relationships_csv": "/research/framework/runs/20260901T112624Z-cd7978db/relationships.csv",
+    "summary_json": "/research/framework/runs/20260901T112624Z-cd7978db/summary.json",
+    "request_json": "/research/framework/runs/20260901T112624Z-cd7978db/request.json"
+  },
+  "provenance": {
+    "raw_data_modified": 0,
+    "output_directory": "Outcomes\\Research_Framework\\runs\\20260901T112624Z-cd7978db",
+    "aggregation_level": "annual pixel",
+    "response_grid": "chirps/precipitation_mm"
+  }
+}

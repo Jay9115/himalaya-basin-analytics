@@ -1,0 +1,22 @@
+{
+  "dataset": "era5_annual",
+  "variable": "temperature_C",
+  "secondary_dataset": "chirps_annual",
+  "secondary_variable": "precipitation_mm",
+  "year_start": 1981,
+  "year_end": 2025,
+  "baseline_start": 1981,
+  "baseline_end": 2010,
+  "recent_start": 2011,
+  "elev_min": 0.0,
+  "elev_max": 9000.0,
+  "sector": "all",
+  "basin": null,
+  "signal_direction": "positive",
+  "secondary_direction": "negative",
+  "anomaly_threshold": 1.0,
+  "emergence_threshold": 0.75,
+  "emergence_window": 9,
+  "persistence_fraction": 0.8,
+  "max_map_points": 18000
+}

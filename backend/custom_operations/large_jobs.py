@@ -128,8 +128,8 @@ class LocalLargeOperationJobManager:
         job_dir = self.jobs_root / job_id
         started_at = datetime.now(timezone.utc)
         try:
-            self._update(job_id, status="materializing", progress={"phase": "materializing"})
-            manifest = self._materialize_chunks(job_id, request, plan, cancel_event)
+            self._update(job_id, status="preparing", progress={"phase": "preparing_source"})
+            manifest = self._prepare_manifest(job_id, request, plan, cancel_event)
             if cancel_event.is_set():
                 raise OperationCanceled("Operation canceled before worker execution.")
             result = self._run_worker(job_id, request, manifest, started_at, cancel_event)
@@ -147,6 +147,49 @@ class LocalLargeOperationJobManager:
                 self.processes.pop(job_id, None)
 
         self._finish(job_id, result)
+
+    def _prepare_manifest(
+        self,
+        job_id: str,
+        request: OperationJobCreateRequest,
+        plan: Dict[str, Any],
+        cancel_event: threading.Event,
+    ) -> Dict[str, Any]:
+        job_dir = self.jobs_root / job_id
+        source = self.loader.build_lazy_source_manifest(request.selection)
+        if cancel_event.is_set():
+            raise OperationCanceled("Operation canceled while preparing the data source.")
+
+        if source is None:
+            self._append_log(job_dir, "data-local scan unavailable for storage type; using chunk fallback")
+            self._update(job_id, status="materializing", progress={"phase": "materializing"})
+            return self._materialize_chunks(job_id, request, plan, cancel_event)
+
+        estimated_rows = plan.get("estimate", {}).get("estimated_rows")
+        manifest = {
+            "job_id": job_id,
+            "mode": "data_local",
+            "engine": "duckdb",
+            "source": source,
+            "chunks": [],
+            "meta": {
+                **plan.get("selection", {}),
+                "mode": "large",
+                "large_mode": True,
+                "execution_model": "data_local_lazy",
+                "engine": "duckdb",
+                "row_count": estimated_rows,
+                "estimated_rows": estimated_rows,
+                "source_file_count": len(source.get("files", [])),
+                "chunk_count": 0,
+            },
+        }
+        self._write_json(job_dir / "manifest.json", manifest)
+        self._append_log(
+            job_dir,
+            f"prepared data-local Parquet source: {len(source.get('files', []))} original files; no rows materialized",
+        )
+        return manifest
 
     def _materialize_chunks(
         self,
@@ -215,6 +258,8 @@ class LocalLargeOperationJobManager:
 
         manifest = {
             "job_id": job_id,
+            "mode": "chunked_fallback",
+            "engine": "pandas",
             "chunks": chunks,
             "meta": {
                 **plan.get("selection", {}),
@@ -240,6 +285,9 @@ class LocalLargeOperationJobManager:
         job_dir = self.jobs_root / job_id
         manifest_path = job_dir / "manifest.json"
         progress_path = job_dir / "worker_progress.json"
+        data_local = manifest.get("mode") == "data_local"
+        materialized_rows = 0 if data_local else int(manifest.get("meta", {}).get("row_count") or 0)
+        estimated_rows = manifest.get("meta", {}).get("estimated_rows")
         limits = SandboxLimits(
             timeout_seconds=request.timeout_seconds,
             memory_mb=request.memory_mb,
@@ -260,8 +308,10 @@ class LocalLargeOperationJobManager:
                 "phase": "worker_started",
                 "dates_processed": int(manifest.get("meta", {}).get("date_count") or 0),
                 "date_count": int(manifest.get("meta", {}).get("date_count") or 0),
-                "rows_materialized": int(manifest.get("meta", {}).get("row_count") or 0),
+                "rows_materialized": materialized_rows,
+                "estimated_rows": estimated_rows,
                 "chunk_count": len(manifest.get("chunks", [])),
+                "source_file_count": int(manifest.get("meta", {}).get("source_file_count") or 0),
             },
         )
 
@@ -303,7 +353,8 @@ class LocalLargeOperationJobManager:
                         status="running",
                         progress={
                             **worker_progress,
-                            "rows_materialized": int(manifest.get("meta", {}).get("row_count") or 0),
+                            "rows_materialized": materialized_rows,
+                            "estimated_rows": estimated_rows,
                         },
                     )
             time.sleep(0.35)
@@ -315,6 +366,11 @@ class LocalLargeOperationJobManager:
         result = self._base_result(job_id, request, started_at, status=status, ok=ok)
         result.update(
             {
+                "engine": (
+                    "data_local_duckdb"
+                    if manifest.get("mode") == "data_local"
+                    else "large_subprocess"
+                ),
                 "meta": manifest.get("meta", {}),
                 "outputs": worker_payload.get("outputs", []),
                 "stdout": worker_payload.get("stdout", ""),
@@ -326,8 +382,10 @@ class LocalLargeOperationJobManager:
                     "phase": status,
                     "dates_processed": int(manifest.get("meta", {}).get("date_count") or 0),
                     "date_count": int(manifest.get("meta", {}).get("date_count") or 0),
-                    "rows_materialized": int(manifest.get("meta", {}).get("row_count") or 0),
+                    "rows_materialized": materialized_rows,
+                    "estimated_rows": estimated_rows,
                     "chunk_count": len(manifest.get("chunks", [])),
+                    "source_file_count": int(manifest.get("meta", {}).get("source_file_count") or 0),
                     "percent": 100 if ok else None,
                 },
             }

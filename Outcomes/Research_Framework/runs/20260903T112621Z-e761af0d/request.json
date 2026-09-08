@@ -1,0 +1,64 @@
+{
+  "variables": [
+    {
+      "dataset": "era5",
+      "variable": "temperature_C",
+      "aggregation": "mean",
+      "label": null,
+      "unit": null,
+      "direction": "positive"
+    }
+  ],
+  "year_start": 1951,
+  "year_end": 2025,
+  "baseline_start": 1951,
+  "baseline_end": 1980,
+  "recent_start": 2011,
+  "elev_min": 500.0,
+  "elev_max": 9000.0,
+  "subregion_id": null,
+  "aoi_geojson": {
+    "type": "Feature",
+    "properties": {
+      "id": "polygon-1788430818952",
+      "label": "ROI"
+    },
+    "geometry": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [
+            85.41283502980136,
+            28.324999541774734
+          ],
+          [
+            85.55203013659562,
+            28.359317705684973
+          ],
+          [
+            85.60422830164354,
+            28.249752904636935
+          ],
+          [
+            85.40869231828981,
+            28.196390583418612
+          ],
+          [
+            85.41283502980136,
+            28.324999541774734
+          ]
+        ]
+      ]
+    }
+  },
+  "methods": [
+    "descriptive",
+    "trend",
+    "anomaly"
+  ],
+  "anomaly_threshold": 1.0,
+  "emergence_threshold": 0.75,
+  "emergence_window": 9,
+  "persistence_fraction": 0.8,
+  "max_map_points": 18000
+}

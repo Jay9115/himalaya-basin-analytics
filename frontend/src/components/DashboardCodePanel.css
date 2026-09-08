@@ -221,6 +221,153 @@
   background: var(--bg-elevated);
 }
 
+.dashboard-code-workspace {
+  flex: 1 1 auto;
+  min-height: 260px;
+  display: flex;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+}
+
+.dashboard-code-explorer {
+  flex: 0 0 148px;
+  min-width: 128px;
+  max-width: 180px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+
+.dashboard-code-file-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 4px;
+}
+
+.dashboard-code-file-list-header {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 4px 6px 4px;
+}
+
+.icon-btn-add {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+}
+
+.icon-btn-add:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.dashboard-code-file-item {
+  width: 100%;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s, border-color 0.15s;
+  margin-bottom: 2px;
+}
+
+.dashboard-code-file-item:hover,
+.dashboard-code-file-item.active {
+  background: var(--surface-hover);
+}
+
+.dashboard-code-file-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.dashboard-code-file-info span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dashboard-code-file-info svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.dashboard-code-file-item.active .dashboard-code-file-info svg {
+  color: var(--accent);
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-dot.ok {
+  background: var(--accent-2);
+}
+
+.status-dot.error {
+  background: var(--danger);
+  box-shadow: 0 0 4px var(--danger);
+}
+
+.dashboard-code-file-actions-inline {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: 4px;
+}
+
+.dashboard-code-file-actions-inline button {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+
+.dashboard-code-file-actions-inline button:hover {
+  background: rgba(128, 128, 128, 0.2);
+  color: var(--text);
+}
+
+.dashboard-code-file-actions-inline button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.dashboard-code-workbench {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .dashboard-code-date-mode {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -294,8 +441,8 @@
 
 .dashboard-code-actions {
   grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  justify-content: flex-end;
   gap: 6px;
 }
 
@@ -303,24 +450,41 @@
   border: 1px solid var(--accent);
   background: var(--accent);
   color: #fff;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .dashboard-code-secondary {
   border: 1px solid var(--input-border);
   background: var(--input-bg);
   color: var(--text);
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dashboard-code-secondary.icon-btn {
+  padding: 0;
+  width: 30px;
 }
 
 .dashboard-code-danger {
   border: 1px solid var(--danger);
   background: color-mix(in srgb, var(--danger) 18%, var(--input-bg) 82%);
   color: var(--text);
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .dashboard-code-editor {
   flex: 1 1 auto;
   min-height: 220px;
-  border-bottom: 1px solid var(--border);
+  min-width: 0;
 }
 
 .dashboard-code-status {
@@ -555,6 +719,10 @@
   .dashboard-code-toolbar {
     grid-template-columns: 1fr;
   }
+
+  .dashboard-code-explorer {
+    flex-basis: 132px;
+  }
 }
 
 @media (max-width: 820px) {
@@ -569,5 +737,18 @@
 
   .dashboard-code-toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-code-workspace {
+    min-height: 230px;
+  }
+
+  .dashboard-code-explorer {
+    flex-basis: 118px;
+  }
+
+  .dashboard-code-file {
+    min-height: 32px;
+    padding-inline: 6px;
   }
 }

@@ -13,7 +13,7 @@ from .large_jobs import LocalLargeOperationJobManager
 from .planner import OperationExecutionPlanner
 from .sandbox import LocalSubprocessSandbox
 from .schemas import OperationJobCreateRequest, OperationPlanRequest, OperationRunRequest, OperationValidateRequest
-from .security import ALLOWED_IMPORT_ROOTS, validate_python_code
+from .security import ALLOWED_IMPORT_ROOTS, validate_large_operation_code, validate_python_code
 
 
 JOB_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,80}$")
@@ -38,7 +38,7 @@ def build_custom_operations_router(
     async def get_operation_capabilities() -> Dict[str, Any]:
         return {
             "status": "available",
-            "engine": "local_subprocess",
+            "engine": "data_local_subprocess",
             "workspace_root": str(workspace_root),
             "code_limits": {
                 "max_code_chars": 20000,
@@ -49,7 +49,7 @@ def build_custom_operations_router(
                 "max_dates": {"default": None, "max": None, "note": "frontend omits this; platform plans execution automatically"},
             },
             "allowed_imports": sorted(ALLOWED_IMPORT_ROOTS),
-            "provided_globals": ["df", "hb", "meta", "pd", "np", "math", "statistics"],
+            "provided_globals": ["data", "df", "hb", "meta", "pd", "np", "math", "statistics"],
             "hb_outputs": [
                 "hb.text(value, name='text')",
                 "hb.number(name, value, units=None)",
@@ -66,10 +66,12 @@ def build_custom_operations_router(
                 "hb.export_csv(data=df, filename='analysis.csv')",
                 "hb.export_json(data={'summary': ...}, filename='summary.json')",
                 "hb.pivot_variables(df)",
+                "large mode: hb.sql('SELECT ... FROM data'), hb.export_query('SELECT ... FROM data', filename='result.parquet', format='parquet')",
                 "large mode: hb.iter_data(), hb.aggregate(by=['year'], metrics={'value': 'mean'}), hb.sample(max_rows=10000)",
             ],
             "security_notes": [
-                "User code receives only the selected dataframe, not raw project paths.",
+                "User code receives a normalized data relation, not raw project paths.",
+                "Large Parquet selections are scanned in place; only bounded results enter pandas or cross to the UI.",
                 "The local runner uses AST validation, restricted builtins/imports, subprocess isolation, output caps, and timeout.",
                 "For public multi-user deployment, switch this runner behind the same API to a container or microVM sandbox.",
             ],
@@ -159,10 +161,21 @@ def build_custom_operations_router(
                 },
             )
         plan = await run_in_threadpool(planner.plan, request.selection)
+        compatibility = validate_large_operation_code(request.code)
+        if not compatibility.ok:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": "Large selections require data-local lazy operations.",
+                    "errors": compatibility.errors,
+                    "warnings": compatibility.warnings,
+                    "plan": plan,
+                },
+            )
         job = await run_in_threadpool(large_jobs.submit, request, plan)
         job["validation"] = {
             "ok": validation.ok,
-            "warnings": validation.warnings,
+            "warnings": validation.warnings + compatibility.warnings,
         }
         return job
 

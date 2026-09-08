@@ -1,0 +1,43 @@
+{
+  "variables": [
+    {
+      "dataset": "era5",
+      "variable": "temperature_C",
+      "aggregation": "mean",
+      "label": null,
+      "unit": null,
+      "direction": "positive"
+    },
+    {
+      "dataset": "himalaya_dem",
+      "variable": "elevation_m",
+      "aggregation": "mean",
+      "label": null,
+      "unit": null,
+      "direction": "positive"
+    }
+  ],
+  "year_start": 2020,
+  "year_end": 2025,
+  "baseline_start": 2020,
+  "baseline_end": 2024,
+  "recent_start": 2023,
+  "elev_min": 0.0,
+  "elev_max": 9000.0,
+  "subregion_id": null,
+  "bounds": {
+    "min_lat": 34.0,
+    "max_lat": 35.0,
+    "min_lon": 74.0,
+    "max_lon": 75.0
+  },
+  "methods": [
+    "anomaly",
+    "relationships"
+  ],
+  "anomaly_threshold": 1.0,
+  "emergence_threshold": 0.75,
+  "emergence_window": 9,
+  "persistence_fraction": 0.8,
+  "max_map_points": 2000
+}

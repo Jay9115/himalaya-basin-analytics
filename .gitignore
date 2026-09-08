@@ -53,6 +53,8 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 HBapi/workspace/custom_operations/jobs/
+HBapi/workspace/projects/
+HBapi/workspace/archive/
 
 # OS
 Thumbs.db

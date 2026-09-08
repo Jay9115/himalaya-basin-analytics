@@ -1,0 +1,34 @@
+{
+  "variables": [
+    {
+      "dataset": "era5",
+      "variable": "temperature_C",
+      "aggregation": "mean",
+      "label": null,
+      "unit": null,
+      "direction": "positive"
+    }
+  ],
+  "year_start": 1951,
+  "year_end": 2005,
+  "baseline_start": 1951,
+  "baseline_end": 1952,
+  "recent_start": 1951,
+  "elev_min": 500.0,
+  "elev_max": 9000.0,
+  "subregion_id": null,
+  "bounds": {
+    "min_lat": 28.817003953677307,
+    "max_lat": 29.52532533610034,
+    "min_lon": 85.58850455566831,
+    "max_lon": 86.6197131747117
+  },
+  "methods": [
+    "descriptive"
+  ],
+  "anomaly_threshold": 1.0,
+  "emergence_threshold": 0.75,
+  "emergence_window": 9,
+  "persistence_fraction": 0.8,
+  "max_map_points": 18000
+}

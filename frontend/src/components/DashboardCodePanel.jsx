@@ -18,7 +18,12 @@ loader.config({ monaco });
 
 const DEFAULT_CODE = `def run(hb, df, meta):
     if meta.get("large_mode"):
-        annual = hb.aggregate(by=["year"], metrics={"value": "mean"})
+        annual = hb.sql("""
+            SELECT year(date)::INTEGER AS year, avg(value) AS value_mean
+            FROM data
+            GROUP BY year
+            ORDER BY year
+        """)
         hb.text(f"{meta['dataset_label']} large analysis rows: {meta['row_count']}")
         hb.table(annual, name="annual_mean")
         hb.chart(annual, chart_type="line", x="year", y="value_mean", name="annual_mean_chart")
@@ -39,6 +44,67 @@ const DEFAULT_CODE = `def run(hb, df, meta):
     )
     hb.export_csv(daily, filename="daily_mean.csv")
 `;
+
+const WORKSPACE_VERSION = 2;
+
+const makeFileId = () => `file-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+const cleanFileName = (value, fallback = 'analysis.py') => {
+  const trimmed = String(value || '').trim().replace(/[\\/:*?"<>|]+/g, '_');
+  return trimmed || fallback;
+};
+
+const uniqueFileName = (name, files, excludeId = '') => {
+  const clean = cleanFileName(name);
+  const used = new Set(files.filter((file) => file.id !== excludeId).map((file) => file.name.toLowerCase()));
+  if (!used.has(clean.toLowerCase())) return clean;
+  const dotIndex = clean.lastIndexOf('.');
+  const stem = dotIndex > 0 ? clean.slice(0, dotIndex) : clean;
+  const ext = dotIndex > 0 ? clean.slice(dotIndex) : '';
+  let index = 2;
+  while (used.has(`${stem}-${index}${ext}`.toLowerCase())) index += 1;
+  return `${stem}-${index}${ext}`;
+};
+
+const normalizeCodeFile = (file, index, fallbackContent = '') => ({
+  id: String(file?.id || makeFileId()),
+  name: cleanFileName(file?.name, index === 0 ? 'analysis.py' : `analysis-${index + 1}.py`),
+  content: String(file?.content ?? fallbackContent ?? ''),
+  validation: file?.validation || null,
+  result: file?.result || null,
+  activeTab: file?.activeTab || 'terminal',
+  activeMapOutputIndex: Number(file?.activeMapOutputIndex) || 0,
+  createdAt: file?.createdAt || new Date().toISOString(),
+  updatedAt: file?.updatedAt || file?.createdAt || new Date().toISOString(),
+});
+
+const normalizeWorkspaceState = (state) => {
+  const savedFiles = Array.isArray(state?.files) ? state.files : [];
+  if (savedFiles.length > 0) {
+    const files = savedFiles.map((file, index) => normalizeCodeFile(file, index));
+    const activeFileId = files.some((file) => file.id === state?.activeFileId)
+      ? state.activeFileId
+      : files[0].id;
+    if (state?.code) {
+      const activeIndex = files.findIndex((file) => file.id === activeFileId);
+      if (activeIndex >= 0) files[activeIndex] = { ...files[activeIndex], content: String(state.code) };
+    }
+    return { files, activeFileId };
+  }
+
+  const file = normalizeCodeFile(
+    {
+      name: 'analysis.py',
+      content: state?.code || DEFAULT_CODE,
+      validation: state?.validation || null,
+      result: state?.result || null,
+      activeTab: state?.activeTab || 'terminal',
+      activeMapOutputIndex: Number(state?.activeMapOutputIndex) || 0,
+    },
+    0
+  );
+  return { files: [file], activeFileId: file.id };
+};
 
 const stringifyTerminalPayload = (value) => {
   if (value === undefined || value === null || value === '') return '';
@@ -140,31 +206,125 @@ function DashboardCodePanel({
   selectedSubregionLabel,
   onClose,
   onMapOutputChange,
+  initialWorkspaceState = null,
+  onWorkspaceStateChange = null,
+  workspaceStateRef = null,
   outputPortalTargetId = null,
   panelWidth = null,
 }) {
-  const [code, setCode] = useState(DEFAULT_CODE);
-  const [panelMode, setPanelMode] = useState('code');
-  const [chatMessages, setChatMessages] = useState([]);
+  const initialCodeWorkspace = useMemo(() => normalizeWorkspaceState(initialWorkspaceState), [initialWorkspaceState]);
+  const [files, setFiles] = useState(() => initialCodeWorkspace.files);
+  const [activeFileId, setActiveFileId] = useState(() => initialCodeWorkspace.activeFileId);
+  const [panelMode, setPanelMode] = useState(() => initialWorkspaceState?.panelMode || 'code');
+  const [chatMessages, setChatMessages] = useState(() => initialWorkspaceState?.chatMessages || []);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const [chatError, setChatError] = useState('');
   const [llmHealth, setLlmHealth] = useState(null);
   const chatAbortRef = useRef(null);
   const chatScrollRef = useRef(null);
-  const [dateMode, setDateMode] = useState('single');
-  const [rangeStartDate, setRangeStartDate] = useState(currentDate || dates?.[0] || '');
-  const [rangeEndDate, setRangeEndDate] = useState(currentDate || dates?.[0] || '');
-  const [timeoutSeconds, setTimeoutSeconds] = useState(15);
-  const [validation, setValidation] = useState(null);
-  const [result, setResult] = useState(null);
-  const [activeTab, setActiveTab] = useState('terminal');
-  const [activeMapOutputIndex, setActiveMapOutputIndex] = useState(0);
+  const [dateMode, setDateMode] = useState(() => initialWorkspaceState?.dateMode || 'single');
+  const [rangeStartDate, setRangeStartDate] = useState(() => initialWorkspaceState?.rangeStartDate || currentDate || dates?.[0] || '');
+  const [rangeEndDate, setRangeEndDate] = useState(() => initialWorkspaceState?.rangeEndDate || currentDate || dates?.[0] || '');
+  const [timeoutSeconds, setTimeoutSeconds] = useState(() => initialWorkspaceState?.timeoutSeconds || 15);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState('');
   const [activeJobId, setActiveJobId] = useState('');
   const operationAbortRef = useRef(null);
   const [outputPortalTarget, setOutputPortalTarget] = useState(null);
+  const latestWorkspaceStateRef = useRef(null);
+  const workspaceStateCallbackRef = useRef(onWorkspaceStateChange);
+
+  useEffect(() => {
+    workspaceStateCallbackRef.current = onWorkspaceStateChange;
+  }, [onWorkspaceStateChange]);
+
+  const activeFile = useMemo(
+    () => files.find((file) => file.id === activeFileId) || files[0],
+    [activeFileId, files]
+  );
+  const code = activeFile?.content || '';
+  const validation = activeFile?.validation || null;
+  const result = activeFile?.result || null;
+  const activeTab = activeFile?.activeTab || 'terminal';
+  const activeMapOutputIndex = Number(activeFile?.activeMapOutputIndex) || 0;
+
+  const updateFile = useCallback((fileId, updater) => {
+    setFiles((current) => current.map((file) => {
+      if (file.id !== fileId) return file;
+      const patch = typeof updater === 'function' ? updater(file) : updater;
+      return { ...file, ...patch, updatedAt: new Date().toISOString() };
+    }));
+  }, []);
+
+  const updateActiveFile = useCallback((updater) => {
+    if (!activeFileId) return;
+    updateFile(activeFileId, updater);
+  }, [activeFileId, updateFile]);
+
+  const setFileContent = useCallback((fileId, content) => {
+    updateFile(fileId, { content: String(content || '') });
+  }, [updateFile]);
+
+  const createFile = useCallback(() => {
+    const name = window.prompt('New code file name', `analysis-${files.length + 1}.py`);
+    if (name === null) return;
+    const file = normalizeCodeFile({
+      id: makeFileId(),
+      name: uniqueFileName(name, files),
+      content: '',
+    }, files.length);
+    setFiles((current) => [...current, file]);
+    setActiveFileId(file.id);
+  }, [files]);
+
+  const renameActiveFile = useCallback(() => {
+    if (!activeFile) return;
+    const name = window.prompt('Rename code file', activeFile.name);
+    if (name === null) return;
+    updateActiveFile({ name: uniqueFileName(name, files, activeFile.id) });
+  }, [activeFile, files, updateActiveFile]);
+
+  const removeActiveFile = useCallback(() => {
+    if (!activeFile || files.length <= 1) return;
+    if (!window.confirm(`Remove ${activeFile.name} from this code workspace?`)) return;
+    setFiles((current) => {
+      const nextFiles = current.filter((file) => file.id !== activeFile.id);
+      setActiveFileId(nextFiles[0]?.id || '');
+      return nextFiles;
+    });
+  }, [activeFile, files.length]);
+
+  useEffect(() => {
+    const nextWorkspaceState = {
+      workspaceVersion: WORKSPACE_VERSION,
+      code,
+      files,
+      activeFileId: activeFile?.id || activeFileId,
+      panelMode,
+      chatMessages: chatMessages.slice(-40),
+      dateMode,
+      rangeStartDate,
+      rangeEndDate,
+      timeoutSeconds: Number(timeoutSeconds),
+      activeTab,
+      activeMapOutputIndex,
+      validation,
+      result,
+    };
+    latestWorkspaceStateRef.current = nextWorkspaceState;
+    if (workspaceStateRef) workspaceStateRef.current = nextWorkspaceState;
+    const timer = window.setTimeout(() => {
+      workspaceStateCallbackRef.current?.(nextWorkspaceState);
+    }, 220);
+    return () => window.clearTimeout(timer);
+  }, [activeFile?.id, activeFileId, activeMapOutputIndex, activeTab, chatMessages, code, dateMode, files, panelMode, rangeEndDate, rangeStartDate, result, timeoutSeconds, validation, workspaceStateRef]);
+
+  useEffect(() => () => {
+    if (latestWorkspaceStateRef.current) {
+      workspaceStateCallbackRef.current?.(latestWorkspaceStateRef.current);
+    }
+  }, []);
 
   const mapOutputs = useMemo(
     () => (result?.outputs || []).filter((output) => output.type === 'map_layer'),
@@ -326,9 +486,9 @@ function DashboardCodePanel({
   const insertAssistantCode = useCallback((content) => {
     const nextCode = extractCodeFromAssistant(content);
     if (!nextCode) return;
-    setCode(nextCode);
+    updateActiveFile({ content: nextCode });
     setPanelMode('code');
-  }, []);
+  }, [updateActiveFile]);
 
   const clearChat = useCallback(() => {
     chatAbortRef.current?.abort?.();
@@ -338,30 +498,39 @@ function DashboardCodePanel({
   }, []);
 
   const validateCode = useCallback(async () => {
-    setValidation(null);
+    const fileId = activeFile?.id;
+    const source = activeFile?.content || '';
+    if (!fileId) return { ok: false, errors: [] };
+    updateFile(fileId, { validation: null });
     setError('');
     try {
-      const response = await apiService.validateOperationCode(code);
-      setValidation(response);
+      const response = await apiService.validateOperationCode(source);
       if (!response.ok) {
-        setResult(buildTerminalFailure({
-          status: 'validation_error',
-          command: 'POST /operations/validate',
-          error: 'Code validation failed.',
-          response,
-        }));
+        updateFile(fileId, {
+          validation: response,
+          result: buildTerminalFailure({
+            status: 'validation_error',
+            command: 'POST /operations/validate',
+            error: 'Code validation failed.',
+            response,
+          }),
+          activeTab: 'terminal',
+        });
       } else {
-        setResult({
-          ok: true,
-          status: 'validation_passed',
-          outputs: [],
-          stdout: 'Validation passed. Ready to run.',
-          stderr: '',
-          error: '',
-          meta: {},
+        updateFile(fileId, {
+          validation: response,
+          result: {
+            ok: true,
+            status: 'validation_passed',
+            outputs: [],
+            stdout: 'Validation passed. Ready to run.',
+            stderr: '',
+            error: '',
+            meta: {},
+          },
+          activeTab: 'terminal',
         });
       }
-      setActiveTab('terminal');
       return response;
     } catch (err) {
       const failure = buildTerminalFailure({
@@ -370,12 +539,14 @@ function DashboardCodePanel({
         error: err?.message || 'Validation request failed.',
         response: err?.response?.data,
       });
-      setResult(failure);
-      setActiveTab('terminal');
+      updateFile(fileId, {
+        result: failure,
+        activeTab: 'terminal',
+      });
       setError('Validation request failed. See terminal.');
       return { ok: false, errors: [] };
     }
-  }, [code]);
+  }, [activeFile, updateFile]);
 
   const buildSelection = useCallback(() => {
     const selection = {
@@ -408,7 +579,7 @@ function DashboardCodePanel({
     yearRange,
   ]);
 
-  const waitForOperationJob = useCallback(async (jobId, signal) => {
+  const waitForOperationJob = useCallback(async (jobId, signal, fileId) => {
     if (!jobId) return null;
     const terminalStatuses = new Set(['completed', 'error', 'canceled', 'timeout']);
     while (!signal.aborted) {
@@ -420,16 +591,19 @@ function DashboardCodePanel({
         }, { once: true });
       });
       const payload = await apiService.getOperationJob(jobId, signal);
-      setResult(payload);
+      updateFile(fileId, { result: payload });
       if (terminalStatuses.has(payload.status)) {
         setActiveJobId('');
         return payload;
       }
     }
     return null;
-  }, []);
+  }, [updateFile]);
 
   const runOperation = useCallback(async () => {
+    const fileId = activeFile?.id;
+    const source = activeFile?.content || '';
+    if (!fileId) return;
     if (!datasetId || !selectedVariable || !currentDate) {
       setError('Dashboard data context is not ready yet.');
       return;
@@ -440,79 +614,83 @@ function DashboardCodePanel({
     operationAbortRef.current = controller;
     setRunning(true);
     setError('');
-    setResult(null);
+    updateFile(fileId, { result: null });
     onMapOutputChange(null);
 
     try {
-      const check = await apiService.validateOperationCode(code, controller.signal);
-      setValidation(check);
+      const check = await apiService.validateOperationCode(source, controller.signal);
       if (!check.ok) {
-        setResult(buildTerminalFailure({
-          status: 'validation_error',
-          command: 'POST /operations/validate',
-          error: 'Code validation failed before execution.',
-          response: check,
-        }));
-        setActiveTab('terminal');
+        updateFile(fileId, {
+          validation: check,
+          result: buildTerminalFailure({
+            status: 'validation_error',
+            command: 'POST /operations/validate',
+            error: 'Code validation failed before execution.',
+            response: check,
+          }),
+          activeTab: 'terminal',
+        });
         setError('Code validation failed. See terminal.');
         return;
       }
+      updateFile(fileId, { validation: check });
 
       const selection = buildSelection();
       const plan = await apiService.planOperation(selection, controller.signal);
       if (!plan.can_run_inline) {
         const job = await apiService.submitOperationJob(
           {
-            code,
+            code: source,
             selection,
             timeout_seconds: Math.max(600, Number(timeoutSeconds) * 60),
           },
           controller.signal
         );
         setActiveJobId(job.job_id || '');
-        setResult(job);
-        const finalJob = await waitForOperationJob(job.job_id, controller.signal);
-        if (finalJob) setResult(finalJob);
+        updateFile(fileId, { result: job, activeTab: 'terminal' });
+        const finalJob = await waitForOperationJob(job.job_id, controller.signal, fileId);
+        if (finalJob) updateFile(fileId, { result: finalJob });
       } else {
         const payload = await apiService.runOperation(
           {
-            code,
+            code: source,
             selection,
             timeout_seconds: Number(timeoutSeconds),
           },
           controller.signal
         );
-        setResult(payload);
+        updateFile(fileId, { result: payload });
       }
-      setActiveMapOutputIndex(0);
-      setActiveTab('terminal');
+      updateFile(fileId, { activeMapOutputIndex: 0, activeTab: 'terminal' });
     } catch (err) {
       const canceled = err?.name === 'CanceledError' || err?.name === 'AbortError' || err?.code === 'ERR_CANCELED';
       if (!canceled) {
-        setResult(buildTerminalFailure({
-          status: err?.response?.status ? `http_${err.response.status}` : 'request_error',
-          command: 'POST /operations/run',
-          error: err?.message || 'Operation failed.',
-          response: err?.response?.data,
-        }));
-        setActiveTab('terminal');
+        updateFile(fileId, {
+          result: buildTerminalFailure({
+            status: err?.response?.status ? `http_${err.response.status}` : 'request_error',
+            command: 'POST /operations/run',
+            error: err?.message || 'Operation failed.',
+            response: err?.response?.data,
+          }),
+          activeTab: 'terminal',
+        });
         setError('Operation failed. See terminal.');
       }
     } finally {
       if (!controller.signal.aborted) setRunning(false);
     }
-  }, [buildSelection, code, currentDate, datasetId, onMapOutputChange, selectedVariable, timeoutSeconds, waitForOperationJob]);
+  }, [activeFile, buildSelection, currentDate, datasetId, onMapOutputChange, selectedVariable, timeoutSeconds, updateFile, waitForOperationJob]);
 
   const cancelOperation = useCallback(() => {
     operationAbortRef.current?.abort?.();
     if (activeJobId) {
       apiService.cancelOperationJob(activeJobId)
-        .then((payload) => setResult(payload))
-        .catch(() => {});
+        .then((payload) => updateActiveFile({ result: payload }))
+        .catch(() => { });
       setActiveJobId('');
     }
     setRunning(false);
-  }, [activeJobId]);
+  }, [activeJobId, updateActiveFile]);
 
   const outputSection = (
     <div className="dashboard-code-output dashboard-code-output-docked">
@@ -629,109 +807,147 @@ function DashboardCodePanel({
       </div>
 
       {panelMode === 'code' && (
-      <>
-      <div className="dashboard-code-toolbar">
-        <div className="dashboard-code-date-mode">
-          <button
-            type="button"
-            className={dateMode === 'single' ? 'active' : ''}
-            onClick={() => setDateMode('single')}
-          >
-            Current Date
-          </button>
-          <button
-            type="button"
-            className={dateMode === 'range' ? 'active' : ''}
-            onClick={() => setDateMode('range')}
-          >
-            Date Range
-          </button>
-        </div>
-        {dateMode === 'range' && (
-          <div className="dashboard-code-range">
-            <select value={rangeStartDate} onChange={(event) => setRangeStartDate(event.target.value)}>
-              {(dates || []).map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
-            <select value={rangeEndDate} onChange={(event) => setRangeEndDate(event.target.value)}>
-              {(dates || []).map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
+        <>
+          <div className="dashboard-code-workspace">
+            <aside className="dashboard-code-explorer" aria-label="Code files">
+              <div className="dashboard-code-file-list">
+                <div className="dashboard-code-file-list-header">
+                  <button type="button" className="icon-btn-add" onClick={createFile} title="New file">+</button>
+                </div>
+                {files.map((file) => (
+                  <div
+                    key={file.id}
+                    className={`dashboard-code-file-item ${file.id === activeFile?.id ? 'active' : ''}`}
+                    onClick={() => setActiveFileId(file.id)}
+                    title={file.name}
+                  >
+                    <div className="dashboard-code-file-info">
+                      <svg viewBox="0 0 24 24" aria-hidden="true" width="14" height="14" fill="currentColor">
+                        <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z" />
+                      </svg>
+                      <span>{file.name}</span>
+                      {file.result && (
+                        <span className={`status-dot ${file.result.ok ? 'ok' : 'error'}`} title={file.result.status || (file.result.ok ? 'ok' : 'error')} />
+                      )}
+                    </div>
+                    {file.id === activeFile?.id && (
+                      <div className="dashboard-code-file-actions-inline">
+                        <button type="button" onClick={(e) => { e.stopPropagation(); renameActiveFile(); }} title="Rename">✎</button>
+                        <button type="button" onClick={(e) => { e.stopPropagation(); removeActiveFile(); }} disabled={files.length <= 1} title="Remove">🗑</button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </aside>
+
+            <div className="dashboard-code-workbench">
+              <div className="dashboard-code-toolbar">
+                <div className="dashboard-code-date-mode">
+                  <button
+                    type="button"
+                    className={dateMode === 'single' ? 'active' : ''}
+                    onClick={() => setDateMode('single')}
+                  >
+                    Current Date
+                  </button>
+                  <button
+                    type="button"
+                    className={dateMode === 'range' ? 'active' : ''}
+                    onClick={() => setDateMode('range')}
+                  >
+                    Date Range
+                  </button>
+                </div>
+                {dateMode === 'range' && (
+                  <div className="dashboard-code-range">
+                    <select value={rangeStartDate} onChange={(event) => setRangeStartDate(event.target.value)}>
+                      {(dates || []).map((item) => <option key={item} value={item}>{item}</option>)}
+                    </select>
+                    <select value={rangeEndDate} onChange={(event) => setRangeEndDate(event.target.value)}>
+                      {(dates || []).map((item) => <option key={item} value={item}>{item}</option>)}
+                    </select>
+                  </div>
+                )}
+                <div className="dashboard-code-limits">
+                  <label>
+                    Sec
+                    <input type="number" min="1" max="60" value={timeoutSeconds} onChange={(event) => setTimeoutSeconds(event.target.value)} />
+                  </label>
+                </div>
+                <div className="dashboard-code-actions">
+                  <button type="button" className="dashboard-code-secondary icon-btn" onClick={validateCode} disabled={running} title="Validate">✓</button>
+                  {running ? (
+                    <button type="button" className="dashboard-code-danger" onClick={cancelOperation} title="Stop">■</button>
+                  ) : (
+                    <button type="button" className="dashboard-code-primary" onClick={runOperation} title="Run">▶</button>
+                  )}
+                </div>
+              </div>
+
+              <div className="dashboard-code-editor">
+                <Editor
+                  height="100%"
+                  defaultLanguage="python"
+                  theme={theme === 'dark' ? 'vs-dark' : 'vs'}
+                  value={code}
+                  path={activeFile?.id || 'analysis.py'}
+                  onChange={(value) => setFileContent(activeFile?.id, value || '')}
+                  options={{
+                    minimap: { enabled: false },
+                    fontSize: 13,
+                    lineNumbersMinChars: 3,
+                    scrollBeyondLastLine: false,
+                    wordWrap: 'on',
+                    tabSize: 4,
+                    automaticLayout: true,
+                  }}
+                />
+              </div>
+
+              <div className="dashboard-code-status">
+                {activeFile && <span>{activeFile.name}</span>}
+                {validation && (
+                  <span className={validation.ok ? 'status-ok' : 'status-error'}>
+                    {validation.ok ? 'Validation passed' : `${validation.errors?.length || 0} validation errors`}
+                  </span>
+                )}
+                {result && (
+                  <span className={result.ok ? 'status-ok' : 'status-error'}>
+                    {result.status} | {Number(result.duration_ms || 0).toLocaleString()} ms | {Number(result.meta?.row_count || 0).toLocaleString()} rows
+                  </span>
+                )}
+                {mapOutputs.length > 0 && (
+                  <label>
+                    Map
+                    <select value={activeMapOutputIndex} onChange={(event) => updateActiveFile({ activeMapOutputIndex: Number(event.target.value) })}>
+                      {mapOutputs.map((output, index) => (
+                        <option key={`${output.name}-${index}`} value={index}>{output.name || `Layer ${index + 1}`}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {error && <span className="status-error">{error}</span>}
+              </div>
+            </div>
           </div>
-        )}
-        <div className="dashboard-code-limits">
-          <label>
-            Sec
-            <input type="number" min="1" max="60" value={timeoutSeconds} onChange={(event) => setTimeoutSeconds(event.target.value)} />
-          </label>
-        </div>
-        <div className="dashboard-code-actions">
-          <button type="button" className="dashboard-code-secondary" onClick={validateCode} disabled={running}>Validate</button>
-          {running ? (
-            <button type="button" className="dashboard-code-danger" onClick={cancelOperation}>Stop</button>
-          ) : (
-            <button type="button" className="dashboard-code-primary" onClick={runOperation}>Run</button>
-          )}
-        </div>
-      </div>
 
-      <div className="dashboard-code-editor">
-        <Editor
-          height="100%"
-          defaultLanguage="python"
-          theme={theme === 'dark' ? 'vs-dark' : 'vs'}
-          value={code}
-          onChange={(value) => setCode(value || '')}
-          options={{
-            minimap: { enabled: false },
-            fontSize: 13,
-            lineNumbersMinChars: 3,
-            scrollBeyondLastLine: false,
-            wordWrap: 'on',
-            tabSize: 4,
-            automaticLayout: true,
-          }}
-        />
-      </div>
+          <div className="dashboard-code-tabs">
+            {['terminal', 'table', 'chart', 'exports'].map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                className={activeTab === tab ? 'active' : ''}
+                onClick={() => updateActiveFile({ activeTab: tab })}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
 
-      <div className="dashboard-code-status">
-        {validation && (
-          <span className={validation.ok ? 'status-ok' : 'status-error'}>
-            {validation.ok ? 'Validation passed' : `${validation.errors?.length || 0} validation errors`}
-          </span>
-        )}
-        {result && (
-          <span className={result.ok ? 'status-ok' : 'status-error'}>
-            {result.status} | {Number(result.duration_ms || 0).toLocaleString()} ms | {Number(result.meta?.row_count || 0).toLocaleString()} rows
-          </span>
-        )}
-        {mapOutputs.length > 0 && (
-          <label>
-            Map
-            <select value={activeMapOutputIndex} onChange={(event) => setActiveMapOutputIndex(Number(event.target.value))}>
-              {mapOutputs.map((output, index) => (
-                <option key={`${output.name}-${index}`} value={index}>{output.name || `Layer ${index + 1}`}</option>
-              ))}
-            </select>
-          </label>
-        )}
-        {error && <span className="status-error">{error}</span>}
-      </div>
-
-      <div className="dashboard-code-tabs">
-        {['terminal', 'table', 'chart', 'exports'].map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            className={activeTab === tab ? 'active' : ''}
-            onClick={() => setActiveTab(tab)}
-          >
-            {tab}
-          </button>
-        ))}
-      </div>
-
-      {!outputPortalTarget && outputSection}
-      {outputPortalTarget && createPortal(outputSection, outputPortalTarget)}
-      </>
+          {!outputPortalTarget && outputSection}
+          {outputPortalTarget && createPortal(outputSection, outputPortalTarget)}
+        </>
       )}
 
       {panelMode === 'chatbot' && (

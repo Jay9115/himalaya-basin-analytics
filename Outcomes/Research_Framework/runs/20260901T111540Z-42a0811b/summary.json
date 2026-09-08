@@ -1,0 +1,1073 @@
+{
+  "run_id": "20260901T111540Z-42a0811b",
+  "created_at": "2026-09-01T11:15:40.548125+00:00",
+  "framework": "Generalized selection-aware research workflow",
+  "selection": {
+    "variables": [
+      {
+        "dataset": "era5",
+        "variable": "temperature_C",
+        "aggregation": "mean",
+        "label": null,
+        "unit": null,
+        "direction": "positive"
+      }
+    ],
+    "year_start": 1951,
+    "year_end": 2025,
+    "baseline_start": 1951,
+    "baseline_end": 1951,
+    "recent_start": 2020,
+    "elev_min": 500.0,
+    "elev_max": 9000.0,
+    "subregion_id": null,
+    "bounds": {
+      "min_lat": 28.053,
+      "max_lat": 28.4609,
+      "min_lon": 85.2885,
+      "max_lon": 85.8099
+    },
+    "methods": [
+      "descriptive",
+      "trend",
+      "anomaly"
+    ],
+    "anomaly_threshold": 1.0,
+    "emergence_threshold": 0.75,
+    "emergence_window": 9,
+    "persistence_fraction": 0.8,
+    "max_map_points": 18000,
+    "sector": "all"
+  },
+  "dataset": {
+    "id": "era5",
+    "label": "ERA5 Full Shape"
+  },
+  "variable": {
+    "id": "temperature_C",
+    "label": "Temperature C",
+    "unit": "native units"
+  },
+  "variables": [
+    {
+      "key": "v1_era5_temperature_C",
+      "role": "response",
+      "dataset": {
+        "id": "era5",
+        "label": "ERA5 Full Shape"
+      },
+      "id": "temperature_C",
+      "label": "Temperature C",
+      "unit": "native units",
+      "aggregation": "mean",
+      "direction": "positive",
+      "years": [
+        1951,
+        2025
+      ],
+      "year_count": 74,
+      "pixel_count": 20
+    }
+  ],
+  "coverage": {
+    "available_years": [
+      1951,
+      1952,
+      1953,
+      1954,
+      1955,
+      1956,
+      1957,
+      1958,
+      1959,
+      1960,
+      1961,
+      1962,
+      1963,
+      1964,
+      1965,
+      1966,
+      1967,
+      1968,
+      1969,
+      1970,
+      1971,
+      1972,
+      1973,
+      1974,
+      1975,
+      1976,
+      1977,
+      1978,
+      1979,
+      1980,
+      1981,
+      1982,
+      1983,
+      1984,
+      1985,
+      1986,
+      1987,
+      1988,
+      1989,
+      1990,
+      1991,
+      1992,
+      1993,
+      1994,
+      1995,
+      1996,
+      1997,
+      1998,
+      1999,
+      2000,
+      2002,
+      2003,
+      2004,
+      2005,
+      2006,
+      2007,
+      2008,
+      2009,
+      2010,
+      2011,
+      2012,
+      2013,
+      2014,
+      2015,
+      2016,
+      2017,
+      2018,
+      2019,
+      2020,
+      2021,
+      2022,
+      2023,
+      2024,
+      2025
+    ],
+    "year_count": 74,
+    "baseline_years": [
+      1951
+    ],
+    "pixel_count": 20,
+    "recent_period": [
+      2020,
+      2025
+    ]
+  },
+  "headline": {
+    "regional_sen_slope_per_decade": 0.13216269726447466,
+    "regional_hac_p": 3.057297880905541e-05,
+    "recent_mean_anomaly_z": null,
+    "spatial_fdr_trend_area_percent": 100.0,
+    "persistent_emerged_area_percent": 0.0,
+    "median_emergence_year": null,
+    "pettitt_fdr_area_percent": null,
+    "median_fdr_change_year": null,
+    "largest_signal_year": null,
+    "largest_signal_area_percent": null
+  },
+  "regional_statistics": {
+    "n": 74,
+    "sen_slope_per_decade": 0.13216269726447466,
+    "sen_ci_low_per_decade": 0.07759370925745886,
+    "sen_ci_high_per_decade": 0.18693447452443837,
+    "ols_slope_per_decade": 0.13220861202900908,
+    "ols_p": 2.8174916336725456e-06,
+    "hac_p": 3.057297880905541e-05,
+    "mann_kendall_tau": 0.369122547204739,
+    "mann_kendall_p": 3.2755960204491794e-06,
+    "pettitt_year": 1997.0,
+    "pettitt_p": 0.00011098261745117041
+  },
+  "annual_series": [
+    {
+      "year": 1951,
+      "value": -0.6055417829873648,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.0,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": -0.6055417829873648
+    },
+    {
+      "year": 1952,
+      "value": -0.6091402209848313,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": -0.003598437997466508,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": -0.6091402209848313
+    },
+    {
+      "year": 1953,
+      "value": -0.6568074298497648,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": -0.05126564686239998,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": -0.6568074298497648
+    },
+    {
+      "year": 1954,
+      "value": -0.29961193161921207,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.30592985136815276,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": -0.29961193161921207
+    },
+    {
+      "year": 1955,
+      "value": -0.17017233089117068,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.43536945209619415,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": -0.17017233089117068
+    },
+    {
+      "year": 1956,
+      "value": -0.19210176413744923,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.4134400188499156,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": -0.19210176413744923
+    },
+    {
+      "year": 1957,
+      "value": -0.6379556644112029,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": -0.032413881423838053,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": -0.6379556644112029
+    },
+    {
+      "year": 1958,
+      "value": 0.9094397468735853,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 1.5149815298609501,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.9094397468735853
+    },
+    {
+      "year": 1959,
+      "value": 0.8080377489169351,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 1.4135795319043,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.8080377489169351
+    },
+    {
+      "year": 1960,
+      "value": 0.8675042818808336,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 1.4730460648681984,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.8675042818808336
+    },
+    {
+      "year": 1961,
+      "value": 0.07499592782574378,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.6805377108131087,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.07499592782574378
+    },
+    {
+      "year": 1962,
+      "value": -0.1313472116458022,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.4741945713415626,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": -0.1313472116458022
+    },
+    {
+      "year": 1963,
+      "value": -0.40015718054594446,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.20538460244142037,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": -0.40015718054594446
+    },
+    {
+      "year": 1964,
+      "value": 0.5492299954923048,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 1.1547717784796696,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.5492299954923048
+    },
+    {
+      "year": 1965,
+      "value": -0.6416933414024758,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": -0.036151558415110974,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": -0.6416933414024758
+    },
+    {
+      "year": 1966,
+      "value": 0.4127125172232834,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 1.0182543002106481,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.4127125172232834
+    },
+    {
+      "year": 1967,
+      "value": -0.013211767384387084,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.5923300156029777,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": -0.013211767384387084
+    },
+    {
+      "year": 1968,
+      "value": -0.4491809744404796,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.15636080854688522,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": -0.4491809744404796
+    },
+    {
+      "year": 1969,
+      "value": 0.5795632319634,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 1.1851050149507647,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.5795632319634
+    },
+    {
+      "year": 1970,
+      "value": 0.5161041702092152,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 1.12164595319658,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.5161041702092152
+    },
+    {
+      "year": 1971,
+      "value": 0.032521772648304914,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.6380635556356697,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.032521772648304914
+    },
+    {
+      "year": 1972,
+      "value": -0.1629603956445073,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.44258138734285757,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": -0.1629603956445073
+    },
+    {
+      "year": 1973,
+      "value": -0.05543419296717534,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.5501075900201895,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": -0.05543419296717534
+    },
+    {
+      "year": 1974,
+      "value": 0.1969557110393386,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.8024974940267035,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.1969557110393386
+    },
+    {
+      "year": 1975,
+      "value": -0.15689904412871272,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.44864273885865213,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": -0.15689904412871272
+    },
+    {
+      "year": 1976,
+      "value": 0.37927750640954383,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.9848192893969087,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.37927750640954383
+    },
+    {
+      "year": 1977,
+      "value": 0.2167369251733659,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.8222787081607308,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.2167369251733659
+    },
+    {
+      "year": 1978,
+      "value": -0.34693341656998417,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.25860836641738066,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": -0.34693341656998417
+    },
+    {
+      "year": 1979,
+      "value": -0.151946680197777,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.4535951027895878,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": -0.151946680197777
+    },
+    {
+      "year": 1980,
+      "value": 0.08284592410061262,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.6883877070879775,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.08284592410061262
+    },
+    {
+      "year": 1981,
+      "value": -0.4602565949881877,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.1452851879991771,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": -0.4602565949881877
+    },
+    {
+      "year": 1982,
+      "value": -0.4270379758298152,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.17850380715754965,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": -0.4270379758298152
+    },
+    {
+      "year": 1983,
+      "value": -0.6383649611540233,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": -0.03282317816665847,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": -0.6383649611540233
+    },
+    {
+      "year": 1984,
+      "value": 0.49417166652140265,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 1.0997134495087675,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.49417166652140265
+    },
+    {
+      "year": 1985,
+      "value": 0.32760575170472594,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.9331475346920908,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.32760575170472594
+    },
+    {
+      "year": 1986,
+      "value": -0.3355799117183598,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.269961871269005,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": -0.3355799117183598
+    },
+    {
+      "year": 1987,
+      "value": -0.01039027881688625,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.5951515041704786,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": -0.01039027881688625
+    },
+    {
+      "year": 1988,
+      "value": 0.7669432825827532,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 1.372485065570118,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.7669432825827532
+    },
+    {
+      "year": 1989,
+      "value": -0.2860287397238624,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.31951304326350244,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": -0.2860287397238624
+    },
+    {
+      "year": 1990,
+      "value": 0.7243997809664885,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 1.3299415639538532,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.7243997809664885
+    },
+    {
+      "year": 1991,
+      "value": 0.11182685425273016,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.717368637240095,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.11182685425273016
+    },
+    {
+      "year": 1992,
+      "value": -0.25565292877689777,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.34988885421046706,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": -0.25565292877689777
+    },
+    {
+      "year": 1993,
+      "value": 0.5928199204884026,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 1.1983617034757674,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.5928199204884026
+    },
+    {
+      "year": 1994,
+      "value": 0.12779753833733698,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.7333393213247018,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.12779753833733698
+    },
+    {
+      "year": 1995,
+      "value": -0.018228443591775296,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.5873133393955895,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": -0.018228443591775296
+    },
+    {
+      "year": 1996,
+      "value": 0.09510930281025623,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.700651085797621,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.09510930281025623
+    },
+    {
+      "year": 1997,
+      "value": -1.04676203546744,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": -0.44122025248007524,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": -1.04676203546744
+    },
+    {
+      "year": 1998,
+      "value": 0.9136015086914289,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 1.5191432916787937,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.9136015086914289
+    },
+    {
+      "year": 1999,
+      "value": 0.8150839790126776,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 1.4206257620000424,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.8150839790126776
+    },
+    {
+      "year": 2000,
+      "value": 0.0479066516537464,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.6534484346411112,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.0479066516537464
+    },
+    {
+      "year": 2002,
+      "value": -0.02946425919716903,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.5760775237901958,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": -0.02946425919716903
+    },
+    {
+      "year": 2003,
+      "value": 0.16700459220092456,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.7725463751882894,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.16700459220092456
+    },
+    {
+      "year": 2004,
+      "value": 0.3046370247015644,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.9101788076889292,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.3046370247015644
+    },
+    {
+      "year": 2005,
+      "value": 0.045087325956998915,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.6506291089443638,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.045087325956998915
+    },
+    {
+      "year": 2006,
+      "value": 0.9752405538148586,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 1.5807823368022236,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.9752405538148586
+    },
+    {
+      "year": 2007,
+      "value": 0.8458800146119918,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 1.4514217975993566,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.8458800146119918
+    },
+    {
+      "year": 2008,
+      "value": 0.7170456721116935,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 1.3225874550990584,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.7170456721116935
+    },
+    {
+      "year": 2009,
+      "value": 1.129920733530953,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 1.7354625165183177,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 1.129920733530953
+    },
+    {
+      "year": 2010,
+      "value": 1.1577466631950228,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 1.7632884461823877,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 1.1577466631950228
+    },
+    {
+      "year": 2011,
+      "value": 0.21451195503478346,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.8200537380221483,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.21451195503478346
+    },
+    {
+      "year": 2012,
+      "value": -0.006132453850330615,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.5994093291370343,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": -0.006132453850330615
+    },
+    {
+      "year": 2013,
+      "value": 0.19717815793994295,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.8027199409273078,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.19717815793994295
+    },
+    {
+      "year": 2014,
+      "value": 0.018448499736777365,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.6239902827241421,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.018448499736777365
+    },
+    {
+      "year": 2015,
+      "value": 0.09225221798198545,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.6977940009693503,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.09225221798198545
+    },
+    {
+      "year": 2016,
+      "value": 1.503789126067066,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 2.1093309090544308,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 1.503789126067066
+    },
+    {
+      "year": 2017,
+      "value": 1.0733651765655796,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 1.6789069595529444,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 1.0733651765655796
+    },
+    {
+      "year": 2018,
+      "value": 0.7597237938019472,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 1.365265576789312,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.7597237938019472
+    },
+    {
+      "year": 2019,
+      "value": 0.13988761553144785,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.7454293985188127,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.13988761553144785
+    },
+    {
+      "year": 2020,
+      "value": 0.3092562405428813,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 0.9147980235302462,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.3092562405428813
+    },
+    {
+      "year": 2021,
+      "value": 1.0171216810539656,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 1.6226634640413304,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 1.0171216810539656
+    },
+    {
+      "year": 2022,
+      "value": 0.9702244863865563,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 1.5757662693739212,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.9702244863865563
+    },
+    {
+      "year": 2023,
+      "value": 0.7380189143385404,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 1.343560697325905,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.7380189143385404
+    },
+    {
+      "year": 2024,
+      "value": 0.9819886094006275,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 1.5875303923879924,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 0.9819886094006275
+    },
+    {
+      "year": 2025,
+      "value": 1.537963835908333,
+      "z_mean": null,
+      "signal_area_percent": null,
+      "anomaly": 2.1435056188956976,
+      "compound_area_percent": null,
+      "v1_era5_temperature_C__value": 1.537963835908333
+    }
+  ],
+  "group_summary": [
+    {
+      "group": "Selected domain",
+      "pixels": 20,
+      "mean_trend_per_decade": 0.1313861668438984,
+      "trend_fdr_area_percent": 100.0,
+      "recent_anomaly_z": null,
+      "emerged_area_percent": 0.0,
+      "change_fdr_area_percent": null
+    },
+    {
+      "group": "1500\u20132999 m",
+      "pixels": 2,
+      "mean_trend_per_decade": 0.19694560313930415,
+      "trend_fdr_area_percent": 100.0,
+      "recent_anomaly_z": null,
+      "emerged_area_percent": 0.0,
+      "change_fdr_area_percent": null
+    },
+    {
+      "group": "3000\u20134499 m",
+      "pixels": 7,
+      "mean_trend_per_decade": 0.15482431275431852,
+      "trend_fdr_area_percent": 100.0,
+      "recent_anomaly_z": null,
+      "emerged_area_percent": 0.0,
+      "change_fdr_area_percent": null
+    },
+    {
+      "group": "\u22654500 m",
+      "pixels": 11,
+      "mean_trend_per_decade": 0.10454609190037359,
+      "trend_fdr_area_percent": 100.0,
+      "recent_anomaly_z": null,
+      "emerged_area_percent": 0.0,
+      "change_fdr_area_percent": null
+    }
+  ],
+  "relationships": [],
+  "harmonization": [],
+  "layers": [
+    {
+      "id": "trend",
+      "label": "Theil\u2013Sen trend per decade",
+      "sequential": 0,
+      "point_count": 20,
+      "min": 0.08332687430083752,
+      "max": 0.22993771359324455,
+      "data": [
+        {
+          "lat": 28.1426,
+          "lon": 85.3168,
+          "elev": 2509.0,
+          "value": 0.18478171899914742,
+          "significant": 1
+        },
+        {
+          "lat": 28.1426,
+          "lon": 85.4156,
+          "elev": 3734.0,
+          "value": 0.1499627623707056,
+          "significant": 1
+        },
+        {
+          "lat": 28.1426,
+          "lon": 85.5145,
+          "elev": 4589.0,
+          "value": 0.12347083538770676,
+          "significant": 1
+        },
+        {
+          "lat": 28.1426,
+          "lon": 85.6133,
+          "elev": 4573.0,
+          "value": 0.09167788550257683,
+          "significant": 1
+        },
+        {
+          "lat": 28.1426,
+          "lon": 85.7121,
+          "elev": 4811.0,
+          "value": 0.09516356512904167,
+          "significant": 1
+        },
+        {
+          "lat": 28.2414,
+          "lon": 85.3168,
+          "elev": 2894.0,
+          "value": 0.2091207355260849,
+          "significant": 1
+        },
+        {
+          "lat": 28.2414,
+          "lon": 85.4156,
+          "elev": 3707.0,
+          "value": 0.15830682590603828,
+          "significant": 1
+        },
+        {
+          "lat": 28.2414,
+          "lon": 85.5145,
+          "elev": 5108.0,
+          "value": 0.12435705401003361,
+          "significant": 1
+        },
+        {
+          "lat": 28.2414,
+          "lon": 85.6133,
+          "elev": 5140.0,
+          "value": 0.08332687430083752,
+          "significant": 1
+        },
+        {
+          "lat": 28.2414,
+          "lon": 85.7121,
+          "elev": 5154.0,
+          "value": 0.0934446882456541,
+          "significant": 1
+        },
+        {
+          "lat": 28.3402,
+          "lon": 85.3168,
+          "elev": 3447.0,
+          "value": 0.20950188860297203,
+          "significant": 1
+        },
+        {
+          "lat": 28.3402,
+          "lon": 85.4156,
+          "elev": 3246.0,
+          "value": 0.13140217401087284,
+          "significant": 1
+        },
+        {
+          "lat": 28.3402,
+          "lon": 85.5145,
+          "elev": 4327.0,
+          "value": 0.09530442766845226,
+          "significant": 1
+        },
+        {
+          "lat": 28.3402,
+          "lon": 85.6133,
+          "elev": 5343.0,
+          "value": 0.0844915397465229,
+          "significant": 1
+        },
+        {
+          "lat": 28.3402,
+          "lon": 85.7121,
+          "elev": 5737.0,
+          "value": 0.11304550804197788,
+          "significant": 1
+        },
+        {
+          "lat": 28.439,
+          "lon": 85.3168,
+          "elev": 3950.0,
+          "value": 0.22993771359324455,
+          "significant": 1
+        },
+        {
+          "lat": 28.439,
+          "lon": 85.4156,
+          "elev": 4109.0,
+          "value": 0.1093878224492073,
+          "significant": 1
+        },
+        {
+          "lat": 28.439,
+          "lon": 85.5145,
+          "elev": 4923.0,
+          "value": 0.10395307093858719,
+          "significant": 1
+        },
+        {
+          "lat": 28.439,
+          "lon": 85.6133,
+          "elev": 5548.0,
+          "value": 0.10837629437446594,
+          "significant": 1
+        },
+        {
+          "lat": 28.439,
+          "lon": 85.7121,
+          "elev": 5871.0,
+          "value": 0.1287430338561535,
+          "significant": 1
+        }
+      ]
+    },
+    {
+      "id": "anomaly",
+      "label": "Recent anomaly (2020\u20132025; baseline SD)",
+      "sequential": 0,
+      "point_count": 0,
+      "min": null,
+      "max": null,
+      "data": []
+    }
+  ],
+  "interpretation_guardrails": [
+    "Association, lag, emergence, and change points do not establish causal attribution.",
+    "Related grids are harmonized by nearest-cell sampling and the reported offsets must be evaluated against native resolution.",
+    "Pettitt identifies one candidate distributional shift; FDR controls multiplicity but not spatial dependence or product uncertainty.",
+    "Short records and baselines below 10 years materially weaken robust inference.",
+    "Direction controls anomaly interpretation only; raw observations are never modified."
+  ],
+  "exports": {
+    "annual_csv": "/research/framework/runs/20260901T111540Z-42a0811b/annual_series.csv",
+    "pixel_parquet": "/research/framework/runs/20260901T111540Z-42a0811b/pixel_metrics.parquet",
+    "relationships_csv": "/research/framework/runs/20260901T111540Z-42a0811b/relationships.csv",
+    "summary_json": "/research/framework/runs/20260901T111540Z-42a0811b/summary.json",
+    "request_json": "/research/framework/runs/20260901T111540Z-42a0811b/request.json"
+  },
+  "provenance": {
+    "raw_data_modified": 0,
+    "output_directory": "Outcomes\\Research_Framework\\runs\\20260901T111540Z-42a0811b",
+    "aggregation_level": "annual pixel",
+    "response_grid": "era5/temperature_C"
+  }
+}

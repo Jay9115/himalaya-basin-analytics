@@ -14,7 +14,8 @@ const formatVariableLabel = (name) => {
   return `${prettyLabel} (${unit})`;
 };
 
-function OutcomeLongTermHotspotPage({ theme }) {
+function OutcomeLongTermHotspotPage({ theme, outcome }) {
+  const outcomeId = outcome?.id || 'long_term_hotspot';
   const [metaLoading, setMetaLoading] = useState(true);
   const [metaError, setMetaError] = useState('');
   const [meta, setMeta] = useState(null);
@@ -36,7 +37,7 @@ function OutcomeLongTermHotspotPage({ theme }) {
       try {
         setMetaLoading(true);
         setMetaError('');
-        const response = await apiService.getLongTermHotspotMeta();
+        const response = await apiService.getOutcomeMeta(outcomeId);
         if (!isMounted) return;
         setMeta(response);
         const defaultVariable = (response.variables || [])[0] || '';
@@ -59,7 +60,7 @@ function OutcomeLongTermHotspotPage({ theme }) {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [outcomeId]);
 
   useEffect(() => {
     if (!selectedVariable) return;
@@ -77,12 +78,14 @@ function OutcomeLongTermHotspotPage({ theme }) {
         setDataLoading(true);
         setDataError('');
         const response = viewMode === 'difference'
-          ? await apiService.getLongTermHotspotDifference(
+          ? await apiService.getOutcomeDifference(
+              outcomeId,
               selectedVariable,
               selectedComparisonId,
               controller.signal
             )
-          : await apiService.getLongTermHotspotData(
+          : await apiService.getOutcomeData(
+              outcomeId,
               selectedVariable,
               selectedBandId,
               controller.signal
@@ -107,7 +110,7 @@ function OutcomeLongTermHotspotPage({ theme }) {
     return () => {
       controller.abort();
     };
-  }, [selectedVariable, selectedBandId, selectedComparisonId, viewMode]);
+  }, [outcomeId, selectedVariable, selectedBandId, selectedComparisonId, viewMode]);
 
   const selectedBand = useMemo(() => {
     if (!meta?.bands) return null;
@@ -118,6 +121,41 @@ function OutcomeLongTermHotspotPage({ theme }) {
     if (!meta?.comparisons) return null;
     return meta.comparisons.find((comparison) => String(comparison.id) === String(selectedComparisonId)) || null;
   }, [meta, selectedComparisonId]);
+
+  const availableBandIds = useMemo(() => {
+    const coverageList = meta?.coverage_by_variable?.[selectedVariable];
+    if (!coverageList) {
+      return new Set((meta?.bands || []).map((band) => String(band.id)));
+    }
+    return new Set(
+      coverageList
+        .filter((coverage) => (coverage.available_years || []).length > 0)
+        .map((coverage) => String(coverage.band_id))
+    );
+  }, [meta, selectedVariable]);
+
+  useEffect(() => {
+    if (!meta || !selectedVariable || availableBandIds.size === 0) return;
+    if (!availableBandIds.has(String(selectedBandId))) {
+      const firstAvailableBand = (meta.bands || []).find((band) => availableBandIds.has(String(band.id)));
+      setSelectedBandId(String(firstAvailableBand?.id || ''));
+    }
+    const validComparisons = (meta.comparisons || []).filter(
+      (comparison) => availableBandIds.has(String(comparison.earlier_band_id))
+        && availableBandIds.has(String(comparison.later_band_id))
+    );
+    if (!validComparisons.some((comparison) => String(comparison.id) === String(selectedComparisonId))) {
+      setSelectedComparisonId(String(validComparisons[0]?.id || ''));
+    }
+  }, [availableBandIds, meta, selectedBandId, selectedComparisonId, selectedVariable]);
+
+  const selectedCoverage = useMemo(() => {
+    const coverageList = meta?.coverage_by_variable?.[selectedVariable] || meta?.coverage_by_band;
+    if (!coverageList) return null;
+    return coverageList.find(
+      (coverage) => String(coverage.band_id) === String(selectedBandId)
+    ) || null;
+  }, [meta, selectedBandId, selectedVariable]);
 
   if (metaLoading) {
     return (
@@ -149,6 +187,8 @@ function OutcomeLongTermHotspotPage({ theme }) {
   const bandLabel = selectedBand?.label || '';
   const comparisonLabel = selectedComparison?.label || '';
   const isDifferenceMode = viewMode === 'difference';
+  const selectedAggregation = meta?.aggregation_by_variable?.[selectedVariable] || 'mean';
+  const aggregationLabel = selectedAggregation === 'sum' ? 'Sum' : 'Mean';
   const mapTitle = isDifferenceMode
     ? (comparisonLabel ? `Change: ${comparisonLabel}` : 'Change Layer')
     : (bandLabel ? `Band: ${bandLabel}` : 'Band');
@@ -161,9 +201,9 @@ function OutcomeLongTermHotspotPage({ theme }) {
       <aside className="sidebar">
         <div className="outcome-panel">
           <h3>Outcome Module</h3>
-          <div className="outcome-name">Long Term Hotspot Analysis</div>
+          <div className="outcome-name">{meta?.label || outcome?.label || 'Long Term Hotspot Analysis'}</div>
           <p>
-            Precomputed ERA5 spatial mean maps and saved later-minus-earlier change maps.
+            {meta?.description || outcome?.description || 'Precomputed ERA5 spatial maps and saved later-minus-earlier change maps.'}
           </p>
           <div className="outcome-meta-item">
             <span>Total rows:</span>
@@ -201,7 +241,7 @@ function OutcomeLongTermHotspotPage({ theme }) {
               className={`outcome-mode-btn ${viewMode === 'mean' ? 'active' : ''}`}
               onClick={() => setViewMode('mean')}
             >
-              Band Mean
+              Band Value
             </button>
             <button
               type="button"
@@ -215,8 +255,8 @@ function OutcomeLongTermHotspotPage({ theme }) {
           </div>
           <p>
             {isDifferenceMode
-              ? 'Displays change_value = later band mean - earlier band mean.'
-              : 'Displays the mean value for one saved 25-year band.'}
+              ? `Displays later band ${selectedAggregation} minus earlier band ${selectedAggregation}.`
+              : `Displays the ${selectedAggregation} value for one saved band.`}
           </p>
         </div>
 
@@ -229,12 +269,18 @@ function OutcomeLongTermHotspotPage({ theme }) {
                   <input
                     type="checkbox"
                     checked={String(selectedBandId) === String(band.id)}
+                    disabled={!availableBandIds.has(String(band.id))}
                     onChange={() => setSelectedBandId(String(band.id))}
                   />
-                  <span>{band.label}</span>
+                  <span>{band.label}{!availableBandIds.has(String(band.id)) ? ' (unavailable)' : ''}</span>
                 </label>
               ))}
             </div>
+            {(selectedCoverage?.missing_years || []).length > 0 && (
+              <p>
+                Missing source year(s): {selectedCoverage.missing_years.join(', ')}. Values use available samples only.
+              </p>
+            )}
           </div>
         )}
 
@@ -247,9 +293,17 @@ function OutcomeLongTermHotspotPage({ theme }) {
                   <input
                     type="checkbox"
                     checked={String(selectedComparisonId) === String(comparison.id)}
+                    disabled={
+                      !availableBandIds.has(String(comparison.earlier_band_id))
+                      || !availableBandIds.has(String(comparison.later_band_id))
+                    }
                     onChange={() => setSelectedComparisonId(String(comparison.id))}
                   />
-                  <span>{comparison.label}</span>
+                  <span>
+                    {comparison.label}
+                    {(!availableBandIds.has(String(comparison.earlier_band_id))
+                      || !availableBandIds.has(String(comparison.later_band_id))) ? ' (unavailable)' : ''}
+                  </span>
                 </label>
               ))}
               {(meta?.comparisons || []).length === 0 && (
@@ -285,6 +339,10 @@ function OutcomeLongTermHotspotPage({ theme }) {
             <span className="value">{formatVariableLabel(selectedVariable)}</span>
           </div>
           <div className="info-item">
+            <span className="label">Aggregation:</span>
+            <span className="value">{aggregationLabel}</span>
+          </div>
+          <div className="info-item">
             <span className="label">{isDifferenceMode ? 'Comparison:' : 'Band:'}</span>
             <span className="value">{isDifferenceMode ? (comparisonLabel || 'N/A') : (bandLabel || 'N/A')}</span>
           </div>
@@ -295,7 +353,7 @@ function OutcomeLongTermHotspotPage({ theme }) {
           {stats && (
             <>
               <div className="info-item">
-                <span className="label">{isDifferenceMode ? 'Min Change:' : 'Min Mean:'}</span>
+                <span className="label">{isDifferenceMode ? 'Min Change:' : `Min ${aggregationLabel}:`}</span>
                 <span className="value">
                   {Number.isFinite(isDifferenceMode ? stats.min_change : stats.min)
                     ? (isDifferenceMode ? stats.min_change : stats.min).toFixed(3)
@@ -303,7 +361,7 @@ function OutcomeLongTermHotspotPage({ theme }) {
                 </span>
               </div>
               <div className="info-item">
-                <span className="label">{isDifferenceMode ? 'Max Change:' : 'Max Mean:'}</span>
+                <span className="label">{isDifferenceMode ? 'Max Change:' : `Max ${aggregationLabel}:`}</span>
                 <span className="value">
                   {Number.isFinite(isDifferenceMode ? stats.max_change : stats.max)
                     ? (isDifferenceMode ? stats.max_change : stats.max).toFixed(3)
@@ -348,11 +406,10 @@ function OutcomeLongTermHotspotPage({ theme }) {
             currentDate={mapTitle}
             theme={theme}
             variableLabel={displayedVariableLabel}
-            selectionEnabled={false}
           />
         </div>
         <div className="outcome-footnote">
-          Source: saved parquet outputs in <code>Outcomes/Long_term_hotspot/Outputs</code>. Difference layers are saved as later band mean minus earlier band mean.
+          Source: saved parquet outputs in <code>{meta?.output_directory || 'Outcomes/Long_term_hotspot/Outputs'}</code>. Difference layers are saved as later band value minus earlier band value.
         </div>
       </main>
     </>

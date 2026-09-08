@@ -20,6 +20,7 @@ class SandboxLimits:
     max_table_rows: int = 1000
     max_map_points: int = 20000
     max_chart_points: int = 2000
+    max_result_rows: int = 250000
     max_outputs: int = 40
 
     def to_payload(self) -> Dict[str, Any]:
@@ -32,6 +33,7 @@ class SandboxLimits:
             "max_table_rows": self.max_table_rows,
             "max_map_points": self.max_map_points,
             "max_chart_points": self.max_chart_points,
+            "max_result_rows": self.max_result_rows,
             "max_outputs": self.max_outputs,
         }
 

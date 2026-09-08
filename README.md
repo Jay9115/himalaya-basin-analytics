@@ -5,10 +5,11 @@ Local-first web application for climate and hydro-meteorological analysis over t
 This project includes:
 - FastAPI backend for parquet querying and aggregation
 - React + Deck.GL + MapLibre frontend for map and time-series visualization
-- ERA5 and CMIP6 parquet datasets
+- ERA5, CMIP6, CHIRPS, SPHY, and MOD10A1 parquet datasets
 - PMTiles + GeoJSON map assets
 - Offline packaging script for one-click distribution
 - Dedicated architecture documentation in `SYSTEM_ARCHITECTURE.md`
+- Selection-aware Research Toolkit integrated into the dashboard for arbitrary variables, robust trends, anomalies, emergence, change points, cross-dataset relationships, compound signals, and journal figure exports
 
 ## Current Repository Layout
 
@@ -40,6 +41,7 @@ Backend runtime paths are resolved relative to app root:
 - Dataset folders:
   - `Database/Full_Shape_ERA5`
   - `Database/Full_shape_CMIP6`
+  - `Database/MOD10A1_Parquet`
 - Map assets folder:
   - `Map_handle/`
 
@@ -104,6 +106,14 @@ From repo root:
 - `GET /region-mean?year=...&min_lat=...&max_lat=...&min_lon=...&max_lon=...&elev_min=...&elev_max=...&variable=...&dataset=...`
 - `GET /stats?dataset=...&year_start=...&year_end=...`
 - `GET /map-assets/{asset_path}`
+- `GET /research/capabilities`
+- `POST /research/analyze`
+- `POST /research/figures`
+- `GET /research/runs/{run_id}/{artifact_path}`
+- `GET /research/framework/capabilities`
+- `POST /research/framework/analyze`
+- `POST /research/framework/figures`
+- `GET /research/framework/runs/{run_id}/{artifact_path}`
 
 ## Offline Packaging (Distribution Build)
 
@@ -149,6 +159,11 @@ powershell -ExecutionPolicy Bypass -File "D:\ISRO-SWOT\Webapp\himalaya-basin-ana
 ## Notes
 
 - Runtime analysis uses parquet files; CSV files are not required at runtime.
+- MOD10A1 TIFF sources are converted with `python Database/convert_mod10a1_to_parquet.py`.
+  The full grid is retained for analysis while `_map_sample` provides a bounded,
+  evenly spaced browser preview for responsive rendering.
 - Map asset updates should be made inside `Map_handle/` and then packed again.
 - For scientific method details, use the in-app Documentation tab.
 - For software structure, subsystem responsibilities, and journal-friendly diagrams, see `SYSTEM_ARCHITECTURE.md`.
+- For the generalized dashboard research framework, statistical methods, data-safety design, and figure factory, see `RESEARCH_FRAMEWORK.md`.
+- `RESEARCH_STUDIO.md` documents the earlier fixed ERA5-Land/CHIRPS compatibility workflow that remains available through its API.

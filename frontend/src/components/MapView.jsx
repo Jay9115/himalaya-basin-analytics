@@ -1,10 +1,12 @@
-import React, { useMemo, useRef, useState, useCallback, useEffect } from 'react';
+import React, { lazy, Suspense, useMemo, useRef, useState, useCallback, useEffect } from 'react';
 import DeckGL from '@deck.gl/react';
-import { GeoJsonLayer, ScatterplotLayer } from '@deck.gl/layers';
-import { Map } from 'react-map-gl/maplibre';
+import { GeoJsonLayer, IconLayer, ScatterplotLayer } from '@deck.gl/layers';
+import { Map, Marker } from 'react-map-gl/maplibre';
 import maplibregl from 'maplibre-gl';
 import { Protocol } from 'pmtiles';
 import 'maplibre-gl/dist/maplibre-gl.css';
+
+const SnapshotLayout = lazy(() => import('./SnapshotLayout'));
 
 const INITIAL_VIEW_STATE = {
   // Start with full-India view so PMTiles admin boundaries are visible immediately.
@@ -22,6 +24,18 @@ const INDIA_STATE_LABEL_LAYER_ID = 'india-admin-state-label';
 const INDIA_DISTRICT_LABEL_LAYER_ID = 'india-admin-district-label';
 const indiaPmBounds = [68.17751186879357, 6.752782631992444, 97.41289651394189, 37.08834177335065];
 const indiaPmMaxZoom = 13;
+
+// Google Maps-style teardrop pin SVG (needle points down, white dot center)
+const FOCUS_PIN_SVG_URL = `data:image/svg+xml,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="128" viewBox="0 0 96 128">` +
+  `<defs><filter id="s" x="-20%" y="-10%" width="140%" height="130%">` +
+  `<feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.35"/>` +
+  `</filter></defs>` +
+  `<path d="M48 126 C48 126 8 72 8 44 A40 40 0 1 1 88 44 C88 72 48 126 48 126Z" ` +
+  `fill="#EA4335" stroke="#B31412" stroke-width="1.5" filter="url(#s)"/>` +
+  `<circle cx="48" cy="44" r="14" fill="#fff"/>` +
+  `</svg>`
+)}`;
 
 const trimTrailingSlash = (value) => value.replace(/\/+$/, '');
 
@@ -131,13 +145,102 @@ const paletteStops = {
     [244, 109, 67],
     [165, 0, 38],
   ],
+  // --- Domain-specific palettes for spatial map coloring ---
+  // Group 1: Magnitude / Amount — Light → Dark Blue
+  magnitude_blue: [
+    [224, 243, 254],
+    [158, 213, 246],
+    [80, 170, 224],
+    [30, 113, 186],
+    [8, 48, 107],
+  ],
+  // Group 2: Temperature / Thermal — Blue → Cyan → Yellow → Orange → Red
+  temperature: [
+    [43, 80, 188],
+    [50, 190, 210],
+    [255, 238, 88],
+    [245, 152, 40],
+    [204, 24, 30],
+  ],
+  // Group 3: Terrain / Surface — Green → Yellow → Brown → White
+  terrain: [
+    [30, 120, 50],
+    [112, 168, 60],
+    [225, 210, 100],
+    [160, 110, 55],
+    [248, 248, 248],
+  ],
+  // Group 4: Change / Anomaly — Blue → White → Red (diverging)
+  change_anomaly: [
+    [33, 102, 172],
+    [146, 197, 222],
+    [247, 247, 247],
+    [239, 138, 98],
+    [178, 24, 43],
+  ],
+};
+
+// Classify a variable name into a palette group for automatic coloring
+const VARIABLE_PALETTE_RULES = [
+  // Group 4: Change / Anomaly (check first — anomaly keywords override base variable)
+  {
+    palette: 'change_anomaly',
+    patterns: [
+      'anomaly', 'change', 'trend', 'delta', 'deviation', 'difference',
+      'percent_change', 'pct_change', '%_change', 'retreat', 'advance',
+    ],
+  },
+  // Group 2: Temperature / Thermal
+  {
+    palette: 'temperature',
+    patterns: [
+      'temperature', 'temp', 'lst', 'land_surface_temp', 'air_temp',
+      'surface_temp', 'sst', 'thermal', 'heat', 'tmax', 'tmin', 'tmean',
+      't2m', 'skin_temp',
+    ],
+  },
+  // Group 3: Terrain / Surface
+  {
+    palette: 'terrain',
+    patterns: [
+      'elevation', 'dem', 'altitude', 'slope', 'aspect', 'terrain',
+      'topography', 'relief', 'albedo', 'roughness', 'curvature', 'height',
+    ],
+  },
+  // Group 1: Magnitude / Amount (broadest — acts as default for hydro variables)
+  {
+    palette: 'magnitude_blue',
+    patterns: [
+      'precipitation', 'precip', 'rainfall', 'rain', 'runoff', 'discharge',
+      'streamflow', 'soil_moisture', 'sm', 'snow', 'swe', 'snow_depth',
+      'water', 'storage', 'evapotranspiration', 'et', 'evapo', 'transpiration',
+      'groundwater', 'gw', 'baseflow', 'recharge', 'inflow', 'outflow',
+      'humidity', 'moisture', 'ndvi', 'lai', 'ndsi', 'ndwi', 'twsa', 'glacier_area',
+    ],
+  },
+];
+
+const classifyVariablePalette = (variableLabel) => {
+  if (!variableLabel) return null;
+  const lower = String(variableLabel).toLowerCase().replace(/[^a-z0-9_%]/g, '_');
+  for (const rule of VARIABLE_PALETTE_RULES) {
+    for (const pattern of rule.patterns) {
+      if (lower.includes(pattern)) return rule.palette;
+    }
+  }
+  return null;
 };
 
 const clamp01 = (value) => Math.max(0, Math.min(1, value));
 
-const getPaletteStops = (style, fallback = 'viridis') => {
+const getPaletteStops = (style, fallback = 'viridis', variableLabel = '') => {
   if (style?.palette) {
     return paletteStops[String(style.palette).toLowerCase()] || paletteStops[fallback] || paletteStops.cividis;
+  }
+  // Auto-select palette based on variable name when no explicit palette is set
+  const autoPalette = classifyVariablePalette(variableLabel);
+  if (autoPalette) {
+    return paletteStops[autoPalette];
   }
   return paletteStops[fallback] || paletteStops.cividis;
 };
@@ -174,12 +277,12 @@ const interpolateColor = (stops, ratio, alpha) => {
   return [...color, alpha];
 };
 
-const getColorForValue = (value, min, max, style = null) => {
+const getColorForValue = (value, min, max, style = null, variableLabel = '') => {
   const alpha = Math.round(clamp01(Number(style?.opacity ?? 0.78)) * 255);
   if (!Number.isFinite(value)) return [120, 120, 120, 80];
   const fixedColor = parseColor(style?.color, alpha);
   if (fixedColor) return fixedColor;
-  const palette = getPaletteStops(style, 'cividis');
+  const palette = getPaletteStops(style, 'cividis', variableLabel);
   const styledMin = Number.isFinite(Number(style?.vmin)) ? Number(style.vmin) : min;
   const styledMax = Number.isFinite(Number(style?.vmax)) ? Number(style.vmax) : max;
   const ratio = styledMax <= styledMin ? 0.5 : (value - styledMin) / (styledMax - styledMin);
@@ -203,6 +306,38 @@ const getDatumValue = (item) => {
 
 const isGeoJsonFeature = (item) => item?.type === 'Feature' && item?.geometry;
 
+const inferRegularAxisStep = (values) => {
+  const unique = Array.from(new Set(
+    values
+      .map((value) => Number(value))
+      .filter(Number.isFinite)
+      .map((value) => Number(value.toFixed(6)))
+  )).sort((a, b) => a - b);
+  if (unique.length < 3) return null;
+  const differences = [];
+  for (let index = 1; index < unique.length; index += 1) {
+    const difference = unique[index] - unique[index - 1];
+    if (difference > 1e-6) differences.push(difference);
+  }
+  if (differences.length < 2) return null;
+  differences.sort((a, b) => a - b);
+  const candidate = differences[Math.floor(differences.length * 0.25)];
+  if (!Number.isFinite(candidate) || candidate <= 0) return null;
+  const regularity = differences.filter((difference) => {
+    const multiple = difference / candidate;
+    return Math.abs(multiple - Math.round(multiple)) <= 0.08;
+  }).length / differences.length;
+  return regularity >= 0.72 ? candidate : null;
+};
+
+const inferRegularGridResolution = (points) => {
+  if (!points || points.length < 16) return null;
+  const longitudeStep = inferRegularAxisStep(points.map((point) => point?.lon));
+  const latitudeStep = inferRegularAxisStep(points.map((point) => point?.lat));
+  if (!longitudeStep || !latitudeStep) return null;
+  return { longitudeStep, latitudeStep };
+};
+
 const getGlacierMaxFeaturesForZoom = (zoom) => {
   if (zoom >= 10) return 5000;
   if (zoom >= 8) return 3200;
@@ -210,22 +345,33 @@ const getGlacierMaxFeaturesForZoom = (zoom) => {
   return 1000;
 };
 const MIN_GLACIER_VIEW_ZOOM = 3.5;
+const SELECTED_REGION_GLACIER_MAX_FEATURES = 20000;
 
 function MapView({
   data,
   currentDate,
   theme,
   variableLabel,
-  selectionEnabled,
-  onSelectionComplete,
-  onSelectionPreview,
-  selectionBounds,
   selectedSubregionFeature,
   glacierViewEnabled = false,
-  focusLocation,
+  glacierFilterBounds = null,
+  glacierFilterAoi = null,
+  glacierFilterSubregionId,
+  focusLocations = [],
+  onUpdateFocusLocation,
+  onRemoveFocusLocation,
   analysisMode = 'daily',
   hotspotSummary = null,
   layerStyle = null,
+  atlasRegions = [],
+  selectionOnly = false,
+  initialViewState = null,
+  polygonDrawEnabled = false,
+  onPolygonDrawToggle,
+  onAoiComplete,
+  aoiPolygons = [],
+  selectedAoiId = '',
+  onAoiSelect,
 }) {
   const lightStyleOverride = import.meta.env.VITE_MAP_STYLE_LIGHT;
   const darkStyleOverride = import.meta.env.VITE_MAP_STYLE_DARK;
@@ -265,15 +411,27 @@ function MapView({
   const containerRef = useRef(null);
   const deckRef = useRef(null);
   const mapRef = useRef(null);
-  const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
-  const [dragStart, setDragStart] = useState(null);
-  const [dragEnd, setDragEnd] = useState(null);
-  const [isDragging, setIsDragging] = useState(false);
+  const [viewState, setViewState] = useState(() => initialViewState || INITIAL_VIEW_STATE);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [snapshotOpen, setSnapshotOpen] = useState(false);
   const [basinGeoJson, setBasinGeoJson] = useState(null);
   const [glacierGeoJson, setGlacierGeoJson] = useState(null);
   const [glacierMeta, setGlacierMeta] = useState(null);
+  const [draftAoiPoints, setDraftAoiPoints] = useState([]);
   const glacierAbortRef = useRef(null);
+  const viewStateRef = useRef(viewState);
+  const atlasOriginalViewRef = useRef(null);
+  const atlasFeatureRef = useRef(null);
+
+  useEffect(() => {
+    viewStateRef.current = viewState;
+  }, [viewState]);
+
+  useEffect(() => {
+    if (!polygonDrawEnabled && draftAoiPoints.length) {
+      setDraftAoiPoints([]);
+    }
+  }, [polygonDrawEnabled, draftAoiPoints.length]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -307,7 +465,10 @@ function MapView({
       return;
     }
     if (!mapLoaded) return;
-    if (viewState.zoom < MIN_GLACIER_VIEW_ZOOM) {
+    const roiBounds = glacierFilterAoi?.analysis?.bounds || null;
+    const hasRoiFilter = Boolean(glacierFilterAoi?.geometry && roiBounds);
+    const hasRegionFilter = hasRoiFilter || Boolean(glacierFilterBounds);
+    if (!hasRegionFilter && viewState.zoom < MIN_GLACIER_VIEW_ZOOM) {
       glacierAbortRef.current?.abort?.();
       setGlacierGeoJson({ type: 'FeatureCollection', features: [] });
       setGlacierMeta({
@@ -322,18 +483,55 @@ function MapView({
 
     const map = mapRef.current?.getMap?.();
     if (!map) return;
-    const bounds = map.getBounds?.();
-    if (!bounds) return;
+    const viewportBounds = map.getBounds?.();
+    if (!hasRegionFilter && !viewportBounds) return;
 
-    const maxFeatures = getGlacierMaxFeaturesForZoom(viewState.zoom);
+    const requestBounds = hasRoiFilter
+      ? {
+        south: roiBounds.minLat,
+        north: roiBounds.maxLat,
+        west: roiBounds.minLon,
+        east: roiBounds.maxLon,
+      }
+      : hasRegionFilter
+        ? {
+          south: glacierFilterBounds.minLat,
+          north: glacierFilterBounds.maxLat,
+          west: glacierFilterBounds.minLon,
+          east: glacierFilterBounds.maxLon,
+        }
+        : {
+          south: viewportBounds.getSouth(),
+          north: viewportBounds.getNorth(),
+          west: viewportBounds.getWest(),
+          east: viewportBounds.getEast(),
+        };
+    const maxFeatures = hasRegionFilter
+      ? SELECTED_REGION_GLACIER_MAX_FEATURES
+      : getGlacierMaxFeaturesForZoom(viewState.zoom);
     const params = new URLSearchParams({
-      min_lat: String(bounds.getSouth()),
-      max_lat: String(bounds.getNorth()),
-      min_lon: String(bounds.getWest()),
-      max_lon: String(bounds.getEast()),
+      min_lat: String(requestBounds.south),
+      max_lat: String(requestBounds.north),
+      min_lon: String(requestBounds.west),
+      max_lon: String(requestBounds.east),
       zoom: String(viewState.zoom),
       max_features: String(maxFeatures),
     });
+    if (hasRegionFilter) {
+      params.set('complete_within_bbox', 'true');
+    }
+    if (hasRoiFilter) {
+      params.set('aoi_geojson', JSON.stringify({
+        type: 'Feature',
+        properties: {
+          id: glacierFilterAoi.id,
+          label: glacierFilterAoi.name || glacierFilterAoi.label || 'ROI',
+        },
+        geometry: glacierFilterAoi.geometry,
+      }));
+    } else if (glacierFilterSubregionId) {
+      params.set('subregion_id', glacierFilterSubregionId);
+    }
     const requestUrl = `${apiBaseUrl}/glaciers/overview?${params.toString()}`;
 
     const controller = new AbortController();
@@ -403,7 +601,17 @@ function MapView({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [glacierViewEnabled, mapLoaded, apiBaseUrl, viewState.longitude, viewState.latitude, viewState.zoom]);
+  }, [
+    glacierViewEnabled,
+    glacierFilterBounds,
+    glacierFilterAoi,
+    glacierFilterSubregionId,
+    mapLoaded,
+    apiBaseUrl,
+    viewState.longitude,
+    viewState.latitude,
+    viewState.zoom,
+  ]);
 
   const applyIndiaBoundaryLayer = useCallback(() => {
     const map = mapRef.current?.getMap?.();
@@ -567,14 +775,37 @@ function MapView({
   }, [applyIndiaBoundaryLayer]);
 
   useEffect(() => {
-    if (!focusLocation) return;
+    if (!mapLoaded) return undefined;
+
+    const map = mapRef.current?.getMap?.();
+    if (!map) return undefined;
+
+    const scaleControl = new maplibregl.ScaleControl({
+      maxWidth: 112,
+      unit: 'metric',
+    });
+
+    map.addControl(scaleControl, 'bottom-left');
+
+    return () => {
+      try {
+        map.removeControl(scaleControl);
+      } catch (error) {
+        // MapLibre can remove controls during unmount before React cleanup runs.
+      }
+    };
+  }, [mapLoaded]);
+
+  useEffect(() => {
+    if (!focusLocations || focusLocations.length === 0) return;
+    const latest = focusLocations[focusLocations.length - 1];
     setViewState((prev) => ({
       ...prev,
-      longitude: focusLocation.lon,
-      latitude: focusLocation.lat,
+      longitude: latest.lon,
+      latitude: latest.lat,
       transitionDuration: 600,
     }));
-  }, [focusLocation]);
+  }, [focusLocations]);
 
   const valueRange = useMemo(() => {
     if (!data || data.length === 0) {
@@ -620,8 +851,18 @@ function MapView({
     if (analysisMode === 'hotspot') {
       return paletteStops.scientific_diverging;
     }
-    return getPaletteStops(layerStyle, 'cividis');
-  }, [analysisMode, layerStyle]);
+    return getPaletteStops(layerStyle, 'cividis', variableLabel);
+  }, [analysisMode, layerStyle, variableLabel]);
+
+  // Detect whether point data lies on a regular grid so we can render cells
+  // instead of scattered dots. Memoised separately so grid detection only
+  // runs when `data` changes.
+  const gridResolution = useMemo(() => {
+    const pts = (data || []).filter((d) => !isGeoJsonFeature(d));
+    // Skip detection for discharge-network data (it has its own rendering)
+    if (pts.length < 16 || pts.some((d) => d?.kind === 'discharge_network')) return null;
+    return inferRegularGridResolution(pts);
+  }, [data]);
 
   const legendRange = useMemo(() => {
     if (analysisMode === 'hotspot') {
@@ -647,30 +888,65 @@ function MapView({
       .join(', ')})`;
   }, [legendPalette]);
 
+  const aoiFeatureCollection = useMemo(() => ({
+    type: 'FeatureCollection',
+    features: (aoiPolygons || [])
+      .filter((polygon) => polygon?.geometry)
+      .map((polygon, index) => {
+        const role = polygon.role || (index === 0 ? 'roi' : 'polygon');
+        return {
+          type: 'Feature',
+          properties: {
+            id: polygon.id,
+            label: polygon.name || (role === 'roi' ? 'ROI' : 'Polygon'),
+            kind: 'custom_aoi',
+            role,
+            selected: polygon.id === selectedAoiId,
+            area_km2: polygon.analysis?.areaKm2,
+            vertex_count: polygon.analysis?.vertexCount,
+          },
+          geometry: polygon.geometry,
+        };
+      }),
+  }), [aoiPolygons, selectedAoiId]);
+
+  const draftAoiFeatureCollection = useMemo(() => {
+    const features = [];
+    if (draftAoiPoints.length >= 2) {
+      features.push({
+        type: 'Feature',
+        properties: { kind: 'draft_aoi_line' },
+        geometry: {
+          type: 'LineString',
+          coordinates: draftAoiPoints,
+        },
+      });
+    }
+    draftAoiPoints.forEach((coordinate, index) => {
+      features.push({
+        type: 'Feature',
+        properties: {
+          kind: 'draft_aoi_vertex',
+          index,
+        },
+        geometry: {
+          type: 'Point',
+          coordinates: coordinate,
+        },
+      });
+    });
+    return {
+      type: 'FeatureCollection',
+      features,
+    };
+  }, [draftAoiPoints]);
+
   const layers = useMemo(() => {
     const result = [];
     const featureData = (data || []).filter(isGeoJsonFeature);
     const pointData = (data || []).filter((item) => !isGeoJsonFeature(item));
 
-    if (!glacierViewEnabled && basinGeoJson) {
-      result.push(
-        new GeoJsonLayer({
-          id: 'upper-indus-basin-boundary',
-          data: basinGeoJson,
-          stroked: true,
-          filled: true,
-          pickable: false,
-          getFillColor: theme === 'dark' ? [42, 157, 143, 10] : [42, 157, 143, 12],
-          getLineColor: theme === 'dark' ? [150, 203, 195, 180] : [0, 84, 120, 185],
-          lineWidthUnits: 'pixels',
-          lineWidthMinPixels: 1,
-          lineWidthMaxPixels: 2,
-          getLineWidth: 1.0,
-          parameters: { depthTest: false },
-        })
-      );
-    }
-
+    // ── Glacier layer (below data) ──────────────────────────────────────
     if (glacierViewEnabled && glacierGeoJson) {
       result.push(
         new GeoJsonLayer({
@@ -691,15 +967,162 @@ function MapView({
       );
     }
 
+    // ── Draft AOI (below data, drawing helper) ──────────────────────────
+    if (draftAoiFeatureCollection.features.length > 0) {
+      result.push(
+        new GeoJsonLayer({
+          id: 'draft-aoi-polygon',
+          data: draftAoiFeatureCollection,
+          stroked: true,
+          filled: true,
+          pickable: false,
+          pointType: 'circle',
+          getFillColor: (feature) => (
+            feature.geometry?.type === 'Point' ? [255, 179, 64, 240] : [255, 179, 64, 28]
+          ),
+          getLineColor: [255, 179, 64, 240],
+          lineWidthUnits: 'pixels',
+          lineWidthMinPixels: 2,
+          getLineWidth: 2,
+          getPointRadius: 5,
+          pointRadiusUnits: 'pixels',
+          parameters: { depthTest: false },
+        })
+      );
+    }
+
+    // ── Data layers ─────────────────────────────────────────────────────
+    if (data && data.length > 0) {
+      // GeoJSON feature data (pre-built polygon cells from backend)
+      if (featureData.length > 0) {
+        result.push(
+          new GeoJsonLayer({
+            id: 'geoparquet-network-cells',
+            data: {
+              type: 'FeatureCollection',
+              features: featureData,
+            },
+            pickable: true,
+            stroked: false,
+            filled: true,
+            opacity: 0.92,
+            getFillColor: (feature) => getColorForValue(getDatumValue(feature), valueRange.min, valueRange.max, layerStyle, variableLabel),
+            updateTriggers: {
+              getFillColor: [valueRange.min, valueRange.max, layerStyle, variableLabel],
+            },
+            parameters: { depthTest: false },
+          })
+        );
+      }
+
+      // Point data — render as grid cells (GeoJsonLayer with constructed
+      // polygons) when a regular grid is detected, otherwise scatter.
+      if (pointData.length > 0) {
+        if (gridResolution) {
+          // ── Grid-cell mode: raster-like filled rectangles ─────────
+          const halfLon = gridResolution.longitudeStep / 2;
+          const halfLat = gridResolution.latitudeStep / 2;
+
+          const gridCellFeatures = pointData.map((d) => ({
+            type: 'Feature',
+            properties: { ...d, _grid: true },
+            geometry: {
+              type: 'Polygon',
+              coordinates: [[
+                [d.lon - halfLon, d.lat - halfLat],
+                [d.lon + halfLon, d.lat - halfLat],
+                [d.lon + halfLon, d.lat + halfLat],
+                [d.lon - halfLon, d.lat + halfLat],
+                [d.lon - halfLon, d.lat - halfLat],
+              ]],
+            },
+          }));
+
+          result.push(
+            new GeoJsonLayer({
+              id: 'variable-grid-cells',
+              data: { type: 'FeatureCollection', features: gridCellFeatures },
+              pickable: true,
+              stroked: false,
+              filled: true,
+              getFillColor: (feature) => {
+                const d = feature.properties || feature;
+                return analysisMode === 'hotspot'
+                  ? getColorForTrend(d.slope_per_year, trendRange.maxAbs)
+                  : getColorForValue(getDatumValue(feature), valueRange.min, valueRange.max, layerStyle, variableLabel);
+              },
+              updateTriggers: {
+                getFillColor: [analysisMode, valueRange.min, valueRange.max, trendRange.maxAbs, layerStyle, variableLabel],
+              },
+              parameters: { depthTest: false },
+            })
+          );
+        } else {
+          // ── Scatter mode: individual circles for non-gridded data ──
+          result.push(
+            new ScatterplotLayer({
+              id: 'variable-scatter',
+              data: pointData,
+              pickable: true,
+              opacity: analysisMode === 'hotspot' ? 0.86 : 0.78,
+              stroked: false,
+              filled: true,
+              radiusScale: 1,
+              radiusMinPixels: analysisMode === 'hotspot' ? 3 : 2,
+              radiusMaxPixels: analysisMode === 'hotspot' ? 10 : 9,
+              getPosition: (d) => [d.lon, d.lat],
+              getRadius: (d) => {
+                if (d?.kind === 'discharge_network') return 520;
+                if (d?.kind === 'dem') return 1800;
+                if (analysisMode !== 'hotspot') return 300;
+                const strength = Number.isFinite(d?.trend_strength) ? d.trend_strength : 0;
+                const maxAbs = trendRange.maxAbs || 1;
+                const normalized = Math.min(1, Math.max(0, strength / maxAbs));
+                return 260 + normalized * 620;
+              },
+              getFillColor: (d) => (
+                analysisMode === 'hotspot'
+                  ? getColorForTrend(d.slope_per_year, trendRange.maxAbs)
+                  : getColorForValue(getDatumValue(d), valueRange.min, valueRange.max, layerStyle, variableLabel)
+              ),
+              updateTriggers: {
+                getFillColor: [analysisMode, valueRange.min, valueRange.max, trendRange.maxAbs, layerStyle, variableLabel],
+                getRadius: [analysisMode, trendRange.maxAbs],
+              },
+              parameters: { depthTest: false },
+            })
+          );
+        }
+      }
+    }
+
+    // ── Boundary outlines ON TOP of data so they remain visible ─────────
+    if (!glacierViewEnabled && basinGeoJson) {
+      result.push(
+        new GeoJsonLayer({
+          id: 'upper-indus-basin-boundary',
+          data: basinGeoJson,
+          stroked: true,
+          filled: false,
+          pickable: false,
+          getLineColor: theme === 'dark' ? [150, 203, 195, 180] : [0, 84, 120, 185],
+          lineWidthUnits: 'pixels',
+          lineWidthMinPixels: 1,
+          lineWidthMaxPixels: 2,
+          getLineWidth: 1.0,
+          parameters: { depthTest: false },
+        })
+      );
+    }
+
     if (selectedSubregionFeature) {
       result.push(
         new GeoJsonLayer({
           id: 'selected-subregion-boundary',
           data: selectedSubregionFeature,
           stroked: true,
-          filled: true,
+          filled: false,
           pickable: false,
-          getFillColor: theme === 'dark' ? [213, 73, 91, 28] : [196, 60, 78, 30],
           getLineColor: theme === 'dark' ? [255, 190, 190, 235] : [170, 35, 52, 230],
           lineWidthUnits: 'pixels',
           lineWidthMinPixels: 1.5,
@@ -710,96 +1133,94 @@ function MapView({
       );
     }
 
-    if (!data || data.length === 0) {
-      return result;
-    }
-
-    if (featureData.length > 0) {
+    if (aoiFeatureCollection.features.length > 0) {
       result.push(
         new GeoJsonLayer({
-          id: 'geoparquet-network-cells',
-          data: {
-            type: 'FeatureCollection',
-            features: featureData,
-          },
-          pickable: true,
+          id: 'custom-aoi-polygons',
+          data: aoiFeatureCollection,
           stroked: true,
-          filled: true,
-          opacity: 0.92,
-          getFillColor: (feature) => getColorForValue(getDatumValue(feature), valueRange.min, valueRange.max, layerStyle),
-          getLineColor: theme === 'dark' ? [17, 22, 27, 95] : [255, 255, 255, 120],
+          filled: false,
+          pickable: !polygonDrawEnabled,
+          autoHighlight: true,
+          getLineColor: (feature) => (
+            feature.properties?.selected
+              ? [255, 179, 64, 245]
+              : (theme === 'dark' ? [111, 220, 198, 210] : [0, 110, 104, 210])
+          ),
           lineWidthUnits: 'pixels',
-          lineWidthMinPixels: 0.05,
-          lineWidthMaxPixels: 0.45,
-          getLineWidth: 0.18,
+          lineWidthMinPixels: 1.4,
+          lineWidthMaxPixels: 4,
+          getLineWidth: (feature) => (feature.properties?.selected ? 2.6 : 1.7),
           updateTriggers: {
-            getFillColor: [valueRange.min, valueRange.max, layerStyle],
-            getLineColor: [theme],
+            getLineColor: [theme, selectedAoiId],
+            getLineWidth: [selectedAoiId],
           },
           parameters: { depthTest: false },
         })
       );
     }
 
-    if (pointData.length === 0) {
-      return result;
-    }
-
-    const scatterLayer = new ScatterplotLayer({
-      id: 'variable-scatter',
-      data: pointData,
-      pickable: true,
-      opacity: analysisMode === 'hotspot' ? 0.86 : 0.78,
-      stroked: false,
-      filled: true,
-      radiusScale: 1,
-      radiusMinPixels: analysisMode === 'hotspot' ? 3 : 2,
-      radiusMaxPixels: analysisMode === 'hotspot' ? 10 : 9,
-      getPosition: (d) => [d.lon, d.lat],
-      getRadius: (d) => {
-        if (d?.kind === 'discharge_network') return 520;
-        if (analysisMode !== 'hotspot') return 300;
-        const strength = Number.isFinite(d?.trend_strength) ? d.trend_strength : 0;
-        const maxAbs = trendRange.maxAbs || 1;
-        const normalized = Math.min(1, Math.max(0, strength / maxAbs));
-        return 260 + normalized * 620;
-      },
-      getFillColor: (d) => (
-        analysisMode === 'hotspot'
-          ? getColorForTrend(d.slope_per_year, trendRange.maxAbs)
-          : getColorForValue(getDatumValue(d), valueRange.min, valueRange.max, layerStyle)
-      ),
-      updateTriggers: {
-        getFillColor: [analysisMode, valueRange.min, valueRange.max, trendRange.maxAbs, layerStyle],
-        getRadius: [analysisMode, trendRange.maxAbs],
-      },
-      parameters: { depthTest: false },
-    });
-
-    result.push(scatterLayer);
     return result;
   }, [
     data,
     valueRange,
+    gridResolution,
     basinGeoJson,
     glacierGeoJson,
     glacierViewEnabled,
     selectedSubregionFeature,
+    aoiFeatureCollection,
+    draftAoiFeatureCollection,
+    polygonDrawEnabled,
+    selectedAoiId,
     theme,
     analysisMode,
     trendRange,
     layerStyle,
+    variableLabel,
   ]);
 
   const deckController = useMemo(() => {
-    if (selectionEnabled) return false;
+    if (polygonDrawEnabled) return false;
     return {
       maxZoom: indiaPmMaxZoom,
     };
-  }, [selectionEnabled]);
+  }, [polygonDrawEnabled]);
 
   const getTooltip = useCallback(({ object }) => {
     if (!object) return null;
+
+    // Grid-cell features from GeoJsonLayer carry datum fields in properties.
+    // Unwrap so all downstream tooltip paths see flat datum properties.
+    if (object?.properties?._grid) {
+      object = object.properties;
+    }
+
+    if (object?.properties?.kind === 'custom_aoi') {
+      const props = object.properties || {};
+      const area = Number(props.area_km2);
+      return {
+        html: `
+          <div style="background: var(--tooltip-bg); padding: 12px; border-radius: 8px; color: var(--text); border: 1px solid var(--tooltip-border);">
+            <div style="margin-bottom: 8px; font-weight: bold; border-bottom: 1px solid var(--map-overlay-border); padding-bottom: 4px;">
+              ${props.role === 'roi' ? 'ROI Polygon' : 'Polygon'}
+            </div>
+            <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; font-size: 13px;">
+              <span style="color: var(--text-muted);">Name:</span>
+              <span>${props.label || 'Polygon'}</span>
+              <span style="color: var(--text-muted);">Area:</span>
+              <span>${Number.isFinite(area) ? area.toFixed(2) : 'N/A'} km²</span>
+              <span style="color: var(--text-muted);">Vertices:</span>
+              <span>${Number(props.vertex_count || 0).toLocaleString()}</span>
+            </div>
+          </div>
+        `,
+        style: {
+          backgroundColor: 'transparent',
+          fontSize: '14px',
+        },
+      };
+    }
 
     if (object?.properties?.kind === 'glacier') {
       const props = object.properties || {};
@@ -846,6 +1267,29 @@ function MapView({
               <span style="font-weight: bold;">${Number.isFinite(value) ? value.toFixed(2) : 'N/A'}</span>
               <span style="color: var(--text-muted);">Coordinates:</span>
               <span>${Number.isFinite(lat) ? lat.toFixed(4) : 'N/A'}N, ${Number.isFinite(lon) ? lon.toFixed(4) : 'N/A'}E</span>
+            </div>
+          </div>
+        `,
+        style: {
+          backgroundColor: 'transparent',
+          fontSize: '14px',
+        },
+      };
+    }
+
+    if (object?.kind === 'dem') {
+      const elevation = getDatumValue(object);
+      return {
+        html: `
+          <div style="background: var(--tooltip-bg); padding: 12px; border-radius: 8px; color: var(--text); border: 1px solid var(--tooltip-border);">
+            <div style="margin-bottom: 8px; font-weight: bold; border-bottom: 1px solid var(--map-overlay-border); padding-bottom: 4px;">
+              SRTM Terrain
+            </div>
+            <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; font-size: 13px;">
+              <span style="color: var(--text-muted);">Elevation:</span>
+              <span style="font-weight: bold;">${Number.isFinite(elevation) ? elevation.toFixed(0) : 'N/A'} m</span>
+              <span style="color: var(--text-muted);">Coordinates:</span>
+              <span>${Number(object.lat).toFixed(4)}N, ${Number(object.lon).toFixed(4)}E</span>
             </div>
           </div>
         `,
@@ -921,15 +1365,6 @@ function MapView({
     };
   }, [analysisMode, currentDate, variableLabel]);
 
-  const getLocalPoint = useCallback((event) => {
-    if (!containerRef.current) return null;
-    const rect = containerRef.current.getBoundingClientRect();
-    return {
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top,
-    };
-  }, []);
-
   const getViewport = () => {
     const deckInstance = deckRef.current?.deck;
     if (deckInstance?.getViewports) {
@@ -941,107 +1376,349 @@ function MapView({
     return null;
   };
 
-  const computeBoundsFromPixels = useCallback((start, end) => {
-    const viewport = getViewport();
-    if (!viewport) return null;
+  const finishDraftAoi = useCallback((points) => {
+    if (!points || points.length < 3) return;
+    const ring = [...points, points[0]];
+    onAoiComplete?.({
+      type: 'Polygon',
+      coordinates: [ring],
+    });
+    setDraftAoiPoints([]);
+  }, [onAoiComplete]);
 
-    const minX = Math.min(start.x, end.x);
-    const maxX = Math.max(start.x, end.x);
-    const minY = Math.min(start.y, end.y);
-    const maxY = Math.max(start.y, end.y);
+  const handleDeckClick = useCallback((info) => {
+    if (polygonDrawEnabled) {
+      const coordinate = info?.coordinate;
+      if (!coordinate || coordinate.length < 2) return true;
+      const lon = Number(coordinate[0]);
+      const lat = Number(coordinate[1]);
+      if (!Number.isFinite(lon) || !Number.isFinite(lat)) return true;
 
-    const topLeft = viewport.unproject([minX, minY]);
-    const bottomRight = viewport.unproject([maxX, maxY]);
+      if (draftAoiPoints.length >= 3) {
+        const viewport = getViewport();
+        const firstPixel = viewport?.project?.(draftAoiPoints[0]);
+        const clickedPixel = viewport?.project?.([lon, lat]);
+        if (firstPixel && clickedPixel) {
+          const distance = Math.hypot(firstPixel[0] - clickedPixel[0], firstPixel[1] - clickedPixel[1]);
+          if (distance <= 14) {
+            finishDraftAoi(draftAoiPoints);
+            return true;
+          }
+        }
+      }
+      if (draftAoiPoints.length >= 500) {
+        finishDraftAoi(draftAoiPoints);
+        return true;
+      }
+      setDraftAoiPoints((current) => [...current, [lon, lat]]);
+      return true;
+    }
 
-    const minLon = Math.min(topLeft[0], bottomRight[0]);
-    const maxLon = Math.max(topLeft[0], bottomRight[0]);
-    const minLat = Math.min(topLeft[1], bottomRight[1]);
-    const maxLat = Math.max(topLeft[1], bottomRight[1]);
+    const object = info?.object;
+    if (object?.properties?.kind === 'custom_aoi') {
+      onAoiSelect?.(object.properties.id || '');
+      return true;
+    }
+    return false;
+  }, [draftAoiPoints, finishDraftAoi, onAoiSelect, polygonDrawEnabled]);
 
-    return { minLat, maxLat, minLon, maxLon };
+  const handleDeckDoubleClick = useCallback(() => {
+    if (!polygonDrawEnabled || draftAoiPoints.length < 3) return false;
+    finishDraftAoi(draftAoiPoints);
+    return true;
+  }, [draftAoiPoints, finishDraftAoi, polygonDrawEnabled]);
+
+  const prepareSnapshotCapture = useCallback(async (requestedScale = 1, backgroundColor = '#ffffff') => {
+    const map = mapRef.current?.getMap?.();
+    const deck = deckRef.current?.deck;
+    if (!map) return undefined;
+    const previousPixelRatio = map.getPixelRatio?.() || window.devicePixelRatio || 1;
+    const mapBounds = containerRef.current?.getBoundingClientRect?.();
+    const maxCanvasDimension = 8192;
+    const safePixelRatio = mapBounds?.width && mapBounds?.height
+      ? Math.min(8, maxCanvasDimension / mapBounds.width, maxCanvasDimension / mapBounds.height)
+      : 4;
+    const exportPixelRatio = Math.min(
+      Math.max(previousPixelRatio, safePixelRatio),
+      Math.max(previousPixelRatio, Number(requestedScale) || 1),
+    );
+    const backgroundLayers = (map.getStyle?.()?.layers || [])
+      .filter((layer) => layer.type === 'background')
+      .map((layer) => ({
+        id: layer.id,
+        color: map.getPaintProperty?.(layer.id, 'background-color'),
+      }));
+    backgroundLayers.forEach((layer) => {
+      map.setPaintProperty?.(layer.id, 'background-color', backgroundColor);
+    });
+    if (Math.abs(exportPixelRatio - previousPixelRatio) > 0.01) {
+      map.setPixelRatio?.(exportPixelRatio);
+    }
+    map?.triggerRepaint?.();
+    deck?.redraw?.(true);
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    return () => {
+      backgroundLayers.forEach((layer) => {
+        map.setPaintProperty?.(layer.id, 'background-color', layer.color);
+      });
+      if (Math.abs(exportPixelRatio - previousPixelRatio) > 0.01) {
+        map.setPixelRatio?.(previousPixelRatio);
+      }
+      map.triggerRepaint?.();
+    };
   }, []);
 
-  const finishSelection = useCallback(() => {
-    if (!dragStart || !dragEnd) return;
-    const dx = Math.abs(dragEnd.x - dragStart.x);
-    const dy = Math.abs(dragEnd.y - dragStart.y);
-    if (dx < 4 || dy < 4) {
-      setIsDragging(false);
-      setDragStart(null);
-      setDragEnd(null);
-      return;
-    }
-
-    const bounds = computeBoundsFromPixels(dragStart, dragEnd);
-    if (!bounds) return;
-    onSelectionComplete?.(bounds);
-
-    setIsDragging(false);
-    setDragStart(null);
-    setDragEnd(null);
-  }, [dragStart, dragEnd, onSelectionComplete]);
-
-  const handleMouseDown = useCallback((event) => {
-    if (!selectionEnabled) return;
-    const point = getLocalPoint(event);
-    if (!point) return;
-    setDragStart(point);
-    setDragEnd(point);
-    setIsDragging(true);
-  }, [selectionEnabled, getLocalPoint]);
-
-  const handleMouseMove = useCallback((event) => {
-    if (!selectionEnabled || !isDragging) return;
-    const point = getLocalPoint(event);
-    if (!point) return;
-    setDragEnd(point);
-    const bounds = computeBoundsFromPixels(dragStart, point);
-    if (bounds) {
-      onSelectionPreview?.(bounds);
-    }
-  }, [selectionEnabled, isDragging, getLocalPoint, dragStart, computeBoundsFromPixels, onSelectionPreview]);
-
-  const handleMouseUp = useCallback(() => {
-    if (!selectionEnabled || !isDragging) return;
-    finishSelection();
-  }, [selectionEnabled, isDragging, finishSelection]);
-
-  const handleMouseLeave = useCallback(() => {
-    if (!selectionEnabled || !isDragging) return;
-    finishSelection();
-  }, [selectionEnabled, isDragging, finishSelection]);
-
-  const selectionBoxStyle = useMemo(() => {
-    if (!dragStart || !dragEnd || !isDragging) return null;
-    const left = Math.min(dragStart.x, dragEnd.x);
-    const top = Math.min(dragStart.y, dragEnd.y);
-    const width = Math.abs(dragEnd.x - dragStart.x);
-    const height = Math.abs(dragEnd.y - dragStart.y);
-    return { left, top, width, height };
-  }, [dragStart, dragEnd, isDragging]);
-
-  const persistentBoxStyle = useMemo(() => {
-    if (!selectionBounds || isDragging) return null;
+  const focusSnapshotAtlasRegion = useCallback(async (region) => {
+    const bounds = region?.bounds;
     const viewport = getViewport();
-    if (!viewport) return null;
-
-    const topLeft = viewport.project([selectionBounds.minLon, selectionBounds.maxLat]);
-    const bottomRight = viewport.project([selectionBounds.maxLon, selectionBounds.minLat]);
-
-    const left = Math.min(topLeft[0], bottomRight[0]);
-    const top = Math.min(topLeft[1], bottomRight[1]);
-    const width = Math.abs(bottomRight[0] - topLeft[0]);
-    const height = Math.abs(bottomRight[1] - topLeft[1]);
-
-    if (!Number.isFinite(left) || !Number.isFinite(top) || width <= 0 || height <= 0) {
-      return null;
+    if (!bounds || !viewport?.fitBounds) return;
+    if (!atlasOriginalViewRef.current) {
+      atlasOriginalViewRef.current = { ...viewStateRef.current };
     }
+    const fitted = viewport.fitBounds(
+      [
+        [Number(bounds.min_lon), Number(bounds.min_lat)],
+        [Number(bounds.max_lon), Number(bounds.max_lat)],
+      ],
+      { padding: Math.max(38, Math.min(viewport.width, viewport.height) * 0.1) },
+    );
+    setViewState((current) => ({
+      ...current,
+      longitude: fitted.longitude,
+      latitude: fitted.latitude,
+      zoom: Math.min(indiaPmMaxZoom, fitted.zoom),
+      transitionDuration: 0,
+    }));
+    atlasFeatureRef.current = null;
+    try {
+      const response = await fetch(`${apiBaseUrl}/subregions/${encodeURIComponent(region.id)}/geometry`);
+      if (response.ok) {
+        const payload = await response.json();
+        atlasFeatureRef.current = payload?.feature || null;
+      }
+    } catch (atlasError) {
+      atlasFeatureRef.current = null;
+    }
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  }, [apiBaseUrl]);
 
-    return { left, top, width, height };
-  }, [selectionBounds, isDragging, viewState]);
+  const restoreSnapshotAtlasView = useCallback(async () => {
+    atlasFeatureRef.current = null;
+    if (atlasOriginalViewRef.current) {
+      const original = atlasOriginalViewRef.current;
+      atlasOriginalViewRef.current = null;
+      setViewState({ ...original, transitionDuration: 0 });
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    }
+  }, []);
+
+  const renderSnapshotDataOverlay = useCallback((context, selection, scale) => {
+    const viewport = getViewport();
+    const mapElement = containerRef.current;
+    if (!viewport || !mapElement || !data?.length) return;
+
+    const mapBounds = mapElement.getBoundingClientRect();
+    const toOutputPoint = (coordinate) => {
+      const longitude = Number(coordinate?.[0]);
+      const latitude = Number(coordinate?.[1]);
+      if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) return null;
+      const projected = viewport.project([longitude, latitude]);
+      return [
+        (mapBounds.left + projected[0] - selection.left) * scale,
+        (mapBounds.top + projected[1] - selection.top) * scale,
+      ];
+    };
+    const colorForDatum = (datum) => (
+      analysisMode === 'hotspot'
+        ? getColorForTrend(Number(datum?.slope_per_year ?? datum?.properties?.slope_per_year), trendRange.maxAbs)
+        : getColorForValue(getDatumValue(datum), valueRange.min, valueRange.max, layerStyle, variableLabel)
+    );
+    const applyColor = (color, opacity = 1) => {
+      const alpha = Math.min(1, Math.max(0, ((Number(color?.[3]) || 255) / 255) * opacity));
+      return `rgba(${color?.[0] || 0}, ${color?.[1] || 0}, ${color?.[2] || 0}, ${alpha})`;
+    };
+    const drawLine = (coordinates, closePath = false) => {
+      let started = false;
+      coordinates.forEach((coordinate) => {
+        const point = toOutputPoint(coordinate);
+        if (!point) return;
+        if (!started) {
+          context.moveTo(point[0], point[1]);
+          started = true;
+        } else {
+          context.lineTo(point[0], point[1]);
+        }
+      });
+      if (closePath && started) context.closePath();
+    };
+    const addGeometryPath = (geometry) => {
+      if (!geometry) return false;
+      if (geometry.type === 'Polygon') {
+        geometry.coordinates.forEach((ring) => drawLine(ring, true));
+      } else if (geometry.type === 'MultiPolygon') {
+        geometry.coordinates.forEach((polygon) => polygon.forEach((ring) => drawLine(ring, true)));
+      } else if (geometry.type === 'LineString') {
+        drawLine(geometry.coordinates);
+      } else if (geometry.type === 'MultiLineString') {
+        geometry.coordinates.forEach((line) => drawLine(line));
+      } else {
+        return false;
+      }
+      return true;
+    };
+    const drawBoundaryOverlay = (geoJson, strokeStyle, lineWidth) => {
+      if (!geoJson) return;
+      const features = geoJson.type === 'FeatureCollection'
+        ? geoJson.features || []
+        : geoJson.type === 'Feature'
+          ? [geoJson]
+          : [{ geometry: geoJson }];
+      context.beginPath();
+      let hasPath = false;
+      features.forEach((feature) => {
+        hasPath = addGeometryPath(feature?.geometry) || hasPath;
+      });
+      if (!hasPath) return;
+      context.strokeStyle = strokeStyle;
+      context.lineWidth = lineWidth;
+      context.lineJoin = 'round';
+      context.lineCap = 'round';
+      context.stroke();
+    };
+    const pointData = data.filter((datum) => !isGeoJsonFeature(datum));
+    const hasPointNetwork = pointData.some((datum) => datum?.kind === 'discharge_network');
+    const gridResolution = hasPointNetwork ? null : inferRegularGridResolution(pointData);
+
+    context.save();
+    context.beginPath();
+    context.rect(0, 0, selection.width * scale, selection.height * scale);
+    context.clip();
+
+    data.forEach((datum) => {
+      const color = colorForDatum(datum);
+      if (!isGeoJsonFeature(datum)) {
+        const longitude = Number(datum?.lon);
+        const latitude = Number(datum?.lat);
+        const opaqueColor = `rgb(${color?.[0] || 0}, ${color?.[1] || 0}, ${color?.[2] || 0})`;
+        if (gridResolution && Number.isFinite(longitude) && Number.isFinite(latitude)) {
+          const halfLongitude = gridResolution.longitudeStep / 2;
+          const halfLatitude = gridResolution.latitudeStep / 2;
+          const cell = [
+            [longitude - halfLongitude, latitude - halfLatitude],
+            [longitude + halfLongitude, latitude - halfLatitude],
+            [longitude + halfLongitude, latitude + halfLatitude],
+            [longitude - halfLongitude, latitude + halfLatitude],
+          ].map(toOutputPoint);
+          if (cell.some((point) => !point)) return;
+          context.beginPath();
+          context.moveTo(cell[0][0], cell[0][1]);
+          for (let index = 1; index < cell.length; index += 1) {
+            context.lineTo(cell[index][0], cell[index][1]);
+          }
+          context.closePath();
+          context.fillStyle = opaqueColor;
+          context.strokeStyle = opaqueColor;
+          context.lineWidth = Math.max(0.65, scale * 0.22);
+          context.fill();
+          context.stroke();
+          return;
+        }
+
+        // Irregular observations are point samples, not raster cells. A small
+        // square preserves their discrete nature without implying a circular
+        // spatial footprint.
+        const point = toOutputPoint([longitude, latitude]);
+        if (!point) return;
+        const symbolSize = (analysisMode === 'hotspot' ? 5 : 3.5) * scale;
+        context.fillStyle = opaqueColor;
+        context.fillRect(
+          point[0] - (symbolSize / 2),
+          point[1] - (symbolSize / 2),
+          symbolSize,
+          symbolSize,
+        );
+        return;
+      }
+
+      const geometry = datum.geometry || {};
+      context.beginPath();
+      if (!addGeometryPath(geometry)) return;
+      context.fillStyle = applyColor(color, 0.92);
+      context.strokeStyle = theme === 'dark' ? 'rgba(17, 22, 27, 0.45)' : 'rgba(255, 255, 255, 0.55)';
+      context.lineWidth = Math.max(0.35, 0.45 * scale);
+      if (geometry.type.includes('Polygon')) context.fill('evenodd');
+      context.stroke();
+    });
+
+    // Cartographic reference outlines belong above the scientific surface.
+    if (!glacierViewEnabled) {
+      drawBoundaryOverlay(
+        basinGeoJson,
+        theme === 'dark' ? 'rgba(190, 231, 225, 0.95)' : 'rgba(0, 76, 110, 0.95)',
+        Math.max(1.2, scale * 0.75),
+      );
+    }
+    if (glacierViewEnabled) {
+      drawBoundaryOverlay(
+        glacierGeoJson,
+        theme === 'dark' ? 'rgba(235, 247, 250, 0.92)' : 'rgba(30, 96, 120, 0.92)',
+        Math.max(0.8, scale * 0.5),
+      );
+    }
+    drawBoundaryOverlay(
+      selectedSubregionFeature,
+      theme === 'dark' ? 'rgba(255, 205, 205, 0.98)' : 'rgba(155, 20, 42, 0.98)',
+      Math.max(1.5, scale * 0.95),
+    );
+    drawBoundaryOverlay(
+      atlasFeatureRef.current,
+      theme === 'dark' ? 'rgba(255, 226, 138, 1)' : 'rgba(141, 75, 0, 1)',
+      Math.max(1.8, scale * 1.1),
+    );
+    context.restore();
+  }, [
+    data,
+    analysisMode,
+    trendRange.maxAbs,
+    valueRange.min,
+    valueRange.max,
+    layerStyle,
+    theme,
+    viewState,
+    basinGeoJson,
+    glacierGeoJson,
+    glacierViewEnabled,
+    selectedSubregionFeature,
+  ]);
+
+  const snapshotMetadata = useMemo(() => ({
+    variableLabel: analysisMode === 'hotspot' ? 'Trend slope / year' : variableLabel,
+    analysisMode,
+    currentDate,
+    pointCount: data.length,
+    legendRange,
+    legendPalette,
+    bearing: Number(viewState.bearing) || 0,
+    atlasRegions,
+    focusAtlasRegion: focusSnapshotAtlasRegion,
+    restoreAtlasView: restoreSnapshotAtlasView,
+    project: (coordinate) => getViewport()?.project(coordinate),
+    unproject: (point) => getViewport()?.unproject(point),
+  }), [
+    analysisMode,
+    variableLabel,
+    currentDate,
+    data.length,
+    legendRange,
+    legendPalette,
+    viewState,
+    atlasRegions,
+    focusSnapshotAtlasRegion,
+    restoreSnapshotAtlasView,
+  ]);
 
   return (
-    <div ref={containerRef} style={{ position: 'relative', width: '100%', height: '100%' }}>
+    <div className="map-view" ref={containerRef} style={{ position: 'relative', width: '100%', height: '100%' }}>
       <DeckGL
         ref={deckRef}
         viewState={viewState}
@@ -1049,6 +1726,8 @@ function MapView({
         controller={deckController}
         layers={layers}
         getTooltip={getTooltip}
+        onClick={handleDeckClick}
+        onDblClick={handleDeckDoubleClick}
         style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
       >
         <Map
@@ -1058,120 +1737,153 @@ function MapView({
           maxZoom={indiaPmMaxZoom}
           onLoad={handleMapLoad}
           onStyleData={handleMapStyleData}
-        />
+        >
+          {focusLocations.map((loc) => (
+            <Marker
+              key={loc.id}
+              longitude={loc.lon}
+              latitude={loc.lat}
+              draggable
+              onDragEnd={(e) => onUpdateFocusLocation?.(loc.id, e.lngLat.lat, e.lngLat.lng)}
+              onClick={(e) => {
+                e.originalEvent.stopPropagation();
+                onRemoveFocusLocation?.(loc.id);
+              }}
+            >
+              <div
+                style={{
+                  cursor: 'pointer',
+                  transform: 'translate(0, -24px)',
+                }}
+                title="Drag to move. Click to remove."
+              >
+                <img src={FOCUS_PIN_SVG_URL} style={{ width: 48, height: 64, pointerEvents: 'none' }} alt="pin" />
+              </div>
+            </Marker>
+          ))}
+        </Map>
       </DeckGL>
 
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          cursor: selectionEnabled ? 'crosshair' : 'grab',
-          pointerEvents: selectionEnabled ? 'all' : 'none',
-        }}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseLeave}
-      />
+      {!selectionOnly && <div className="map-aoi-tools" onMouseDown={(event) => event.stopPropagation()}>
+        <button
+          type="button"
+          className={`map-aoi-button ${polygonDrawEnabled ? 'active' : ''}`}
+          onClick={() => onPolygonDrawToggle?.()}
+          title={polygonDrawEnabled ? 'Cancel polygon drawing' : 'Draw a polygon'}
+          aria-pressed={polygonDrawEnabled}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M7.2 4.6 18 7.1l1.7 9.9-8.6 3.1-7.8-6.2 3.9-9.3Zm.9 2.2-2.5 6 5.9 4.7 6-2.1-1.2-6.7-8.2-1.9Z" />
+          </svg>
+          <span>{polygonDrawEnabled ? 'Cancel' : 'Polygon'}</span>
+        </button>
+        {polygonDrawEnabled && (
+          <div className="map-aoi-instruction">
+            {draftAoiPoints.length < 3
+              ? `Click ${3 - draftAoiPoints.length} more point${3 - draftAoiPoints.length === 1 ? '' : 's'}`
+              : 'Click the first point or double-click to close'}
+          </div>
+        )}
+      </div>}
 
-      {selectionBoxStyle && (
-        <div
-          style={{
-            position: 'absolute',
-            left: selectionBoxStyle.left,
-            top: selectionBoxStyle.top,
-            width: selectionBoxStyle.width,
-            height: selectionBoxStyle.height,
-            border: '2px dashed var(--accent)',
-            background: 'rgba(77, 171, 247, 0.15)',
-            pointerEvents: 'none',
-          }}
-        />
-      )}
+      {!selectionOnly && <button
+        type="button"
+        className="map-snapshot-button"
+        onClick={() => setSnapshotOpen(true)}
+        onMouseDown={(event) => event.stopPropagation()}
+        title="Create a publication-ready map snapshot"
+        aria-label="Open map snapshot and print layout"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M8.2 5.5 9.4 3.8h5.2l1.2 1.7H19a2 2 0 0 1 2 2v10.2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7.5a2 2 0 0 1 2-2h3.2Zm3.8 3a4.1 4.1 0 1 0 0 8.2 4.1 4.1 0 0 0 0-8.2Zm0 1.8a2.3 2.3 0 1 1 0 4.6 2.3 2.3 0 0 1 0-4.6Z" />
+        </svg>
+        <span>Snapshot</span>
+      </button>}
 
-      {persistentBoxStyle && (
-        <div
-          style={{
-            position: 'absolute',
-            left: persistentBoxStyle.left,
-            top: persistentBoxStyle.top,
-            width: persistentBoxStyle.width,
-            height: persistentBoxStyle.height,
-            border: '2px solid var(--accent)',
-            boxShadow: '0 0 0 1px rgba(0, 0, 0, 0.2)',
-            background: 'rgba(77, 171, 247, 0.08)',
-            pointerEvents: 'none',
-          }}
-        />
-      )}
-
-      <div style={{
+      {!selectionOnly && <div style={{
         position: 'absolute',
-        bottom: '20px',
-        right: '20px',
+        bottom: '32px',
+        right: '12px',
+        maxWidth: '220px',
         background: 'var(--map-overlay-bg)',
-        padding: '12px 13px',
+        padding: '10px 11px',
         borderRadius: '6px',
         color: 'var(--map-overlay-text)',
-        fontSize: '12px',
+        fontSize: '11px',
         border: '1px solid var(--map-overlay-border)',
-        boxShadow: '0 8px 24px var(--shadow)',
+        boxShadow: '0 4px 16px var(--shadow)',
+        zIndex: 10,
+        pointerEvents: 'auto',
       }}>
-        <div style={{ fontWeight: 'bold', marginBottom: '10px' }}>
-          {analysisMode === 'hotspot' ? 'Trend Hotspots (Slope / Year)' : `${variableLabel || 'Value'} Scale`}
+        <div style={{ fontWeight: 'bold', marginBottom: '6px', fontSize: '11px', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {analysisMode === 'hotspot' ? 'Trend (Slope/yr)' : `${variableLabel || 'Value'}`}
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <div
             style={{
-              height: '12px',
+              height: '10px',
               borderRadius: '2px',
               background: legendGradient,
               border: '1px solid var(--map-overlay-border)',
             }}
           />
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', fontSize: '11px', color: 'var(--map-overlay-muted)' }}>
-            <span>{legendRange.min.toFixed(3)}</span>
-            <span>{legendRange.mid.toFixed(3)}</span>
-            <span>{legendRange.max.toFixed(3)}</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '4px', fontSize: '10px', color: 'var(--map-overlay-muted)' }}>
+            <span>{legendRange.min.toFixed(2)}</span>
+            <span>{legendRange.mid.toFixed(2)}</span>
+            <span>{legendRange.max.toFixed(2)}</span>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', fontSize: '11px', color: 'var(--map-overlay-muted)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '4px', fontSize: '10px', color: 'var(--map-overlay-muted)' }}>
             <span>{analysisMode === 'hotspot' ? 'Decrease' : 'Low'}</span>
             <span>{analysisMode === 'hotspot' ? 'Neutral' : 'Mid'}</span>
             <span>{analysisMode === 'hotspot' ? 'Increase' : 'High'}</span>
           </div>
         </div>
-        <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--map-overlay-border)', fontSize: '11px', color: 'var(--map-overlay-muted)' }}>
-          {data.length.toLocaleString()} {analysisMode === 'hotspot' ? 'trend points' : 'data points'}
+        <div style={{ marginTop: '6px', paddingTop: '6px', borderTop: '1px solid var(--map-overlay-border)', fontSize: '10px', color: 'var(--map-overlay-muted)' }}>
+          {data.length.toLocaleString()} {analysisMode === 'hotspot' ? 'trend pts' : 'data pts'}
           {analysisMode === 'hotspot' && hotspotSummary?.hotspots_identified !== undefined && (
-            <div style={{ marginTop: '6px' }}>
-              Hotspots (high/extreme): {Number(hotspotSummary.hotspots_identified).toLocaleString()}
+            <div style={{ marginTop: '4px' }}>
+              Hotspots: {Number(hotspotSummary.hotspots_identified).toLocaleString()}
             </div>
           )}
           {glacierViewEnabled && (
-            <div style={{ marginTop: '6px' }}>
+            <div style={{ marginTop: '4px' }}>
               {glacierMeta?.zoom_limited
-                ? `Glacier outlines: zoom in to ${Number(glacierMeta?.minimum_zoom || MIN_GLACIER_VIEW_ZOOM).toFixed(1)}+`
-                : `Glacier outlines: ${Number(glacierMeta?.count || 0).toLocaleString()}${glacierMeta?.truncated ? ' (viewport cap reached)' : ''}`}
+                ? `Zoom in to ${Number(glacierMeta?.minimum_zoom || MIN_GLACIER_VIEW_ZOOM).toFixed(1)}+`
+                : `Glaciers: ${Number(glacierMeta?.count || 0).toLocaleString()}${glacierMeta?.truncated ? '+' : ''}`}
             </div>
           )}
         </div>
-      </div>
+      </div>}
 
-      <div style={{
+      {!selectionOnly && <div style={{
         position: 'absolute',
-        top: '20px',
-        left: '20px',
+        top: '12px',
+        left: '12px',
         background: 'var(--map-overlay-bg)',
-        padding: '10px 14px',
-        borderRadius: '6px',
+        padding: '6px 10px',
+        borderRadius: '5px',
         color: 'var(--map-overlay-text)',
-        fontSize: '15px',
+        fontSize: '12px',
         fontWeight: '700',
         border: '1px solid var(--map-overlay-border)',
-        boxShadow: '0 8px 24px var(--shadow)',
+        boxShadow: '0 4px 16px var(--shadow)',
+        zIndex: 11,
+        pointerEvents: 'none',
       }}>
-        {analysisMode === 'hotspot' ? 'Long-Term Hotspot Analysis' : `Date: ${currentDate}`}
-      </div>
+        {analysisMode === 'hotspot' ? 'Hotspot Analysis' : `${currentDate}`}
+      </div>}
+
+      {!selectionOnly && snapshotOpen && (
+        <Suspense fallback={null}>
+          <SnapshotLayout
+            mapElement={containerRef.current}
+            onClose={() => setSnapshotOpen(false)}
+            prepareCapture={prepareSnapshotCapture}
+            renderDataOverlay={renderSnapshotDataOverlay}
+            metadata={snapshotMetadata}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

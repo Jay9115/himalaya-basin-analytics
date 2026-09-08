@@ -158,7 +158,10 @@ function Get-PyInstallerCommonArgs {
         "--collect-all pyarrow",
         "--collect-all pandas",
         "--collect-all pyogrio",
-        "--collect-all rasterio"
+        "--collect-all rasterio",
+        "--collect-all scipy",
+        "--collect-all statsmodels",
+        "--collect-all matplotlib"
     )
 }
 
@@ -283,7 +286,8 @@ if (-not $SkipBackendBuild) {
         -WorkingDirectory $customOpsDir `
         -ExtraArgs @(
             "--hidden-import worker",
-            "--collect-all numpy"
+            "--collect-all numpy",
+            "--collect-all duckdb"
         )
 }
 

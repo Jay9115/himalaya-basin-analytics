@@ -35,6 +35,38 @@
         "lat_coordinate": "latitude",
         "lon_coordinate": "longitude"
       }
+    },
+    {
+      "id": "nc_rf25-ind2000-rfp25_20260821200613",
+      "label": "NC Upload - RF25_ind2000_rfp25",
+      "path": "D:\\ISRO-SWOT\\Webapp\\himalaya-basin-analytics\\Database\\Uploaded_NC\\nc_rf25-ind2000-rfp25_20260821200613",
+      "source_file": "D:\\ISRO-SWOT\\Webapp\\himalaya-basin-analytics\\Database\\Uploaded_NC\\_uploads\\nc_rf25-ind2000-rfp25_20260821200613.nc",
+      "created_at_utc": "2026-08-21T14:36:20+00:00",
+      "kind": "nc_upload",
+      "summary": {
+        "parquet_files": [
+          "NC_rf25-ind2000-rfp25_2000_H1.parquet",
+          "NC_rf25-ind2000-rfp25_2000_H2.parquet"
+        ],
+        "rows_total": 1816824,
+        "variables": [
+          "RAINFALL"
+        ],
+        "years": [
+          2000
+        ],
+        "date_min": "2000-01-01",
+        "date_max": "2000-12-31",
+        "rows_per_file": {
+          "NC_rf25-ind2000-rfp25_2000_H1.parquet": 903448,
+          "NC_rf25-ind2000-rfp25_2000_H2.parquet": 913376
+        },
+        "grid_point_count": 17415,
+        "time_coordinate": "TIME",
+        "time_source": "coordinate",
+        "lat_coordinate": "LATITUDE",
+        "lon_coordinate": "LONGITUDE"
+      }
     }
   ]
 }

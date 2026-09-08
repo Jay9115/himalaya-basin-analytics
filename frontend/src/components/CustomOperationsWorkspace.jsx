@@ -10,7 +10,12 @@ loader.config({ monaco });
 
 const DEFAULT_CODE = `def run(hb, df, meta):
     if meta.get("large_mode"):
-        annual = hb.aggregate(by=["year"], metrics={"value": "mean"})
+        annual = hb.sql("""
+            SELECT year(date)::INTEGER AS year, avg(value) AS value_mean
+            FROM data
+            GROUP BY year
+            ORDER BY year
+        """)
         hb.text(f"{meta['dataset_label']} large analysis rows: {meta['row_count']}")
         hb.table(annual, name="annual_mean")
         hb.chart(annual, chart_type="line", x="year", y="value_mean", name="annual_mean_chart")

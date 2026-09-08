@@ -12,9 +12,9 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 10px;
+  margin-bottom: 3px;
   flex-wrap: wrap;
-  gap: 10px 14px;
+  gap: 4px 10px;
 }
 
 .graph-title-block {
@@ -26,7 +26,7 @@
 
 .graph-actions {
   display: flex;
-  gap: 8px;
+  gap: 5px;
   align-items: center;
   flex-wrap: wrap;
 }
@@ -61,8 +61,8 @@
 
 .graph-cut-btn,
 .graph-clear-btn {
-  min-height: 34px;
-  padding: 6px 11px;
+  min-height: 25px;
+  padding: 3px 8px;
   border-radius: 6px;
   border: 1px solid var(--border);
   background: var(--input-bg);
@@ -87,21 +87,23 @@
 
 .graph-header h3 {
   margin: 0;
-  font-size: 16px;
+  font-size: 13px;
   color: var(--text);
   font-weight: 750;
 }
 
 .graph-subtitle {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .graph-stats {
   display: flex;
-  gap: 8px 14px;
-  flex-wrap: wrap;
-  width: 100%;
+  gap: 4px 10px;
+  flex-wrap: nowrap;
+  width: auto;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .graph-stats.multi {
@@ -111,9 +113,10 @@
 .stat {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  min-height: 28px;
+  gap: 4px;
+  font-size: 11px;
+  min-height: 22px;
+  white-space: nowrap;
 }
 
 .stat-label {
@@ -123,7 +126,7 @@
 .stat-value {
   color: var(--text);
   font-weight: 600;
-  padding: 3px 8px;
+  padding: 2px 5px;
   background: var(--badge-bg);
   border-radius: 4px;
   border: 1px solid var(--badge-border);
@@ -212,12 +215,29 @@
 /* Responsive */
 @media (max-width: 768px) {
   .graph-header {
-    flex-direction: column;
     align-items: flex-start;
   }
   
   .graph-stats {
     width: 100%;
-    justify-content: space-between;
+    overflow-x: auto;
   }
+}
+
+/* Analysis cards provide the context row; keep the chart header to one compact line. */
+.analysis-graph-card .graph-title-block {
+  display: none;
+}
+
+.analysis-graph-card .graph-header {
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+}
+
+.analysis-graph-card .graph-stats {
+  flex: 1 1 auto;
+}
+
+.analysis-graph-card .graph-actions {
+  flex: 0 0 auto;
 }

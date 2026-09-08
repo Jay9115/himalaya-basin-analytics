@@ -5,6 +5,7 @@ Supports multiple datasets with lazy indexing.
 from datetime import datetime
 from collections import OrderedDict
 import csv
+import hashlib
 import json
 import mimetypes
 import shutil
@@ -34,8 +35,11 @@ from nc_ingest import (
     list_uploaded_dataset_configs,
     slugify,
 )
-from custom_operations.data_access import OperationBackendHooks
+from custom_operations.data_access import OperationBackendHooks, OperationDataLoader
 from custom_operations.router import build_custom_operations_router
+from research_studio.framework_router import build_research_framework_router
+from research_studio.router import build_research_router
+from project_workspace import build_project_workspace_router
 
 
 logging.basicConfig(level=logging.INFO)
@@ -55,7 +59,7 @@ async def lifespan(app: FastAPI):
         pass
 
 
-app = FastAPI(title="Temperature Data Visualization API", lifespan=lifespan)
+app = FastAPI(title="Himalayan Basin Analytics API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -101,6 +105,10 @@ BASE_DATASET_CONFIGS: Dict[str, Dict] = {
         "paths": [
             DATABASE_DIR / "SPHY_Model",
         ],
+        # Zero melt cells dominate these rasters and do not add information to
+        # the interactive map. Exclude them during the Parquet read so they are
+        # neither serialized by the API nor loaded by the browser.
+        "map_exclude_zero_variables": ["GMel", "SMel"],
     },
     "chirps": {
         "label": "CHIRPS Precipitation",
@@ -111,12 +119,14 @@ BASE_DATASET_CONFIGS: Dict[str, Dict] = {
     "mod10a1_monthly": {
         "label": "MOD10A1 Monthly Snow/Albedo",
         "paths": [
-            DATABASE_DIR / "MOD10A1_Monthly_GeoTIFF",
+            DATABASE_DIR / "MOD10A1_Parquet",
         ],
-        "storage": "geotiff",
-        "file_pattern": "MOD10A1_*.tif",
+        "storage": "parquet",
+        "file_pattern": "MOD10A1_*.parquet",
         "default_elevation": 500.0,
         "map_max_points": 75000,
+        "interactive_sample_column": "_map_sample",
+        "hotspot_sample_column": "_map_sample",
     },
     "discharge_network": {
         "label": "Discharge Network",
@@ -128,6 +138,21 @@ BASE_DATASET_CONFIGS: Dict[str, Dict] = {
         "default_elevation": 500.0,
         "map_max_points": 80000,
     },
+    "himalaya_dem": {
+        "label": "Himalaya SRTM DEM",
+        "paths": [
+            DATABASE_DIR / "DEM",
+        ],
+        "storage": "geoparquet",
+        "file_pattern": "Himalaya_SRTM_DEM-*.parquet",
+        # SRTM is a static terrain reference. The mission acquisition date is
+        # used only to fit the dashboard's shared date/year selection model.
+        "reference_date": "2000-02-11",
+        "variable_columns": ["elevation_m"],
+        "feature_kind": "dem",
+        "elevation_is_value": True,
+        "map_max_points": 75000,
+    },
 }
 UPLOADED_NC_ROOT = DATABASE_DIR / "Uploaded_NC"
 UPLOADED_NC_MANIFEST = UPLOADED_NC_ROOT / "uploaded_nc_datasets.json"
@@ -135,7 +160,7 @@ UPLOADED_NC_FILES_DIR = UPLOADED_NC_ROOT / "_uploads"
 DATASET_CONFIGS: Dict[str, Dict] = {}
 
 DEFAULT_DATASET_ID = "era5"
-EXCLUDE_COLUMNS = {"system:index", ".geo"}
+EXCLUDE_COLUMNS = {"system:index", ".geo", "_map_sample"}
 DATE_CANDIDATES = ["date", "Date", "DATE"]
 LAT_CANDIDATES = ["latitude", "lat", "Latitude", "Lat"]
 LON_CANDIDATES = ["longitude", "lon", "Longitude", "Lon"]
@@ -194,10 +219,11 @@ GLIMS_DATE_COL = "src_date"
 GLIMS_LINE_TYPE_COL = "line_type"
 GLIMS_GLACIER_BOUNDARY_VALUE = "glac_bound"
 GLACIER_OVERVIEW_DEFAULT_MAX_FEATURES = 3500
-GLACIER_OVERVIEW_MAX_FEATURES_LIMIT = 15000
+GLACIER_OVERVIEW_MAX_FEATURES_LIMIT = 20000
 GLACIER_OVERVIEW_READ_MULTIPLIER = 2
 GLACIER_OVERVIEW_READ_MAX_ROWS = 6000
 GLACIER_OVERVIEW_CACHE_MAX_ENTRIES = 12
+GLACIER_ROI_NEARBY_BUFFER_KM = 5.0
 
 try:
     import pyogrio  # type: ignore
@@ -229,8 +255,40 @@ LONG_TERM_HOTSPOT_META = LONG_TERM_HOTSPOT_OUTPUTS_DIR / "long_term_hotspot_meta
 LONG_TERM_HOTSPOT_DIFF_PARQUET = LONG_TERM_HOTSPOT_OUTPUTS_DIR / "long_term_hotspot_band_differences.parquet"
 LONG_TERM_HOTSPOT_DIFF_META = LONG_TERM_HOTSPOT_OUTPUTS_DIR / "long_term_hotspot_band_differences_metadata.json"
 
-OUTCOME_STATE: Dict[str, Dict[str, Any]] = {
+LONG_TERM_HOTSPOT_15YR_DIR = OUTCOMES_DIR / "Long_term_hotspot_15yr"
+LONG_TERM_HOTSPOT_15YR_OUTPUTS_DIR = LONG_TERM_HOTSPOT_15YR_DIR / "Outputs"
+LONG_TERM_HOTSPOT_15YR_PARQUET = LONG_TERM_HOTSPOT_15YR_OUTPUTS_DIR / "long_term_hotspot_15yr_band_values.parquet"
+LONG_TERM_HOTSPOT_15YR_META = LONG_TERM_HOTSPOT_15YR_OUTPUTS_DIR / "long_term_hotspot_15yr_metadata.json"
+LONG_TERM_HOTSPOT_15YR_DIFF_PARQUET = LONG_TERM_HOTSPOT_15YR_OUTPUTS_DIR / "long_term_hotspot_15yr_band_differences.parquet"
+LONG_TERM_HOTSPOT_15YR_DIFF_META = LONG_TERM_HOTSPOT_15YR_OUTPUTS_DIR / "long_term_hotspot_15yr_band_differences_metadata.json"
+
+OUTCOME_CONFIGS: Dict[str, Dict[str, Any]] = {
     "long_term_hotspot": {
+        "label": "Long Term Hotspot Analysis - 25 Year Bands",
+        "description": "Precomputed 25-year ERA5 spatial means and later-minus-earlier change maps",
+        "dataset": "era5",
+        "parquet": LONG_TERM_HOTSPOT_PARQUET,
+        "meta": LONG_TERM_HOTSPOT_META,
+        "diff_parquet": LONG_TERM_HOTSPOT_DIFF_PARQUET,
+        "diff_meta": LONG_TERM_HOTSPOT_DIFF_META,
+        "output_directory": "Outcomes/Long_term_hotspot/Outputs",
+        "generation_script": "Outcomes/Long_term_hotspot/Scripts/compute_era5_band_means.py",
+    },
+    "long_term_hotspot_15yr": {
+        "label": "Long Term Hotspot Analysis - 15 Year Bands",
+        "description": "Five 15-year ERA5-Land and CHIRPS bands; precipitation and snow use sums, other variables use means",
+        "dataset": "era5_chirps",
+        "parquet": LONG_TERM_HOTSPOT_15YR_PARQUET,
+        "meta": LONG_TERM_HOTSPOT_15YR_META,
+        "diff_parquet": LONG_TERM_HOTSPOT_15YR_DIFF_PARQUET,
+        "diff_meta": LONG_TERM_HOTSPOT_15YR_DIFF_META,
+        "output_directory": "Outcomes/Long_term_hotspot_15yr/Outputs",
+        "generation_script": "Outcomes/Long_term_hotspot_15yr/Scripts/compute_era5_15yr_bands.py",
+    },
+}
+
+OUTCOME_STATE: Dict[str, Dict[str, Any]] = {
+    outcome_id: {
         "loaded": False,
         "parquet_mtime": None,
         "meta_mtime": None,
@@ -242,6 +300,7 @@ OUTCOME_STATE: Dict[str, Dict[str, Any]] = {
         "bands": [],
         "comparisons": [],
     }
+    for outcome_id in OUTCOME_CONFIGS
 }
 
 GLACIER_SOURCE_STATE: Dict[str, Any] = {
@@ -468,6 +527,51 @@ def _compute_polygon_bounds(polygons: List[Dict[str, Any]]) -> Optional[Dict[str
         "max_lon": max_lon,
         "min_lat": min_lat,
         "max_lat": max_lat,
+    }
+
+
+def _parse_aoi_geojson(aoi_geojson: Optional[str]) -> Optional[Dict[str, Any]]:
+    if not aoi_geojson:
+        return None
+
+    try:
+        payload = json.loads(aoi_geojson)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Invalid ROI polygon GeoJSON.") from exc
+
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="ROI polygon must be a GeoJSON object.")
+
+    properties = payload.get("properties") if isinstance(payload.get("properties"), dict) else {}
+    geometry = payload.get("geometry") if payload.get("type") == "Feature" else payload
+    if not isinstance(geometry, dict) or geometry.get("type") not in {"Polygon", "MultiPolygon"}:
+        raise HTTPException(status_code=400, detail="ROI polygon must be a Polygon or MultiPolygon GeoJSON geometry.")
+
+    polygons = _feature_to_polygons(geometry)
+    bounds = _compute_polygon_bounds(polygons)
+    if not polygons or not bounds:
+        raise HTTPException(status_code=400, detail="ROI polygon has no valid rings.")
+
+    if (
+        bounds["min_lat"] < -90
+        or bounds["max_lat"] > 90
+        or bounds["min_lon"] < -180
+        or bounds["max_lon"] > 180
+    ):
+        raise HTTPException(status_code=400, detail="ROI polygon coordinates are out of WGS84 bounds.")
+
+    vertex_count = sum(max(0, int(poly["outer"].shape[0]) - 1) for poly in polygons)
+    if vertex_count > 2000:
+        raise HTTPException(status_code=400, detail="ROI polygon is too complex. Use 2000 vertices or fewer.")
+
+    return {
+        "id": str(properties.get("id") or "custom_aoi"),
+        "label": str(properties.get("label") or properties.get("name") or "ROI"),
+        "kind": "aoi",
+        "bounds": bounds,
+        "polygons": polygons,
+        "geometry": geometry,
+        "properties": properties,
     }
 
 
@@ -774,6 +878,9 @@ def _make_glacier_overview_cache_key(
     zoom: float,
     max_features: int,
     simplify_tolerance: float,
+    subregion_id: Optional[str] = None,
+    aoi_signature: str = "",
+    nearby_buffer_km: float = 0.0,
 ) -> Tuple[Any, ...]:
     quantized_bbox = None
     if bbox:
@@ -785,6 +892,9 @@ def _make_glacier_overview_cache_key(
         round(float(zoom), 2),
         int(max_features),
         round(float(simplify_tolerance), 6),
+        str(subregion_id or ""),
+        str(aoi_signature or ""),
+        round(float(nearby_buffer_km or 0.0), 3),
     )
 
 
@@ -843,6 +953,54 @@ def _validate_glacier_bbox(
     west = min(min_lon, max_lon)
     east = max(min_lon, max_lon)
     return (west, south, east, north)
+
+
+def _expand_wgs84_bbox_by_km(
+    bbox: Tuple[float, float, float, float],
+    buffer_km: float,
+) -> Tuple[float, float, float, float]:
+    if buffer_km <= 0:
+        return bbox
+    west, south, east, north = bbox
+    mid_lat = max(-89.0, min(89.0, (float(south) + float(north)) / 2.0))
+    lat_delta = float(buffer_km) / 111.32
+    lon_scale = max(0.2, abs(np.cos(np.deg2rad(mid_lat))))
+    lon_delta = float(buffer_km) / (111.32 * lon_scale)
+    return (
+        max(-180.0, float(west) - lon_delta),
+        max(-90.0, float(south) - lat_delta),
+        min(180.0, float(east) + lon_delta),
+        min(90.0, float(north) + lat_delta),
+    )
+
+
+def _make_aoi_cache_signature(aoi_subregion: Optional[Dict[str, Any]]) -> str:
+    if not aoi_subregion:
+        return ""
+    geometry = aoi_subregion.get("geometry") or {}
+    try:
+        payload = json.dumps(geometry, sort_keys=True, separators=(",", ":"))
+    except TypeError:
+        payload = str(geometry)
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def _build_nearby_glacier_selection_geometry(
+    subregion: Optional[Dict[str, Any]],
+    buffer_km: float,
+):
+    geometry = _get_subregion_shapely_geometry(subregion) if subregion else None
+    if geometry is None or buffer_km <= 0:
+        return geometry
+    bounds = subregion.get("bounds") or {}
+    mid_lat = (float(bounds.get("min_lat", 0.0)) + float(bounds.get("max_lat", 0.0))) / 2.0
+    lat_delta = float(buffer_km) / 111.32
+    lon_scale = max(0.2, abs(np.cos(np.deg2rad(max(-89.0, min(89.0, mid_lat))))))
+    lon_delta = float(buffer_km) / (111.32 * lon_scale)
+    try:
+        return geometry.buffer(max(lat_delta, lon_delta))
+    except Exception:
+        return geometry
 
 
 def _load_glacier_geometry(subregion: Dict[str, Any]) -> None:
@@ -1214,6 +1372,23 @@ def get_subregion(subregion_id: Optional[str]) -> Optional[Dict[str, Any]]:
     raise HTTPException(status_code=400, detail=f"Invalid subregion_id '{subregion_id}'")
 
 
+def resolve_query_subregion(
+    subregion_id: Optional[str],
+    aoi_geojson: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Resolve either a named basin/glacier or the ROI polygon for data queries."""
+    aoi_subregion = _parse_aoi_geojson(aoi_geojson)
+    subregion = get_subregion(subregion_id)
+    if aoi_subregion and subregion:
+        raise HTTPException(
+            status_code=400,
+            detail="Choose either an ROI polygon or subregion_id.",
+        )
+    if aoi_subregion:
+        return aoi_subregion
+    return subregion
+
+
 def _points_in_ring(lons: np.ndarray, lats: np.ndarray, ring: np.ndarray) -> np.ndarray:
     inside = np.zeros(lons.shape[0], dtype=bool)
     x = ring[:, 0]
@@ -1297,6 +1472,15 @@ def build_subregion_mask(df: pd.DataFrame, lat_col: str, lon_col: str, subregion
     finite = np.isfinite(lons) & np.isfinite(lats)
     if not finite.any():
         return np.zeros(df.shape[0], dtype=bool)
+    if subregion.get("kind") == "bbox":
+        bounds = subregion["bounds"]
+        return (
+            finite
+            & (lons >= float(bounds["min_lon"]))
+            & (lons <= float(bounds["max_lon"]))
+            & (lats >= float(bounds["min_lat"]))
+            & (lats <= float(bounds["max_lat"]))
+        )
 
     coords = np.column_stack((lons[finite], lats[finite]))
     unique_coords, inverse = np.unique(coords, axis=0, return_inverse=True)
@@ -1312,6 +1496,35 @@ def build_subregion_mask(df: pd.DataFrame, lat_col: str, lon_col: str, subregion
     mask = np.zeros(df.shape[0], dtype=bool)
     mask[finite] = inside_unique[inverse]
     return mask
+
+
+def filter_point_dataframe_by_subregion(
+    df: pd.DataFrame,
+    subregion: Optional[Dict[str, Any]],
+    lat_col: str = "lat",
+    lon_col: str = "lon",
+) -> pd.DataFrame:
+    """Return rows inside a subregion, using its bounds before exact polygon tests."""
+    if subregion is None or df.empty or lat_col not in df.columns or lon_col not in df.columns:
+        return df
+
+    bounds = subregion.get("bounds") or {}
+    lats = pd.to_numeric(df[lat_col], errors="coerce")
+    lons = pd.to_numeric(df[lon_col], errors="coerce")
+    bbox_mask = (
+        lats.notna()
+        & lons.notna()
+        & (lats >= float(bounds.get("min_lat", -90.0)))
+        & (lats <= float(bounds.get("max_lat", 90.0)))
+        & (lons >= float(bounds.get("min_lon", -180.0)))
+        & (lons <= float(bounds.get("max_lon", 180.0)))
+    )
+    if not bool(bbox_mask.any()):
+        return df.iloc[0:0]
+
+    candidate = df.loc[bbox_mask]
+    exact_mask = build_subregion_mask(candidate, lat_col, lon_col, subregion)
+    return candidate.loc[exact_mask]
 
 
 def ensure_uploaded_nc_dirs() -> None:
@@ -1346,6 +1559,13 @@ def _normalize_config(config: Dict[str, Any]) -> Dict[str, Any]:
         "file_pattern": config.get("file_pattern", "*.parquet"),
         "default_elevation": float(config.get("default_elevation", GEOTIFF_DEFAULT_ELEVATION)),
         "map_max_points": int(config.get("map_max_points", GEOTIFF_DEFAULT_MAP_MAX_POINTS)),
+        "interactive_sample_column": config.get("interactive_sample_column"),
+        "hotspot_sample_column": config.get("hotspot_sample_column"),
+        "map_exclude_zero_variables": tuple(config.get("map_exclude_zero_variables") or ()),
+        "reference_date": config.get("reference_date"),
+        "variable_columns": tuple(config.get("variable_columns") or ()),
+        "feature_kind": config.get("feature_kind", "discharge_network"),
+        "elevation_is_value": bool(config.get("elevation_is_value", False)),
     }
 
 
@@ -1372,6 +1592,13 @@ def init_dataset_state() -> None:
             "file_pattern": config.get("file_pattern", "*.parquet"),
             "default_elevation": config.get("default_elevation", GEOTIFF_DEFAULT_ELEVATION),
             "map_max_points": config.get("map_max_points", GEOTIFF_DEFAULT_MAP_MAX_POINTS),
+            "interactive_sample_column": config.get("interactive_sample_column"),
+            "hotspot_sample_column": config.get("hotspot_sample_column"),
+            "map_exclude_zero_variables": config.get("map_exclude_zero_variables", ()),
+            "reference_date": config.get("reference_date"),
+            "variable_columns": config.get("variable_columns", ()),
+            "feature_kind": config.get("feature_kind", "discharge_network"),
+            "elevation_is_value": config.get("elevation_is_value", False),
             "path": path,
             "loaded": False,
             "active_index_key": None,
@@ -1423,20 +1650,21 @@ def get_datasets_summary() -> List[Dict]:
     return summary
 
 
-def _build_long_term_hotspot_summary() -> Dict[str, Any]:
-    state = OUTCOME_STATE["long_term_hotspot"]
-    ready = LONG_TERM_HOTSPOT_PARQUET.exists()
-    differences_ready = LONG_TERM_HOTSPOT_DIFF_PARQUET.exists()
+def _build_long_term_hotspot_summary(outcome_id: str) -> Dict[str, Any]:
+    config = OUTCOME_CONFIGS[outcome_id]
+    state = OUTCOME_STATE[outcome_id]
+    ready = config["parquet"].exists()
+    differences_ready = config["diff_parquet"].exists()
     return {
-        "id": "long_term_hotspot",
-        "label": "Long Term Hotspot Analysis",
-        "description": "Precomputed 25-year ERA5 spatial means and later-minus-earlier change maps",
-        "dataset": "era5",
+        "id": outcome_id,
+        "label": config["label"],
+        "description": config["description"],
+        "dataset": config["dataset"],
         "ready": ready,
         "differences_ready": differences_ready,
-        "parquet_path": str(LONG_TERM_HOTSPOT_PARQUET),
-        "difference_parquet_path": str(LONG_TERM_HOTSPOT_DIFF_PARQUET),
-        "metadata_path": str(LONG_TERM_HOTSPOT_META),
+        "parquet_path": str(config["parquet"]),
+        "difference_parquet_path": str(config["diff_parquet"]),
+        "metadata_path": str(config["meta"]),
         "variables": state.get("variables", []),
         "bands": state.get("bands", []),
         "comparisons": state.get("comparisons", []),
@@ -1446,24 +1674,33 @@ def _build_long_term_hotspot_summary() -> Dict[str, Any]:
 
 
 def get_outcomes_summary() -> List[Dict[str, Any]]:
-    return [_build_long_term_hotspot_summary()]
+    return [_build_long_term_hotspot_summary(outcome_id) for outcome_id in OUTCOME_CONFIGS]
 
 
-def _load_long_term_hotspot_outcome(force_reload: bool = False) -> Dict[str, Any]:
-    state = OUTCOME_STATE["long_term_hotspot"]
-    if not LONG_TERM_HOTSPOT_PARQUET.exists():
+def _load_long_term_hotspot_outcome(
+    outcome_id: str = "long_term_hotspot", force_reload: bool = False
+) -> Dict[str, Any]:
+    config = OUTCOME_CONFIGS.get(outcome_id)
+    if not config:
+        raise HTTPException(status_code=404, detail=f"Unknown outcome '{outcome_id}'")
+    state = OUTCOME_STATE[outcome_id]
+    parquet_path: Path = config["parquet"]
+    meta_path: Path = config["meta"]
+    diff_parquet_path: Path = config["diff_parquet"]
+    diff_meta_path: Path = config["diff_meta"]
+    if not parquet_path.exists():
         raise HTTPException(
             status_code=404,
             detail=(
-                "Long-term hotspot output parquet not found. "
-                f"Expected file: {LONG_TERM_HOTSPOT_PARQUET}"
+                f"{config['label']} output parquet not found. "
+                f"Run {config['generation_script']}"
             ),
         )
 
-    parquet_mtime = LONG_TERM_HOTSPOT_PARQUET.stat().st_mtime
-    meta_mtime = LONG_TERM_HOTSPOT_META.stat().st_mtime if LONG_TERM_HOTSPOT_META.exists() else None
-    diff_parquet_mtime = LONG_TERM_HOTSPOT_DIFF_PARQUET.stat().st_mtime if LONG_TERM_HOTSPOT_DIFF_PARQUET.exists() else None
-    diff_meta_mtime = LONG_TERM_HOTSPOT_DIFF_META.stat().st_mtime if LONG_TERM_HOTSPOT_DIFF_META.exists() else None
+    parquet_mtime = parquet_path.stat().st_mtime
+    meta_mtime = meta_path.stat().st_mtime if meta_path.exists() else None
+    diff_parquet_mtime = diff_parquet_path.stat().st_mtime if diff_parquet_path.exists() else None
+    diff_meta_mtime = diff_meta_path.stat().st_mtime if diff_meta_path.exists() else None
 
     if (
         state["loaded"]
@@ -1475,7 +1712,7 @@ def _load_long_term_hotspot_outcome(force_reload: bool = False) -> Dict[str, Any
     ):
         return state
 
-    df = pd.read_parquet(LONG_TERM_HOTSPOT_PARQUET)
+    df = pd.read_parquet(parquet_path)
     required_columns = {
         "band_id",
         "band_label",
@@ -1507,9 +1744,9 @@ def _load_long_term_hotspot_outcome(force_reload: bool = False) -> Dict[str, Any
     df = df.dropna(subset=["lat", "lon", "value"]).copy()
 
     meta: Dict[str, Any] = {}
-    if LONG_TERM_HOTSPOT_META.exists():
+    if meta_path.exists():
         try:
-            meta = json.loads(LONG_TERM_HOTSPOT_META.read_text(encoding="utf-8"))
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
         except Exception as exc:
             logger.warning("Could not parse long-term hotspot metadata JSON: %s", exc)
             meta = {}
@@ -1536,9 +1773,9 @@ def _load_long_term_hotspot_outcome(force_reload: bool = False) -> Dict[str, Any
     diff_df = pd.DataFrame()
     diff_meta: Dict[str, Any] = {}
     comparisons: List[Dict[str, Any]] = []
-    if LONG_TERM_HOTSPOT_DIFF_PARQUET.exists():
+    if diff_parquet_path.exists():
         try:
-            diff_df = pd.read_parquet(LONG_TERM_HOTSPOT_DIFF_PARQUET)
+            diff_df = pd.read_parquet(diff_parquet_path)
             required_diff_columns = {
                 "id",
                 "label",
@@ -1584,9 +1821,9 @@ def _load_long_term_hotspot_outcome(force_reload: bool = False) -> Dict[str, Any
             logger.warning("Could not load long-term hotspot difference parquet: %s", exc)
             diff_df = pd.DataFrame()
 
-    if LONG_TERM_HOTSPOT_DIFF_META.exists():
+    if diff_meta_path.exists():
         try:
-            diff_meta = json.loads(LONG_TERM_HOTSPOT_DIFF_META.read_text(encoding="utf-8"))
+            diff_meta = json.loads(diff_meta_path.read_text(encoding="utf-8"))
         except Exception as exc:
             logger.warning("Could not parse long-term hotspot difference metadata JSON: %s", exc)
             diff_meta = {}
@@ -1746,7 +1983,16 @@ def get_geoparquet_files(state: Dict[str, Any]) -> List[Path]:
     return sorted(path.glob(state.get("file_pattern") or "*.parquet"))
 
 
-def parse_discharge_date_from_path(file_path: Path) -> Optional[str]:
+def parse_geoparquet_date_from_path(
+    file_path: Path,
+    reference_date: Optional[str] = None,
+) -> Optional[str]:
+    if reference_date:
+        try:
+            return datetime.strptime(reference_date, "%Y-%m-%d").strftime("%Y-%m-%d")
+        except ValueError:
+            logger.warning("Invalid GeoParquet reference_date '%s' for %s", reference_date, file_path)
+            return None
     match = DISCHARGE_DATE_PATTERN.match(file_path.stem)
     if not match:
         years = extract_years_from_filename(file_path)
@@ -1764,8 +2010,9 @@ def geoparquet_file_in_year_range(
     file_path: Path,
     year_start: Optional[int],
     year_end: Optional[int],
+    reference_date: Optional[str] = None,
 ) -> bool:
-    date_str = parse_discharge_date_from_path(file_path)
+    date_str = parse_geoparquet_date_from_path(file_path, reference_date)
     if not date_str:
         return False
     year = int(date_str[:4])
@@ -1780,13 +2027,18 @@ def select_geoparquet_files_for_year_range(
     geoparquet_files: List[Path],
     year_start: Optional[int],
     year_end: Optional[int],
+    reference_date: Optional[str] = None,
 ) -> List[Path]:
     if year_start is None and year_end is None:
-        return [file_path for file_path in geoparquet_files if parse_discharge_date_from_path(file_path)]
+        return [
+            file_path
+            for file_path in geoparquet_files
+            if parse_geoparquet_date_from_path(file_path, reference_date)
+        ]
     return [
         file_path
         for file_path in geoparquet_files
-        if geoparquet_file_in_year_range(file_path, year_start, year_end)
+        if geoparquet_file_in_year_range(file_path, year_start, year_end, reference_date)
     ]
 
 
@@ -1806,11 +2058,15 @@ def load_geoparquet_schema(state: Dict[str, Any], geoparquet_files: List[Path]) 
     # GeoParquet writers may expose covering bbox helper columns; keep them out
     # of the scientific variable list shown in the UI.
     helper_columns = {"geometry", "xmin", "ymin", "xmax", "ymax"}
-    variables = [
-        column
-        for column in columns
-        if column not in helper_columns and not column.lower().startswith("bbox")
-    ]
+    configured_variables = list(state.get("variable_columns") or ())
+    if configured_variables:
+        variables = [column for column in configured_variables if column in columns]
+    else:
+        variables = [
+            column
+            for column in columns
+            if column not in helper_columns and not column.lower().startswith("bbox")
+        ]
     if DISCHARGE_VALUE_COL in variables:
         variables = [DISCHARGE_VALUE_COL] + [column for column in variables if column != DISCHARGE_VALUE_COL]
 
@@ -1862,7 +2118,13 @@ def load_geoparquet_dataset_index(
         state["active_year_end"] = year_end
         return
 
-    candidate_files = select_geoparquet_files_for_year_range(geoparquet_files, year_start, year_end)
+    reference_date = state.get("reference_date")
+    candidate_files = select_geoparquet_files_for_year_range(
+        geoparquet_files,
+        year_start,
+        year_end,
+        reference_date,
+    )
     year_tag = f"{year_start or '*'}-{year_end or '*'}"
     logger.info(
         f"Loading index for GeoParquet dataset '{state['id']}' from {state['path']} "
@@ -1871,7 +2133,7 @@ def load_geoparquet_dataset_index(
 
     date_index: Dict[str, List[str]] = {}
     for file_path in candidate_files:
-        date_str = parse_discharge_date_from_path(file_path)
+        date_str = parse_geoparquet_date_from_path(file_path, reference_date)
         if not date_str:
             continue
         date_index.setdefault(date_str, []).append(str(file_path))
@@ -1882,10 +2144,13 @@ def load_geoparquet_dataset_index(
     state["active_index_key"] = cache_key
     state["active_year_start"] = year_start
     state["active_year_end"] = year_end
-    state["elevation_range"] = {
-        "min": float(state.get("default_elevation", GEOTIFF_DEFAULT_ELEVATION)),
-        "max": float(state.get("default_elevation", GEOTIFF_DEFAULT_ELEVATION)),
-    }
+    if state.get("elevation_is_value"):
+        state["elevation_range"] = None
+    else:
+        state["elevation_range"] = {
+            "min": float(state.get("default_elevation", GEOTIFF_DEFAULT_ELEVATION)),
+            "max": float(state.get("default_elevation", GEOTIFF_DEFAULT_ELEVATION)),
+        }
     state["index_cache"][cache_key] = {"date_index": date_index}
     while len(state["index_cache"]) > 6:
         oldest = next(iter(state["index_cache"]))
@@ -2113,12 +2378,36 @@ def geotiff_elevation_allowed(state: Dict[str, Any], elev_min: float, elev_max: 
     return float(elev_min) <= default_elevation <= float(elev_max)
 
 
-def read_geotiff_band(file_path: str, band_index: int) -> Tuple[np.ndarray, np.ndarray, Any]:
+def read_geotiff_band(
+    file_path: str,
+    band_index: int,
+    bounds: Optional[Dict[str, float]] = None,
+) -> Tuple[np.ndarray, np.ndarray, Any]:
     ensure_rasterio_available()
     with rasterio.open(file_path) as src:  # type: ignore[union-attr]
         if band_index < 1 or band_index > src.count:
             raise ValueError(f"Band {band_index} is outside GeoTIFF band range 1-{src.count}")
-        band = src.read(band_index, masked=True)
+        window = None
+        transform = src.transform
+        if bounds:
+            try:
+                requested_window = rasterio.windows.from_bounds(  # type: ignore[union-attr]
+                    float(bounds["min_lon"]),
+                    float(bounds["min_lat"]),
+                    float(bounds["max_lon"]),
+                    float(bounds["max_lat"]),
+                    transform=src.transform,
+                )
+                full_window = rasterio.windows.Window(0, 0, src.width, src.height)  # type: ignore[union-attr]
+                window = requested_window.intersection(full_window).round_offsets().round_lengths()
+                if window.width <= 0 or window.height <= 0:
+                    return np.empty((0, 0)), np.zeros((0, 0), dtype=bool), transform
+                transform = src.window_transform(window)
+            except Exception as exc:
+                logger.debug("Unable to create GeoTIFF window for %s: %s", file_path, exc)
+                window = None
+
+        band = src.read(band_index, window=window, masked=True)
         if np.ma.isMaskedArray(band):
             values = np.asarray(band.filled(np.nan), dtype=np.float64)
             valid_mask = ~np.ma.getmaskarray(band)
@@ -2126,7 +2415,7 @@ def read_geotiff_band(file_path: str, band_index: int) -> Tuple[np.ndarray, np.n
             values = np.asarray(band, dtype=np.float64)
             valid_mask = np.ones(values.shape, dtype=bool)
         valid_mask &= np.isfinite(values)
-        return values, valid_mask, src.transform
+        return values, valid_mask, transform
 
 
 def geotiff_pixel_coordinates(transform: Any, rows: np.ndarray, cols: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
@@ -2158,6 +2447,8 @@ def build_subregion_mask_for_points(
         & (lats <= float(bounds["max_lat"]))
     )
     if not bbox_mask.any():
+        return bbox_mask
+    if subregion.get("kind") == "bbox":
         return bbox_mask
 
     final_mask = np.zeros(lats.shape[0], dtype=bool)
@@ -2203,7 +2494,11 @@ def query_geotiff_data(
 
     for file_path in state["date_index"][query_date]:
         try:
-            values, valid_mask, transform = read_geotiff_band(file_path, band_index)
+            values, valid_mask, transform = read_geotiff_band(
+                file_path,
+                band_index,
+                bounds=subregion["bounds"] if subregion else None,
+            )
             rows, cols = np.nonzero(valid_mask)
             if rows.size == 0:
                 continue
@@ -2263,7 +2558,12 @@ def calculate_geotiff_basin_mean(
         value_count = 0
         for file_path in state["date_index"][date_str]:
             try:
-                values, valid_mask, transform = read_geotiff_band(file_path, band_index)
+                read_bounds = region_bounds or (subregion["bounds"] if subregion else None)
+                values, valid_mask, transform = read_geotiff_band(
+                    file_path,
+                    band_index,
+                    bounds=read_bounds,
+                )
                 if region_bounds or subregion:
                     rows, cols = np.nonzero(valid_mask)
                     if rows.size == 0:
@@ -2292,71 +2592,6 @@ def calculate_geotiff_basin_mean(
                 value_count += int(np.isfinite(point_values).sum())
             except Exception as exc:
                 logger.error("[%s] Error in GeoTIFF basin mean for %s: %s", state["id"], file_path, exc)
-
-        if value_count > 0:
-            results.append(
-                {
-                    "date": date_str,
-                    "mean_value": value_sum / value_count,
-                    "pixel_count": value_count,
-                }
-            )
-
-    return results
-
-
-def calculate_geotiff_region_mean(
-    state: Dict[str, Any],
-    year: int,
-    min_lat: float,
-    max_lat: float,
-    min_lon: float,
-    max_lon: float,
-    elev_min: float,
-    elev_max: float,
-    variable: str,
-    subregion: Optional[Dict[str, Any]] = None,
-) -> List[Dict]:
-    if not geotiff_elevation_allowed(state, elev_min, elev_max):
-        return []
-
-    start_date = f"{year}-01-01"
-    end_date = f"{year}-12-31"
-    dates = sorted([d for d in state["date_index"].keys() if start_date <= d <= end_date])
-    if not dates:
-        return []
-
-    band_index = get_geotiff_band_index(state, variable)
-    results: List[Dict] = []
-    for date_str in dates:
-        value_sum = 0.0
-        value_count = 0
-        for file_path in state["date_index"][date_str]:
-            try:
-                values, valid_mask, transform = read_geotiff_band(file_path, band_index)
-                rows, cols = np.nonzero(valid_mask)
-                if rows.size == 0:
-                    continue
-                point_values = values[rows, cols]
-                lats, lons = geotiff_pixel_coordinates(transform, rows, cols)
-                mask = (
-                    (lats >= min_lat)
-                    & (lats <= max_lat)
-                    & (lons >= min_lon)
-                    & (lons <= max_lon)
-                )
-                if subregion and mask.any():
-                    subregion_mask = build_subregion_mask_for_points(lats, lons, subregion)
-                    mask &= subregion_mask
-                if not mask.any():
-                    continue
-                point_values = point_values[mask]
-                if point_values.size == 0:
-                    continue
-                value_sum += float(np.nansum(point_values))
-                value_count += int(np.isfinite(point_values).sum())
-            except Exception as exc:
-                logger.error("[%s] Error in GeoTIFF region mean for %s: %s", state["id"], file_path, exc)
 
         if value_count > 0:
             results.append(
@@ -2698,7 +2933,7 @@ def ensure_dataset_loaded(
             conversion_hint = f"Place MOD10A1 .tif/.tiff files in {state['path']}."
         elif storage == GEOPARQUET_STORAGE:
             expected_files = "GeoParquet files"
-            conversion_hint = f"Place discharge GeoParquet files in {state['path']}."
+            conversion_hint = f"Place the configured GeoParquet files in {state['path']}."
         else:
             expected_files = "parquet files"
             conversion_hint = f"Convert CSV files first in {state['path']}."
@@ -2780,7 +3015,13 @@ def _json_safe_scalar(value: Any) -> Any:
     return value
 
 
-def _read_discharge_frame(file_path: str, variable: str) -> Any:
+def _read_geoparquet_frame(
+    file_path: str,
+    variable: str,
+    state: Dict[str, Any],
+    elev_min: Optional[float] = None,
+    elev_max: Optional[float] = None,
+) -> Any:
     ensure_geopandas_available()
     frame = gpd.read_parquet(file_path, columns=[variable, "geometry"])  # type: ignore[union-attr]
     if frame.empty:
@@ -2795,6 +3036,14 @@ def _read_discharge_frame(file_path: str, variable: str) -> Any:
             epsg = None
         if epsg != 4326:
             frame = frame.to_crs("EPSG:4326")
+    if state.get("elevation_is_value"):
+        values = pd.to_numeric(frame[variable], errors="coerce")
+        valid = values.notna()
+        if elev_min is not None:
+            valid &= values >= float(elev_min)
+        if elev_max is not None:
+            valid &= values <= float(elev_max)
+        frame = frame.loc[valid].copy()
     return frame
 
 
@@ -2838,7 +3087,7 @@ def _filter_discharge_by_bbox(
     return frame.cx[float(min_lon):float(max_lon), float(min_lat):float(max_lat)]
 
 
-def _discharge_frame_to_features(
+def _geoparquet_frame_to_records(
     frame: Any,
     *,
     date: str,
@@ -2848,39 +3097,44 @@ def _discharge_frame_to_features(
     if frame.empty:
         return []
 
-    # Sending 30k+ full polygons per date is too heavy for the local browser.
-    # For interactive DN visualization, render each network cell at its
-    # representative point while keeping the exact DN value unchanged.
-    records: List[Dict[str, Any]] = []
+    max_points = max(1, int(state.get("map_max_points", GEOTIFF_DEFAULT_MAP_MAX_POINTS)))
+    if len(frame) > max_points:
+        sample_positions = np.linspace(0, len(frame) - 1, num=max_points, dtype=np.int64)
+        frame = frame.iloc[sample_positions].copy()
+
+    # Render GeoParquet geometries at representative points. This keeps the
+    # browser response bounded for both polygon networks and DEM point grids.
     centroids = frame.geometry.representative_point()
-    for idx, row in frame.iterrows():
-        geometry = row.geometry
-        if geometry is None or geometry.is_empty:
-            continue
-        raw_value = row.get(variable)
+    feature_kind = str(state.get("feature_kind") or "geoparquet")
+    raw_values = frame[variable].to_numpy(copy=False)
+    longitudes = centroids.x.to_numpy(dtype=np.float64, copy=False)
+    latitudes = centroids.y.to_numpy(dtype=np.float64, copy=False)
+    default_elevation = float(state.get("default_elevation", GEOTIFF_DEFAULT_ELEVATION))
+    elevation_is_value = bool(state.get("elevation_is_value"))
+
+    records: List[Dict[str, Any]] = []
+    for raw_value, longitude, latitude in zip(raw_values, longitudes, latitudes):
         value = _json_safe_scalar(raw_value)
-        if value is None:
-            continue
-        centroid = centroids.loc[idx]
-        records.append(
-            {
+        if value is not None and np.isfinite(longitude) and np.isfinite(latitude):
+            records.append({
                 "dataset": state["id"],
-                "kind": "discharge_network",
+                "kind": feature_kind,
                 "date": date,
                 "variable": variable,
                 "value": float(value),
                 variable: _json_safe_scalar(raw_value),
-                "lat": float(centroid.y),
-                "lon": float(centroid.x),
-                "elev": float(state.get("default_elevation", GEOTIFF_DEFAULT_ELEVATION)),
-            }
-        )
+                "lat": float(latitude),
+                "lon": float(longitude),
+                "elev": float(value) if elevation_is_value else default_elevation,
+            })
     return records
 
 
 def query_geoparquet_data(
     state: Dict[str, Any],
     query_date: str,
+    elev_min: float,
+    elev_max: float,
     variable: str,
     subregion: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
@@ -2890,10 +3144,16 @@ def query_geoparquet_data(
     results: List[Dict[str, Any]] = []
     for file_path in state["date_index"][query_date]:
         try:
-            frame = _read_discharge_frame(file_path, variable)
+            frame = _read_geoparquet_frame(
+                file_path,
+                variable,
+                state,
+                elev_min=elev_min,
+                elev_max=elev_max,
+            )
             frame = _filter_discharge_by_subregion(frame, subregion)
             results.extend(
-                _discharge_frame_to_features(
+                _geoparquet_frame_to_records(
                     frame,
                     date=query_date,
                     variable=variable,
@@ -2902,6 +3162,10 @@ def query_geoparquet_data(
             )
         except Exception as exc:
             logger.error(f"[{state['id']}] Error querying GeoParquet {file_path}: {exc}")
+    map_max_points = max(1, int(state.get("map_max_points", GEOTIFF_DEFAULT_MAP_MAX_POINTS)))
+    if len(results) > map_max_points:
+        sample_positions = np.linspace(0, len(results) - 1, num=map_max_points, dtype=np.int64)
+        results = [results[position] for position in sample_positions]
     return results
 
 
@@ -2909,6 +3173,8 @@ def calculate_geoparquet_basin_mean(
     state: Dict[str, Any],
     start_date: str,
     end_date: str,
+    elev_min: float,
+    elev_max: float,
     variable: str,
     subregion: Optional[Dict[str, Any]] = None,
     region_bounds: Optional[Dict[str, float]] = None,
@@ -2919,7 +3185,13 @@ def calculate_geoparquet_basin_mean(
         frames = []
         for file_path in state["date_index"][date_key]:
             try:
-                frame = _read_discharge_frame(file_path, variable)
+                frame = _read_geoparquet_frame(
+                    file_path,
+                    variable,
+                    state,
+                    elev_min=elev_min,
+                    elev_max=elev_max,
+                )
                 if region_bounds:
                     frame = _filter_discharge_by_bbox(
                         frame,
@@ -2933,47 +3205,6 @@ def calculate_geoparquet_basin_mean(
                     frames.append(frame)
             except Exception as exc:
                 logger.error(f"[{state['id']}] Error in GeoParquet basin mean for {file_path}: {exc}")
-        if not frames:
-            continue
-        combined = pd.concat(frames, ignore_index=True)
-        values = pd.to_numeric(combined[variable], errors="coerce").dropna()
-        if values.empty:
-            continue
-        results.append(
-            {
-                "date": date_key,
-                "mean_value": float(values.mean()),
-                "pixel_count": int(values.count()),
-            }
-        )
-    return results
-
-
-def calculate_geoparquet_region_mean(
-    state: Dict[str, Any],
-    year: int,
-    min_lat: float,
-    max_lat: float,
-    min_lon: float,
-    max_lon: float,
-    variable: str,
-    subregion: Optional[Dict[str, Any]] = None,
-) -> List[Dict[str, Any]]:
-    start_date = f"{year}-01-01"
-    end_date = f"{year}-12-31"
-    dates = sorted([d for d in state["date_index"].keys() if start_date <= d <= end_date])
-    results: List[Dict[str, Any]] = []
-    for date_key in dates:
-        frames = []
-        for file_path in state["date_index"][date_key]:
-            try:
-                frame = _read_discharge_frame(file_path, variable)
-                frame = _filter_discharge_by_bbox(frame, min_lat, max_lat, min_lon, max_lon)
-                frame = _filter_discharge_by_subregion(frame, subregion)
-                if not frame.empty:
-                    frames.append(frame)
-            except Exception as exc:
-                logger.error(f"[{state['id']}] Error in GeoParquet region mean for {file_path}: {exc}")
         if not frames:
             continue
         combined = pd.concat(frames, ignore_index=True)
@@ -3011,6 +3242,8 @@ def query_data(
         return query_geoparquet_data(
             state,
             query_date,
+            elev_min,
+            elev_max,
             variable,
             subregion=subregion,
         )
@@ -3022,17 +3255,27 @@ def query_data(
     lat_col = state["lat_col"]
     lon_col = state["lon_col"]
     elev_col = state["elev_col"]
+    sample_col = state.get("interactive_sample_column")
+    exclude_zero = variable.casefold() in {
+        str(name).casefold() for name in state.get("map_exclude_zero_variables", ())
+    }
     qdate = pd.Timestamp(query_date)
 
     results: List[Dict] = []
     for file_path in state["date_index"][query_date]:
         try:
             columns_key = (date_col, lat_col, lon_col, elev_col, variable)
+            if sample_col:
+                columns_key = (*columns_key, sample_col)
             filters = [
                 (date_col, "==", qdate.to_pydatetime()),
                 (elev_col, ">=", float(elev_min)),
                 (elev_col, "<=", float(elev_max)),
             ]
+            if sample_col:
+                filters.append((sample_col, "==", True))
+            if exclude_zero:
+                filters.append((variable, "!=", 0))
             if subregion:
                 bounds = subregion["bounds"]
                 filters.extend(
@@ -3051,6 +3294,14 @@ def query_data(
                 & (df[elev_col] >= elev_min)
                 & (df[elev_col] <= elev_max)
             )
+            if sample_col:
+                mask &= df[sample_col].fillna(False).astype(bool)
+            numeric_values = pd.to_numeric(df[variable], errors="coerce")
+            mask &= numeric_values.notna() & np.isfinite(numeric_values)
+            if exclude_zero:
+                # Keep this check even with the Arrow filter because
+                # read_parquet_subset can fall back to an unfiltered read.
+                mask &= numeric_values.ne(0)
             if subregion and mask.any():
                 mask &= build_subregion_mask(df, lat_col, lon_col, subregion)
             if not mask.any():
@@ -3092,6 +3343,8 @@ def calculate_basin_mean(
             state,
             start_date,
             end_date,
+            elev_min,
+            elev_max,
             variable,
             subregion=subregion,
             region_bounds=region_bounds,
@@ -3183,121 +3436,6 @@ def calculate_basin_mean(
     return results
 
 
-def calculate_region_mean(
-    state: Dict,
-    year: int,
-    min_lat: float,
-    max_lat: float,
-    min_lon: float,
-    max_lon: float,
-    elev_min: float,
-    elev_max: float,
-    variable: str,
-    subregion: Optional[Dict[str, Any]] = None,
-) -> List[Dict]:
-    if is_geotiff_dataset(state):
-        return calculate_geotiff_region_mean(
-            state,
-            year,
-            min_lat,
-            max_lat,
-            min_lon,
-            max_lon,
-            elev_min,
-            elev_max,
-            variable,
-            subregion=subregion,
-        )
-    if is_geoparquet_dataset(state):
-        return calculate_geoparquet_region_mean(
-            state,
-            year,
-            min_lat,
-            max_lat,
-            min_lon,
-            max_lon,
-            variable,
-            subregion=subregion,
-        )
-
-    start_date = f"{year}-01-01"
-    end_date = f"{year}-12-31"
-    dates = sorted([d for d in state["date_index"].keys() if start_date <= d <= end_date])
-    if not dates:
-        return []
-
-    date_col = state["date_col"]
-    lat_col = state["lat_col"]
-    lon_col = state["lon_col"]
-    elev_col = state["elev_col"]
-    files = sorted(set(f for d in dates for f in state["date_index"][d]))
-    start_ts = pd.Timestamp(start_date)
-    end_ts = pd.Timestamp(end_date)
-
-    results: List[Dict] = []
-    for file_path in files:
-        try:
-            columns_key = (date_col, lat_col, lon_col, elev_col, variable)
-            filters = [
-                (date_col, ">=", start_ts.to_pydatetime()),
-                (date_col, "<=", end_ts.to_pydatetime()),
-                (lat_col, ">=", float(min_lat)),
-                (lat_col, "<=", float(max_lat)),
-                (lon_col, ">=", float(min_lon)),
-                (lon_col, "<=", float(max_lon)),
-                (elev_col, ">=", float(elev_min)),
-                (elev_col, "<=", float(elev_max)),
-            ]
-            if subregion:
-                bounds = subregion["bounds"]
-                filters.extend(
-                    [
-                        (lat_col, ">=", float(bounds["min_lat"])),
-                        (lat_col, "<=", float(bounds["max_lat"])),
-                        (lon_col, ">=", float(bounds["min_lon"])),
-                        (lon_col, "<=", float(bounds["max_lon"])),
-                    ]
-                )
-            df = read_parquet_subset(file_path, columns_key, date_col, filters=filters)
-            if df.empty:
-                continue
-            mask = (
-                (df[date_col] >= start_ts)
-                & (df[date_col] <= end_ts)
-                & (df[lat_col] >= min_lat)
-                & (df[lat_col] <= max_lat)
-                & (df[lon_col] >= min_lon)
-                & (df[lon_col] <= max_lon)
-                & (df[elev_col] >= elev_min)
-                & (df[elev_col] <= elev_max)
-            )
-            if subregion and mask.any():
-                mask &= build_subregion_mask(df, lat_col, lon_col, subregion)
-            if not mask.any():
-                continue
-
-            grouped = (
-                df.loc[mask, [date_col, variable]]
-                .groupby(date_col, as_index=False)
-                .agg(mean_value=(variable, "mean"), pixel_count=(variable, "count"))
-            )
-            grouped[date_col] = grouped[date_col].dt.strftime("%Y-%m-%d")
-
-            for row in grouped.itertuples(index=False):
-                results.append(
-                    {
-                        "date": getattr(row, date_col),
-                        "mean_value": float(row.mean_value),
-                        "pixel_count": int(row.pixel_count),
-                    }
-                )
-        except Exception as exc:
-            logger.error(f"[{state['id']}] Error in region mean for {file_path}: {exc}")
-
-    results.sort(key=lambda row: row["date"])
-    return results
-
-
 def calculate_hotspot_trends(
     state: Dict,
     year_start: int,
@@ -3337,16 +3475,23 @@ def calculate_hotspot_trends(
         }
 
     files = sorted(set(file_path for date_key in dates for file_path in state["date_index"][date_key]))
-    grouped_chunks: List[pd.DataFrame] = []
+    # Keep each year's intermediate rows bounded.  This avoids concatenating
+    # every monthly pixel frame at once for high-resolution datasets.
+    grouped_chunks_by_year: Dict[int, List[pd.DataFrame]] = {}
+    hotspot_sample_col = state.get("hotspot_sample_column")
 
     for file_path in files:
         columns_key = (date_col, lat_col, lon_col, elev_col, variable)
+        if hotspot_sample_col:
+            columns_key = (*columns_key, hotspot_sample_col)
         filters = [
             (date_col, ">=", start_ts.to_pydatetime()),
             (date_col, "<=", end_ts.to_pydatetime()),
             (elev_col, ">=", float(elev_min)),
             (elev_col, "<=", float(elev_max)),
         ]
+        if hotspot_sample_col:
+            filters.append((hotspot_sample_col, "==", True))
         if subregion:
             bounds = subregion["bounds"]
             filters.extend(
@@ -3373,6 +3518,8 @@ def calculate_hotspot_trends(
             & (df[elev_col] >= elev_min)
             & (df[elev_col] <= elev_max)
         )
+        if hotspot_sample_col:
+            mask &= df[hotspot_sample_col].fillna(False).astype(bool)
         if subregion and mask.any():
             mask &= build_subregion_mask(df, lat_col, lon_col, subregion)
         if not mask.any():
@@ -3394,9 +3541,10 @@ def calculate_hotspot_trends(
             )
         )
         if not grouped.empty:
-            grouped_chunks.append(grouped)
+            for year_value, year_frame in grouped.groupby("year", sort=False):
+                grouped_chunks_by_year.setdefault(int(year_value), []).append(year_frame)
 
-    if not grouped_chunks:
+    if not grouped_chunks_by_year:
         return {
             "summary": {
                 "points_analyzed": 0,
@@ -3409,65 +3557,59 @@ def calculate_hotspot_trends(
             "top_hotspots": [],
         }
 
-    combined = pd.concat(grouped_chunks, ignore_index=True)
-    combined = (
-        combined
-        .groupby([lat_col, lon_col, "year"], as_index=False)
+    annual_chunks: List[pd.DataFrame] = []
+    for year_value, year_chunks in sorted(grouped_chunks_by_year.items()):
+        annual = (
+            pd.concat(year_chunks, ignore_index=True)
+            .groupby([lat_col, lon_col], as_index=False)
+            .agg(
+                value_sum=("value_sum", "sum"),
+                value_count=("value_count", "sum"),
+                elev_sum=("elev_sum", "sum"),
+                elev_count=("elev_count", "sum"),
+            )
+        )
+        annual["year"] = year_value
+        annual_chunks.append(annual)
+    combined = pd.concat(annual_chunks, ignore_index=True)
+    combined["annual_mean"] = combined["value_sum"] / combined["value_count"]
+
+    # Vectorized least-squares regression per point.  The former Python loop
+    # called np.polyfit tens of thousands of times and dominated MODIS runtime.
+    combined = combined[
+        (combined["value_count"] > 0)
+        & np.isfinite(combined["annual_mean"])
+        & np.isfinite(combined["year"])
+    ].copy()
+    combined["_x"] = combined["year"].astype(np.float64)
+    combined["_y"] = combined["annual_mean"].astype(np.float64)
+    combined["_xx"] = combined["_x"] * combined["_x"]
+    combined["_xy"] = combined["_x"] * combined["_y"]
+    combined["_yy"] = combined["_y"] * combined["_y"]
+    point_stats = (
+        combined.groupby([lat_col, lon_col], as_index=False, sort=False)
         .agg(
-            value_sum=("value_sum", "sum"),
-            value_count=("value_count", "sum"),
+            coverage_years=("year", "count"),
+            start_year=("year", "min"),
+            end_year=("year", "max"),
+            sum_x=("_x", "sum"),
+            sum_y=("_y", "sum"),
+            sum_xx=("_xx", "sum"),
+            sum_xy=("_xy", "sum"),
+            sum_yy=("_yy", "sum"),
             elev_sum=("elev_sum", "sum"),
             elev_count=("elev_count", "sum"),
         )
     )
-    combined["annual_mean"] = combined["value_sum"] / combined["value_count"]
+    required_coverage = max(2, min_years)
+    point_stats = point_stats[point_stats["coverage_years"] >= required_coverage].copy()
+    denominator = (
+        point_stats["coverage_years"] * point_stats["sum_xx"]
+        - point_stats["sum_x"] * point_stats["sum_x"]
+    )
+    point_stats = point_stats[np.abs(denominator) > np.finfo(np.float64).eps].copy()
 
-    hotspot_rows: List[Dict[str, Any]] = []
-    grouped_points = combined.groupby([lat_col, lon_col], sort=False)
-    for (lat_value, lon_value), point_df in grouped_points:
-        ordered = point_df.sort_values("year")
-        years_arr = ordered["year"].to_numpy(dtype=float)
-        annual_means = ordered["annual_mean"].to_numpy(dtype=float)
-        if years_arr.size < max(2, min_years):
-            continue
-        finite_mask = np.isfinite(annual_means) & np.isfinite(years_arr)
-        if finite_mask.sum() < max(2, min_years):
-            continue
-
-        years_arr = years_arr[finite_mask]
-        annual_means = annual_means[finite_mask]
-        if np.unique(years_arr).size < 2:
-            continue
-
-        slope, intercept = np.polyfit(years_arr, annual_means, 1)
-        start_year_point = int(years_arr.min())
-        end_year_point = int(years_arr.max())
-        start_value = float(intercept + slope * start_year_point)
-        end_value = float(intercept + slope * end_year_point)
-        total_change = end_value - start_value
-
-        elev_total = float(ordered["elev_sum"].sum())
-        elev_count_total = float(ordered["elev_count"].sum())
-        elev_mean = elev_total / elev_count_total if elev_count_total > 0 else np.nan
-
-        hotspot_rows.append(
-            {
-                "lat": float(lat_value),
-                "lon": float(lon_value),
-                "elev": float(elev_mean) if np.isfinite(elev_mean) else None,
-                "slope_per_year": float(slope),
-                "trend_strength": float(abs(slope)),
-                "total_change": float(total_change),
-                "start_year": start_year_point,
-                "end_year": end_year_point,
-                "coverage_years": int(len(years_arr)),
-                "annual_mean": float(np.nanmean(annual_means)),
-                "annual_std": float(np.nanstd(annual_means)),
-                "direction": "increase" if slope >= 0 else "decrease",
-            }
-        )
-
-    if not hotspot_rows:
+    if point_stats.empty:
         return {
             "summary": {
                 "points_analyzed": 0,
@@ -3480,25 +3622,62 @@ def calculate_hotspot_trends(
             "top_hotspots": [],
         }
 
-    strengths = np.array([row["trend_strength"] for row in hotspot_rows], dtype=float)
+    denominator = (
+        point_stats["coverage_years"] * point_stats["sum_xx"]
+        - point_stats["sum_x"] * point_stats["sum_x"]
+    )
+    point_stats["slope_per_year"] = (
+        point_stats["coverage_years"] * point_stats["sum_xy"]
+        - point_stats["sum_x"] * point_stats["sum_y"]
+    ) / denominator
+    point_stats["trend_strength"] = point_stats["slope_per_year"].abs()
+    point_stats["total_change"] = point_stats["slope_per_year"] * (
+        point_stats["end_year"] - point_stats["start_year"]
+    )
+    point_stats["annual_mean"] = point_stats["sum_y"] / point_stats["coverage_years"]
+    annual_variance = (
+        point_stats["sum_yy"] / point_stats["coverage_years"]
+        - point_stats["annual_mean"] * point_stats["annual_mean"]
+    ).clip(lower=0.0)
+    point_stats["annual_std"] = np.sqrt(annual_variance)
+    point_stats["elev"] = point_stats["elev_sum"] / point_stats["elev_count"]
+    point_stats["direction"] = np.where(point_stats["slope_per_year"] >= 0, "increase", "decrease")
+
+    strengths = point_stats["trend_strength"].to_numpy(dtype=np.float64)
     p70 = float(np.percentile(strengths, 70))
     p85 = float(np.percentile(strengths, 85))
     p95 = float(np.percentile(strengths, 95))
-
-    for row in hotspot_rows:
-        value = row["trend_strength"]
-        if value >= p95:
-            row["hotspot_level"] = "extreme"
-        elif value >= p85:
-            row["hotspot_level"] = "high"
-        elif value >= p70:
-            row["hotspot_level"] = "moderate"
-        else:
-            row["hotspot_level"] = "low"
-
-    hotspot_rows.sort(key=lambda item: item["trend_strength"], reverse=True)
+    point_stats["hotspot_level"] = np.select(
+        [
+            point_stats["trend_strength"] >= p95,
+            point_stats["trend_strength"] >= p85,
+            point_stats["trend_strength"] >= p70,
+        ],
+        ["extreme", "high", "moderate"],
+        default="low",
+    )
+    output_columns = [
+        lat_col,
+        lon_col,
+        "elev",
+        "slope_per_year",
+        "trend_strength",
+        "total_change",
+        "start_year",
+        "end_year",
+        "coverage_years",
+        "annual_mean",
+        "annual_std",
+        "direction",
+        "hotspot_level",
+    ]
+    point_stats = point_stats.sort_values("trend_strength", ascending=False)
+    point_stats = point_stats[output_columns].rename(columns={lat_col: "lat", lon_col: "lon"})
+    for int_column in ("start_year", "end_year", "coverage_years"):
+        point_stats[int_column] = point_stats[int_column].astype(int)
+    hotspot_rows = point_stats.to_dict("records")
     top_hotspots = hotspot_rows[:20]
-    hotspots_identified = len([row for row in hotspot_rows if row["hotspot_level"] in {"high", "extreme"}])
+    hotspots_identified = int(point_stats["hotspot_level"].isin({"high", "extreme"}).sum())
 
     summary = {
         "points_analyzed": len(hotspot_rows),
@@ -3513,6 +3692,12 @@ def calculate_hotspot_trends(
         },
         "max_strength": float(strengths.max()) if strengths.size else 0.0,
         "mean_strength": float(strengths.mean()) if strengths.size else 0.0,
+        "spatially_sampled": bool(hotspot_sample_col),
+        "sampling_note": (
+            "Trend statistics use the deterministic interactive spatial grid; full-resolution rows remain available in custom analysis."
+            if hotspot_sample_col
+            else None
+        ),
     }
 
     return {
@@ -3522,23 +3707,35 @@ def calculate_hotspot_trends(
     }
 
 
+def build_operation_backend_hooks() -> OperationBackendHooks:
+    return OperationBackendHooks(
+        ensure_dataset_loaded=ensure_dataset_loaded,
+        validate_variable=validate_variable,
+        resolve_elevation_bounds=resolve_elevation_bounds,
+        normalize_year_range=normalize_year_range,
+        get_subregion=get_subregion,
+        query_data=query_data,
+    )
+
+
 def register_custom_operations_router() -> None:
     app.include_router(
         build_custom_operations_router(
-            hooks=OperationBackendHooks(
-                ensure_dataset_loaded=ensure_dataset_loaded,
-                validate_variable=validate_variable,
-                resolve_elevation_bounds=resolve_elevation_bounds,
-                normalize_year_range=normalize_year_range,
-                get_subregion=get_subregion,
-                query_data=query_data,
-            ),
+            hooks=build_operation_backend_hooks(),
             workspace_root=WEBAPP_DIR / "HBapi" / "workspace" / "custom_operations",
         )
     )
 
 
 register_custom_operations_router()
+app.include_router(build_project_workspace_router(WEBAPP_DIR / "HBapi" / "workspace"))
+app.include_router(build_research_router(WEBAPP_DIR))
+app.include_router(
+    build_research_framework_router(
+        WEBAPP_DIR,
+        OperationDataLoader(build_operation_backend_hooks()),
+    )
+)
 
 
 
@@ -3599,43 +3796,63 @@ async def get_datasets():
 
 @app.get("/outcomes")
 async def get_outcomes():
-    try:
-        _load_long_term_hotspot_outcome()
-    except HTTPException:
-        pass
+    for outcome_id in OUTCOME_CONFIGS:
+        try:
+            _load_long_term_hotspot_outcome(outcome_id)
+        except HTTPException:
+            pass
     return JSONResponse(content={"outcomes": get_outcomes_summary()})
 
 
-@app.get("/outcomes/long-term-hotspot/meta")
-async def get_long_term_hotspot_meta():
-    state = _load_long_term_hotspot_outcome()
+@app.get("/outcomes/{outcome_slug}/meta")
+async def get_long_term_hotspot_meta(outcome_slug: str):
+    outcome_id = outcome_slug.replace("-", "_")
+    config = OUTCOME_CONFIGS.get(outcome_id)
+    if not config:
+        raise HTTPException(status_code=404, detail=f"Unknown outcome '{outcome_slug}'")
+    state = _load_long_term_hotspot_outcome(outcome_id)
     row_count = int(state["df"].shape[0])
     point_count = int(state["df"][["lat", "lon"]].drop_duplicates().shape[0]) if row_count else 0
     return JSONResponse(
         content={
-            "outcome_id": "long_term_hotspot",
-            "label": "Long Term Hotspot Analysis",
-            "dataset": "era5",
+            "outcome_id": outcome_id,
+            "label": config["label"],
+            "description": state.get("meta", {}).get("description", config["description"]),
+            "dataset": config["dataset"],
             "variables": state["variables"],
             "bands": state["bands"],
             "comparisons": state.get("comparisons", []),
+            "aggregation_by_variable": state.get("meta", {}).get(
+                "aggregation_by_variable",
+                {variable: "mean" for variable in state["variables"]},
+            ),
+            "coverage_by_band": state.get("meta", {}).get("coverage_by_band", []),
+            "coverage_by_variable": state.get("meta", {}).get("coverage_by_variable", {}),
             "row_count": row_count,
             "difference_row_count": int(state.get("diff_df", pd.DataFrame()).shape[0]),
             "point_count": point_count,
             "generated_at": state.get("meta", {}).get("generated_at"),
             "differences_generated_at": state.get("diff_meta", {}).get("generated_at"),
-            "parquet_path": str(LONG_TERM_HOTSPOT_PARQUET),
-            "difference_parquet_path": str(LONG_TERM_HOTSPOT_DIFF_PARQUET),
+            "parquet_path": str(config["parquet"]),
+            "difference_parquet_path": str(config["diff_parquet"]),
+            "output_directory": config["output_directory"],
         }
     )
 
 
-@app.get("/outcomes/long-term-hotspot/data")
+@app.get("/outcomes/{outcome_slug}/data")
 async def get_long_term_hotspot_data(
+    outcome_slug: str,
     variable: Optional[str] = Query(None, description="Variable name"),
     band_id: Optional[str] = Query(None, description="Band id"),
+    aoi_geojson: Optional[str] = Query(None, description="Optional ROI Polygon/MultiPolygon GeoJSON"),
 ):
-    state = _load_long_term_hotspot_outcome()
+    outcome_id = outcome_slug.replace("-", "_")
+    config = OUTCOME_CONFIGS.get(outcome_id)
+    if not config:
+        raise HTTPException(status_code=404, detail=f"Unknown outcome '{outcome_slug}'")
+    roi_subregion = _parse_aoi_geojson(aoi_geojson)
+    state = _load_long_term_hotspot_outcome(outcome_id)
     variables = state["variables"]
     if not variables:
         raise HTTPException(status_code=404, detail="No variables available in long-term hotspot output")
@@ -3660,13 +3877,15 @@ async def get_long_term_hotspot_data(
         )
 
     df = state["df"]
-    filtered = df[(df["variable"] == selected_variable) & (df["band_id"] == selected_band_id)].copy()
+    filtered = df.loc[(df["variable"] == selected_variable) & (df["band_id"] == selected_band_id)]
+    filtered = filter_point_dataframe_by_subregion(filtered, roi_subregion).copy()
     if filtered.empty:
         return JSONResponse(
             content={
-                "outcome_id": "long_term_hotspot",
-                "dataset": "era5",
+                "outcome_id": outcome_id,
+                "dataset": config["dataset"],
                 "variable": selected_variable,
+                "aggregation": state.get("meta", {}).get("aggregation_by_variable", {}).get(selected_variable, "mean"),
                 "band": band_lookup[selected_band_id],
                 "data": [],
                 "count": 0,
@@ -3700,9 +3919,10 @@ async def get_long_term_hotspot_data(
 
     return JSONResponse(
         content={
-            "outcome_id": "long_term_hotspot",
-            "dataset": "era5",
+            "outcome_id": outcome_id,
+            "dataset": config["dataset"],
             "variable": selected_variable,
+            "aggregation": state.get("meta", {}).get("aggregation_by_variable", {}).get(selected_variable, "mean"),
             "band": band_lookup[selected_band_id],
             "data": data,
             "count": len(data),
@@ -3711,14 +3931,21 @@ async def get_long_term_hotspot_data(
     )
 
 
-@app.get("/outcomes/long-term-hotspot/difference")
+@app.get("/outcomes/{outcome_slug}/difference")
 async def get_long_term_hotspot_difference(
+    outcome_slug: str,
     variable: Optional[str] = Query(None, description="Variable name"),
     comparison_id: Optional[str] = Query(None, description="Saved comparison id"),
     earlier_band_id: Optional[str] = Query(None, description="Earlier/base band id"),
     later_band_id: Optional[str] = Query(None, description="Later/comparison band id"),
+    aoi_geojson: Optional[str] = Query(None, description="Optional ROI Polygon/MultiPolygon GeoJSON"),
 ):
-    state = _load_long_term_hotspot_outcome()
+    outcome_id = outcome_slug.replace("-", "_")
+    config = OUTCOME_CONFIGS.get(outcome_id)
+    if not config:
+        raise HTTPException(status_code=404, detail=f"Unknown outcome '{outcome_slug}'")
+    roi_subregion = _parse_aoi_geojson(aoi_geojson)
+    state = _load_long_term_hotspot_outcome(outcome_id)
     variables = state["variables"]
     if not variables:
         raise HTTPException(status_code=404, detail="No variables available in long-term hotspot output")
@@ -3736,8 +3963,8 @@ async def get_long_term_hotspot_difference(
         raise HTTPException(
             status_code=404,
             detail=(
-                "Long-term band difference output not found. "
-                "Run Outcomes/Long_term_hotspot/Scripts/compute_band_differences.py"
+                f"{config['label']} difference output not found. "
+                f"Run {Path(config['generation_script']).parent / 'compute_band_differences.py'}"
             ),
         )
 
@@ -3765,17 +3992,19 @@ async def get_long_term_hotspot_difference(
         )
 
     comparison = comparison_lookup[selected_comparison_id]
-    filtered = diff_df[
+    filtered = diff_df.loc[
         (diff_df["variable"] == selected_variable)
         & (diff_df["id"].astype(str) == selected_comparison_id)
-    ].copy()
+    ]
+    filtered = filter_point_dataframe_by_subregion(filtered, roi_subregion).copy()
 
     if filtered.empty:
         return JSONResponse(
             content={
-                "outcome_id": "long_term_hotspot",
-                "dataset": "era5",
+                "outcome_id": outcome_id,
+                "dataset": config["dataset"],
                 "variable": selected_variable,
+                "aggregation": state.get("meta", {}).get("aggregation_by_variable", {}).get(selected_variable, "mean"),
                 "comparison": comparison,
                 "data": [],
                 "count": 0,
@@ -3832,9 +4061,10 @@ async def get_long_term_hotspot_difference(
 
     return JSONResponse(
         content={
-            "outcome_id": "long_term_hotspot",
-            "dataset": "era5",
+            "outcome_id": outcome_id,
+            "dataset": config["dataset"],
             "variable": selected_variable,
+            "aggregation": state.get("meta", {}).get("aggregation_by_variable", {}).get(selected_variable, "mean"),
             "comparison": comparison,
             "data": data,
             "count": len(data),
@@ -3865,10 +4095,11 @@ async def get_available_years(dataset: Optional[str] = Query(None, description="
         )
     if is_geoparquet_dataset(state):
         geoparquet_files = get_geoparquet_files(state)
+        reference_date = state.get("reference_date")
         years = {
             int(date_str[:4])
             for file_path in geoparquet_files
-            if (date_str := parse_discharge_date_from_path(file_path))
+            if (date_str := parse_geoparquet_date_from_path(file_path, reference_date))
         }
         years_list = sorted(years)
         return JSONResponse(
@@ -4025,6 +4256,15 @@ async def get_glacier_overview(
     max_lat: Optional[float] = Query(None, description="Viewport max latitude"),
     min_lon: Optional[float] = Query(None, description="Viewport min longitude"),
     max_lon: Optional[float] = Query(None, description="Viewport max longitude"),
+    subregion_id: Optional[str] = Query(None, description="Optional exact subregion polygon"),
+    aoi_geojson: Optional[str] = Query(None, description="Optional ROI Polygon/MultiPolygon GeoJSON"),
+    nearby_buffer_km: float = Query(
+        GLACIER_ROI_NEARBY_BUFFER_KM,
+        ge=0.0,
+        le=25.0,
+        description="Nearby buffer around ROI used when loading glacier outlines",
+    ),
+    complete_within_bbox: bool = Query(False, description="Load the complete glacier set within selected bounds"),
     zoom: float = Query(6.0, ge=0.0, le=22.0, description="Current map zoom"),
     max_features: int = Query(
         GLACIER_OVERVIEW_DEFAULT_MAX_FEATURES,
@@ -4036,6 +4276,32 @@ async def get_glacier_overview(
     _ensure_glacier_vector_reader()
 
     bbox = _validate_glacier_bbox(min_lat=min_lat, max_lat=max_lat, min_lon=min_lon, max_lon=max_lon)
+    aoi_subregion = _parse_aoi_geojson(aoi_geojson)
+    selected_subregion = None if aoi_subregion else get_subregion(subregion_id)
+    selection_subregion = aoi_subregion or selected_subregion
+    active_nearby_buffer_km = float(nearby_buffer_km) if aoi_subregion else 0.0
+    if aoi_subregion:
+        complete_within_bbox = True
+        bounds = aoi_subregion["bounds"]
+        bbox = _expand_wgs84_bbox_by_km(
+            (
+                float(bounds["min_lon"]),
+                float(bounds["min_lat"]),
+                float(bounds["max_lon"]),
+                float(bounds["max_lat"]),
+            ),
+            active_nearby_buffer_km,
+        )
+    if selected_subregion and bbox is None:
+        bounds = selected_subregion["bounds"]
+        bbox = (
+            float(bounds["min_lon"]),
+            float(bounds["min_lat"]),
+            float(bounds["max_lon"]),
+            float(bounds["max_lat"]),
+        )
+    if complete_within_bbox and bbox is None:
+        raise HTTPException(status_code=400, detail="complete_within_bbox requires viewport bounds or subregion_id")
     simplify_tolerance = _glacier_simplify_tolerance(zoom)
     max_features = int(max(100, min(int(max_features), GLACIER_OVERVIEW_MAX_FEATURES_LIMIT)))
     source_signature, glacier_sources = _discover_glacier_polygon_sources()
@@ -4060,6 +4326,9 @@ async def get_glacier_overview(
         zoom=zoom,
         max_features=max_features,
         simplify_tolerance=simplify_tolerance,
+        subregion_id=selected_subregion["id"] if selected_subregion else None,
+        aoi_signature=_make_aoi_cache_signature(aoi_subregion),
+        nearby_buffer_km=active_nearby_buffer_km,
     )
     cached_payload = GLACIER_OVERVIEW_CACHE.get(cache_key)
     if cached_payload is not None:
@@ -4074,9 +4343,13 @@ async def get_glacier_overview(
     features: List[Dict[str, Any]] = []
     scanned_rows = 0
     source_count = len(glacier_sources)
-    per_source_read_limit = min(
+    per_source_read_limit = None if complete_within_bbox else min(
         GLACIER_OVERVIEW_READ_MAX_ROWS,
         max_features * GLACIER_OVERVIEW_READ_MULTIPLIER,
+    )
+    selection_geometry = _build_nearby_glacier_selection_geometry(
+        selection_subregion,
+        active_nearby_buffer_km,
     )
 
     for source in glacier_sources:
@@ -4158,6 +4431,11 @@ async def get_glacier_overview(
             frame = frame.copy()
             frame.loc[invalid_mask, "geometry"] = frame.loc[invalid_mask, "geometry"].buffer(0)
             frame = frame[frame.geometry.notna() & ~frame.geometry.is_empty]
+            if frame.empty:
+                continue
+
+        if selection_geometry is not None:
+            frame = frame[frame.geometry.intersects(selection_geometry)]
             if frame.empty:
                 continue
 
@@ -4248,6 +4526,11 @@ async def get_glacier_overview(
             "bbox": bbox_meta,
             "scanned_rows": scanned_rows,
             "source_count": source_count,
+            "subregion_id": selected_subregion["id"] if selected_subregion else None,
+            "roi_id": aoi_subregion["id"] if aoi_subregion else None,
+            "filter_source": "roi" if aoi_subregion else ("subregion" if selected_subregion else "viewport"),
+            "nearby_buffer_km": active_nearby_buffer_km,
+            "complete_within_bbox": complete_within_bbox,
             "cached": False,
         },
     }
@@ -4341,6 +4624,7 @@ async def get_data(
     dataset: Optional[str] = Query(None, description="Dataset id"),
     year_start: Optional[int] = Query(None, description="Inclusive start year"),
     year_end: Optional[int] = Query(None, description="Inclusive end year"),
+    aoi_geojson: Optional[str] = Query(None, description="Optional ROI Polygon/MultiPolygon GeoJSON"),
 ):
     try:
         datetime.strptime(date, "%Y-%m-%d")
@@ -4351,7 +4635,7 @@ async def get_data(
     state = ensure_dataset_loaded(dataset, year_start=year_start, year_end=year_end)
     var_name = validate_variable(state, variable)
     elev_min, elev_max = resolve_elevation_bounds(state, elev_min, elev_max)
-    subregion = get_subregion(subregion_id)
+    subregion = resolve_query_subregion(subregion_id, aoi_geojson)
 
     start_time = datetime.now()
     query_state = snapshot_dataset_state(state)
@@ -4381,6 +4665,7 @@ async def get_data(
             "variable": var_name,
             "subregion_id": subregion["id"] if subregion else None,
             "subregion_label": subregion["label"] if subregion else None,
+            "bounds": subregion["bounds"] if subregion else None,
             "year_start": year_start,
             "year_end": year_end,
             "data": data,
@@ -4399,13 +4684,10 @@ async def get_basin_mean(
     elev_max: Optional[float] = Query(None, description="Maximum elevation"),
     variable: Optional[str] = Query(None, description="Variable name"),
     subregion_id: Optional[str] = Query(None, description="Optional subregion id"),
-    min_lat: Optional[float] = Query(None, description="Optional minimum latitude for selected region"),
-    max_lat: Optional[float] = Query(None, description="Optional maximum latitude for selected region"),
-    min_lon: Optional[float] = Query(None, description="Optional minimum longitude for selected region"),
-    max_lon: Optional[float] = Query(None, description="Optional maximum longitude for selected region"),
     dataset: Optional[str] = Query(None, description="Dataset id"),
     year_start: Optional[int] = Query(None, description="Inclusive start year"),
     year_end: Optional[int] = Query(None, description="Inclusive end year"),
+    aoi_geojson: Optional[str] = Query(None, description="Optional ROI Polygon/MultiPolygon GeoJSON"),
 ):
     try:
         datetime.strptime(start_date, "%Y-%m-%d")
@@ -4417,20 +4699,7 @@ async def get_basin_mean(
     state = ensure_dataset_loaded(dataset, year_start=year_start, year_end=year_end)
     var_name = validate_variable(state, variable)
     elev_min, elev_max = resolve_elevation_bounds(state, elev_min, elev_max)
-    subregion = get_subregion(subregion_id)
-    bound_values = [min_lat, max_lat, min_lon, max_lon]
-    if any(value is not None for value in bound_values) and not all(value is not None for value in bound_values):
-        raise HTTPException(status_code=400, detail="Selected region requires min_lat, max_lat, min_lon, and max_lon")
-    region_bounds = None
-    if all(value is not None for value in bound_values):
-        min_lat, max_lat = sorted([min_lat, max_lat])
-        min_lon, max_lon = sorted([min_lon, max_lon])
-        region_bounds = {
-            "min_lat": min_lat,
-            "max_lat": max_lat,
-            "min_lon": min_lon,
-            "max_lon": max_lon,
-        }
+    subregion = resolve_query_subregion(subregion_id, aoi_geojson)
 
     start_time = datetime.now()
     query_state = snapshot_dataset_state(state)
@@ -4443,20 +4712,14 @@ async def get_basin_mean(
         elev_max,
         var_name,
         subregion,
-        region_bounds,
+        None,
     )
     query_time = (datetime.now() - start_time).total_seconds() * 1000
 
     subregion_log = f", subregion={subregion['id']}" if subregion else ""
-    region_log = (
-        f", region=[{region_bounds['min_lat']},{region_bounds['max_lat']}]x"
-        f"[{region_bounds['min_lon']},{region_bounds['max_lon']}]"
-        if region_bounds
-        else ""
-    )
     logger.info(
         f"[{state['id']}] Basin mean [{start_date} to {end_date}] [{elev_min}-{elev_max}m] {var_name}: "
-        f"{len(data)} days in {query_time:.0f}ms{subregion_log}{region_log}"
+        f"{len(data)} days in {query_time:.0f}ms{subregion_log}"
     )
     return JSONResponse(
         content={
@@ -4469,78 +4732,7 @@ async def get_basin_mean(
             "variable": var_name,
             "subregion_id": subregion["id"] if subregion else None,
             "subregion_label": subregion["label"] if subregion else None,
-            "bounds": region_bounds,
-            "year_start": year_start,
-            "year_end": year_end,
-            "data": data,
-            "count": len(data),
-            "query_time_ms": round(query_time, 2),
-        },
-        headers={"Cache-Control": "private, max-age=300"},
-    )
-
-
-@app.get("/region-mean")
-async def get_region_mean(
-    year: int = Query(..., description="Year (YYYY)"),
-    min_lat: float = Query(..., description="Minimum latitude"),
-    max_lat: float = Query(..., description="Maximum latitude"),
-    min_lon: float = Query(..., description="Minimum longitude"),
-    max_lon: float = Query(..., description="Maximum longitude"),
-    elev_min: Optional[float] = Query(None, description="Minimum elevation"),
-    elev_max: Optional[float] = Query(None, description="Maximum elevation"),
-    variable: Optional[str] = Query(None, description="Variable name"),
-    subregion_id: Optional[str] = Query(None, description="Optional subregion id"),
-    dataset: Optional[str] = Query(None, description="Dataset id"),
-    year_start: Optional[int] = Query(None, description="Inclusive start year"),
-    year_end: Optional[int] = Query(None, description="Inclusive end year"),
-):
-    year_start, year_end = normalize_year_range(year_start, year_end)
-    state = ensure_dataset_loaded(dataset, year_start=year_start, year_end=year_end)
-    var_name = validate_variable(state, variable)
-    elev_min, elev_max = resolve_elevation_bounds(state, elev_min, elev_max)
-    subregion = get_subregion(subregion_id)
-    min_lat, max_lat = sorted([min_lat, max_lat])
-    min_lon, max_lon = sorted([min_lon, max_lon])
-
-    start_time = datetime.now()
-    query_state = snapshot_dataset_state(state)
-    data = await run_in_threadpool(
-        calculate_region_mean,
-        query_state,
-        year,
-        min_lat,
-        max_lat,
-        min_lon,
-        max_lon,
-        elev_min,
-        elev_max,
-        var_name,
-        subregion,
-    )
-    query_time = (datetime.now() - start_time).total_seconds() * 1000
-
-    subregion_log = f", subregion={subregion['id']}" if subregion else ""
-    logger.info(
-        f"[{state['id']}] Region mean {year} [{min_lat},{max_lat}]x[{min_lon},{max_lon}] "
-        f"[{elev_min}-{elev_max}m] {var_name}: {len(data)} days in {query_time:.0f}ms{subregion_log}"
-    )
-    return JSONResponse(
-        content={
-            "dataset": state["id"],
-            "dataset_label": state["label"],
-            "year": year,
-            "bounds": {
-                "min_lat": min_lat,
-                "max_lat": max_lat,
-                "min_lon": min_lon,
-                "max_lon": max_lon,
-            },
-            "elev_min": elev_min,
-            "elev_max": elev_max,
-            "variable": var_name,
-            "subregion_id": subregion["id"] if subregion else None,
-            "subregion_label": subregion["label"] if subregion else None,
+            "bounds": subregion["bounds"] if subregion else None,
             "year_start": year_start,
             "year_end": year_end,
             "data": data,
@@ -4561,12 +4753,13 @@ async def get_hotspot_trends(
     year_start: Optional[int] = Query(None, description="Inclusive start year"),
     year_end: Optional[int] = Query(None, description="Inclusive end year"),
     min_years: int = Query(3, description="Minimum yearly coverage per point"),
+    aoi_geojson: Optional[str] = Query(None, description="Optional ROI Polygon/MultiPolygon GeoJSON"),
 ):
     year_start, year_end = normalize_year_range(year_start, year_end)
     state = ensure_dataset_loaded(dataset, year_start=year_start, year_end=year_end)
     var_name = validate_variable(state, variable)
     elev_min, elev_max = resolve_elevation_bounds(state, elev_min, elev_max)
-    subregion = get_subregion(subregion_id)
+    subregion = resolve_query_subregion(subregion_id, aoi_geojson)
 
     if min_years < 2:
         raise HTTPException(status_code=400, detail="min_years must be at least 2")
@@ -4649,7 +4842,12 @@ async def get_stats(
         return get_geotiff_stats_payload(state, year_start, year_end)
     if is_geoparquet_dataset(state):
         geoparquet_files = get_geoparquet_files(state)
-        filtered_files = select_geoparquet_files_for_year_range(geoparquet_files, year_start, year_end)
+        filtered_files = select_geoparquet_files_for_year_range(
+            geoparquet_files,
+            year_start,
+            year_end,
+            state.get("reference_date"),
+        )
         total_size = sum(file_path.stat().st_size for file_path in filtered_files)
         sample_file = filtered_files[0] if filtered_files else geoparquet_files[0]
         ensure_geopandas_available()
@@ -4662,8 +4860,9 @@ async def get_stats(
                 for key, value in sample_frame.geom_type.value_counts(dropna=False).to_dict().items()
             },
         }
-        if DISCHARGE_VALUE_COL in sample_frame.columns:
-            values = pd.to_numeric(sample_frame[DISCHARGE_VALUE_COL], errors="coerce").dropna()
+        stats_variable = state.get("default_variable")
+        if stats_variable in sample_frame.columns:
+            values = pd.to_numeric(sample_frame[stats_variable], errors="coerce").dropna()
             if not values.empty:
                 sample_stats["value_range"] = {
                     "min": float(values.min()),

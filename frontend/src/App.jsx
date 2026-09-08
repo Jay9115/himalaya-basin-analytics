@@ -7,8 +7,9 @@ import './App.css';
 const MapView = lazy(() => import('./components/MapView'));
 const TempGraph = lazy(() => import('./components/TempGraph'));
 const DocumentationPage = lazy(() => import('./components/DocumentationPage'));
-const OutcomeLongTermHotspotPage = lazy(() => import('./components/OutcomeLongTermHotspotPage'));
 const DashboardCodePanel = lazy(() => import('./components/DashboardCodePanel'));
+const ResearchToolkitPanel = lazy(() => import('./components/ResearchToolkitPanel'));
+const ProjectsHome = lazy(() => import('./components/ProjectsHome'));
 
 const DeferredPanelFallback = () => (
   <div className="deferred-panel-loading" role="status" aria-live="polite">
@@ -17,8 +18,45 @@ const DeferredPanelFallback = () => (
   </div>
 );
 
+const NavigationControls = React.memo(({
+  canGoBack,
+  canGoForward,
+  onBack,
+  onForward,
+}) => (
+  <nav className="navigation-controls" aria-label="Page history">
+    <button
+      type="button"
+      className="navigation-button"
+      onClick={onBack}
+      disabled={!canGoBack}
+      aria-label="Go back to the previous page"
+      title={canGoBack ? 'Go back (Alt + Left Arrow)' : 'No previous page'}
+    >
+      <svg viewBox="0 0 20 20" aria-hidden="true">
+        <path d="M8.7 4.3 3 10l5.7 5.7 1.4-1.4L6.8 11H17V9H6.8l3.3-3.3-1.4-1.4Z" />
+      </svg>
+      <span>Back</span>
+    </button>
+    <button
+      type="button"
+      className="navigation-button"
+      onClick={onForward}
+      disabled={!canGoForward}
+      aria-label="Go forward to the next page"
+      title={canGoForward ? 'Go forward (Alt + Right Arrow)' : 'No next page'}
+    >
+      <span>Forward</span>
+      <svg viewBox="0 0 20 20" aria-hidden="true">
+        <path d="m11.3 4.3-1.4 1.4L13.2 9H3v2h10.2l-3.3 3.3 1.4 1.4L17 10l-5.7-5.7Z" />
+      </svg>
+    </button>
+  </nav>
+));
+
 const formatVariableLabel = (name) => {
   if (!name) return '';
+  if (name === 'elevation_m') return 'DEM Elevation (m)';
   const parts = name.split('_');
   if (parts.length === 1) {
     return name.charAt(0).toUpperCase() + name.slice(1);
@@ -29,7 +67,386 @@ const formatVariableLabel = (name) => {
   return `${prettyLabel} (${unit})`;
 };
 
+const normalizeYearRange = (yearRange) => {
+  const start = Number(yearRange?.start);
+  const end = Number(yearRange?.end);
+  if (!Number.isInteger(start) || !Number.isInteger(end)) return null;
+  return { start: Math.min(start, end), end: Math.max(start, end) };
+};
+
+const buildAnalysisItemId = (datasetId, yearRange, variable) => {
+  const normalizedRange = normalizeYearRange(yearRange);
+  return [
+    datasetId || '',
+    normalizedRange?.start ?? '',
+    normalizedRange?.end ?? '',
+    variable || '',
+  ].join('::');
+};
+
+const createAnalysisItem = ({ datasetId, datasetLabel, yearRange, variable, selectedAt }) => {
+  const normalizedRange = normalizeYearRange(yearRange);
+  if (!datasetId || !normalizedRange || !variable) return null;
+  return {
+    id: buildAnalysisItemId(datasetId, normalizedRange, variable),
+    datasetId,
+    datasetLabel: datasetLabel || datasetId,
+    yearRange: normalizedRange,
+    variable,
+    variableLabel: formatVariableLabel(variable),
+    selectedAt: Number.isFinite(Number(selectedAt)) ? Number(selectedAt) : Date.now(),
+  };
+};
+
+const normalizeAnalysisItems = (items = [], legacyDashboard = {}) => {
+  const normalized = [];
+  const seen = new Set();
+  const pushItem = (item) => {
+    const normalizedItem = createAnalysisItem(item);
+    if (!normalizedItem || seen.has(normalizedItem.id)) return;
+    seen.add(normalizedItem.id);
+    normalized.push(normalizedItem);
+  };
+
+  if (Array.isArray(items)) {
+    items.forEach((item) => {
+      pushItem({
+        datasetId: item?.datasetId,
+        datasetLabel: item?.datasetLabel,
+        yearRange: item?.yearRange,
+        variable: item?.variable,
+        selectedAt: item?.selectedAt,
+      });
+    });
+  }
+
+  if (normalized.length > 0) return normalized;
+
+  const legacyDatasetId = legacyDashboard.datasetId;
+  const legacyYearRange = legacyDashboard.selectedYearRange;
+  const legacyVariables = Array.from(new Set([
+    legacyDashboard.selectedVariable,
+    ...(Array.isArray(legacyDashboard.comparisonVariables) ? legacyDashboard.comparisonVariables : []),
+  ])).filter(Boolean);
+
+  legacyVariables.forEach((variable, index) => {
+    pushItem({
+      datasetId: legacyDatasetId,
+      datasetLabel: legacyDashboard.datasetLabel,
+      yearRange: legacyYearRange,
+      variable,
+      selectedAt: Date.now() - index,
+    });
+  });
+
+  return normalized;
+};
+
+const sameYearRange = (left, right) => {
+  const normalizedLeft = normalizeYearRange(left);
+  const normalizedRight = normalizeYearRange(right);
+  if (!normalizedLeft || !normalizedRight) return false;
+  return normalizedLeft.start === normalizedRight.start && normalizedLeft.end === normalizedRight.end;
+};
+
+const getAnalysisGraphRequestKey = (item, elevRange, subregionId, aoiKey = '') => [
+  item?.datasetId || '',
+  item?.yearRange?.start ?? '',
+  item?.yearRange?.end ?? '',
+  item?.variable || '',
+  elevRange?.min ?? '',
+  elevRange?.max ?? '',
+  subregionId || '',
+  aoiKey,
+].join('|');
+
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+const compactTextFingerprint = (value) => String(value || '').slice(0, 240);
+
+const compactResultFingerprint = (result) => {
+  if (!result || typeof result !== 'object') return null;
+  const outputs = Array.isArray(result.outputs) ? result.outputs : [];
+  const layers = Array.isArray(result.layers) ? result.layers : [];
+  return {
+    ok: result.ok,
+    status: result.status,
+    job_id: result.job_id,
+    run_id: result.run_id,
+    duration_ms: result.duration_ms,
+    stdout: compactTextFingerprint(result.stdout),
+    stderr: compactTextFingerprint(result.stderr),
+    error: compactTextFingerprint(result.error),
+    row_count: result.meta?.row_count ?? result.coverage?.pixel_count,
+    outputs: outputs.map((output) => ({
+      type: output.type,
+      name: output.name,
+      row_count: output.row_count,
+      filename: output.filename,
+      value: ['number', 'result', 'text'].includes(output.type) ? compactTextFingerprint(output.value) : undefined,
+      feature_count: Array.isArray(output.features) ? output.features.length : undefined,
+    })),
+    layers: layers.map((layer) => ({
+      id: layer.id,
+      label: layer.label,
+      count: Array.isArray(layer.data) ? layer.data.length : undefined,
+    })),
+  };
+};
+
+const compactToolsFingerprint = (tools = {}) => ({
+  code: {
+    workspaceVersion: tools.code?.workspaceVersion,
+    activeFileId: tools.code?.activeFileId,
+    files: Array.isArray(tools.code?.files)
+      ? tools.code.files.map((file) => ({
+        id: file.id,
+        name: file.name,
+        content: file.content || '',
+        activeTab: file.activeTab,
+        activeMapOutputIndex: file.activeMapOutputIndex,
+        validationOk: file.validation?.ok,
+        result: compactResultFingerprint(file.result),
+      }))
+      : undefined,
+    panelMode: tools.code?.panelMode,
+    chatCount: tools.code?.chatMessages?.length || 0,
+    dateMode: tools.code?.dateMode,
+    rangeStartDate: tools.code?.rangeStartDate,
+    rangeEndDate: tools.code?.rangeEndDate,
+    timeoutSeconds: tools.code?.timeoutSeconds,
+    activeTab: tools.code?.activeTab,
+    activeMapOutputIndex: tools.code?.activeMapOutputIndex,
+    validationOk: tools.code?.validation?.ok,
+    result: compactResultFingerprint(tools.code?.result),
+  },
+  research: {
+    specs: tools.research?.specs,
+    methods: tools.research?.methods,
+    period: tools.research?.period,
+    advancedOpen: tools.research?.advancedOpen,
+    settings: tools.research?.settings,
+    outputTab: tools.research?.outputTab,
+    activeLayer: tools.research?.activeLayer,
+    figureCount: tools.research?.figures?.length || 0,
+    result: compactResultFingerprint(tools.research?.result),
+  },
+});
+
+const getCodeStateForProjectStorage = (codeState = {}) => {
+  if (Array.isArray(codeState.files) && codeState.files.length > 0) {
+    const { code: _code, result: _result, validation: _validation, ...rest } = codeState;
+    return rest;
+  }
+  return { ...codeState, code: undefined };
+};
+
+const buildProjectFingerprint = (workspace, code) => JSON.stringify({
+  schemaVersion: workspace?.schemaVersion,
+  view: workspace?.view,
+  dashboard: workspace?.dashboard,
+  layout: workspace?.layout,
+  tools: compactToolsFingerprint(workspace?.tools),
+  code: code || '',
+});
+
+const getGeoJsonBounds = (feature) => {
+  const coordinates = feature?.geometry?.coordinates;
+  if (!Array.isArray(coordinates)) return null;
+  let minLat = Infinity;
+  let maxLat = -Infinity;
+  let minLon = Infinity;
+  let maxLon = -Infinity;
+
+  const visit = (value) => {
+    if (!Array.isArray(value)) return;
+    if (value.length >= 2 && Number.isFinite(Number(value[0])) && Number.isFinite(Number(value[1]))) {
+      const lon = Number(value[0]);
+      const lat = Number(value[1]);
+      minLat = Math.min(minLat, lat);
+      maxLat = Math.max(maxLat, lat);
+      minLon = Math.min(minLon, lon);
+      maxLon = Math.max(maxLon, lon);
+      return;
+    }
+    value.forEach(visit);
+  };
+
+  visit(coordinates);
+  return [minLat, maxLat, minLon, maxLon].every(Number.isFinite)
+    ? { minLat, maxLat, minLon, maxLon }
+    : null;
+};
+
+const expandBoundsByKm = (bounds, bufferKm = 0) => {
+  if (!bounds || bufferKm <= 0) return bounds || null;
+  const midLat = Math.max(-89, Math.min(89, (Number(bounds.minLat) + Number(bounds.maxLat)) / 2));
+  const latDelta = bufferKm / 111.32;
+  const lonScale = Math.max(0.2, Math.abs(Math.cos((midLat * Math.PI) / 180)));
+  const lonDelta = bufferKm / (111.32 * lonScale);
+  return {
+    minLat: Math.max(-90, Number(bounds.minLat) - latDelta),
+    maxLat: Math.min(90, Number(bounds.maxLat) + latDelta),
+    minLon: Math.max(-180, Number(bounds.minLon) - lonDelta),
+    maxLon: Math.min(180, Number(bounds.maxLon) + lonDelta),
+  };
+};
+
+const getSubregionBounds = (item) => {
+  const bounds = item?.bounds;
+  if (!bounds) return null;
+  const mapped = {
+    minLat: Number(bounds.min_lat ?? bounds.minLat),
+    maxLat: Number(bounds.max_lat ?? bounds.maxLat),
+    minLon: Number(bounds.min_lon ?? bounds.minLon),
+    maxLon: Number(bounds.max_lon ?? bounds.maxLon),
+  };
+  return Object.values(mapped).every(Number.isFinite) ? mapped : null;
+};
+
+const boundsIntersect = (a, b) => Boolean(
+  a
+  && b
+  && a.minLat <= b.maxLat
+  && a.maxLat >= b.minLat
+  && a.minLon <= b.maxLon
+  && a.maxLon >= b.minLon
+);
+
+const parseCoordinates = (text) => {
+  const cleanText = text.trim();
+  let match = cleanText.match(/^(-?\d+(?:\.\d+)?)[,\s]+(-?\d+(?:\.\d+)?)$/);
+  if (match) {
+    const lat = parseFloat(match[1]);
+    const lon = parseFloat(match[2]);
+    if (lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {
+      return { lat, lon };
+    }
+  }
+  const dmsRegex = /^(\d+)[°\s]+(\d+)['\s]+([\d.]+)[″"\s]*([NS])\s*,\s*(\d+)[°\s]+(\d+)['\s]+([\d.]+)[″"\s]*([EW])$/i;
+  match = cleanText.match(dmsRegex);
+  if (match) {
+    const lat = parseInt(match[1], 10) + parseInt(match[2], 10) / 60 + parseFloat(match[3]) / 3600;
+    const lon = parseInt(match[5], 10) + parseInt(match[6], 10) / 60 + parseFloat(match[7]) / 3600;
+    const finalLat = match[4].toUpperCase() === 'S' ? -lat : lat;
+    const finalLon = match[8].toUpperCase() === 'W' ? -lon : lon;
+    if (finalLat >= -90 && finalLat <= 90 && finalLon >= -180 && finalLon <= 180) {
+      return { lat: finalLat, lon: finalLon };
+    }
+  }
+  return null;
+};
+
+const MAX_POLYGON_VERTICES = 500;
+const GLACIER_LAYER_VARIABLE = '__glacier_outlines__';
+const GRAPH_FETCH_CONCURRENCY = 2;
+
+const normalizeAoiPolygon = (polygon, index = 0) => {
+  const coordinates = polygon?.geometry?.coordinates?.[0];
+  if (!Array.isArray(coordinates) || coordinates.length < 4) return null;
+  const vertices = coordinates
+    .slice(0, -1)
+    .map((coord) => [Number(coord?.[0]), Number(coord?.[1])])
+    .filter(([lon, lat]) => Number.isFinite(lon) && Number.isFinite(lat));
+  if (vertices.length < 3 || vertices.length > MAX_POLYGON_VERTICES) return null;
+  const closedRing = [...vertices, vertices[0]];
+  const normalized = {
+    id: String(polygon.id || `aoi-${Date.now()}-${index}`),
+    name: String(polygon.name || polygon.label || (index === 0 ? 'ROI' : `Polygon ${index + 1}`)),
+    role: index === 0 ? 'roi' : 'polygon',
+    createdAt: Number.isFinite(Number(polygon.createdAt)) ? Number(polygon.createdAt) : Date.now(),
+    metadata: polygon.metadata && typeof polygon.metadata === 'object' ? polygon.metadata : {},
+    geometry: {
+      type: 'Polygon',
+      coordinates: [closedRing],
+    },
+  };
+  return {
+    ...normalized,
+    analysis: analyzeAoiGeometry(normalized),
+  };
+};
+
+const normalizeAoiPolygons = (polygons = []) => (
+  Array.isArray(polygons)
+    ? polygons.map(normalizeAoiPolygon).filter(Boolean).map((polygon, index) => ({
+      ...polygon,
+      role: index === 0 ? 'roi' : 'polygon',
+      name: index === 0 && polygon.role !== 'roi' ? 'ROI' : (polygon.name || `Polygon ${index + 1}`),
+    }))
+    : []
+);
+
+const getAoiVertices = (aoi) => (
+  Array.isArray(aoi?.geometry?.coordinates?.[0])
+    ? aoi.geometry.coordinates[0].slice(0, -1)
+    : []
+);
+
+const analyzeAoiGeometry = (aoi) => {
+  const vertices = getAoiVertices(aoi);
+  if (vertices.length < 3) {
+    return {
+      vertexCount: 0,
+      areaKm2: 0,
+      perimeterKm: 0,
+      centroid: null,
+      bounds: null,
+      geometryType: aoi?.geometry?.type || 'Polygon',
+    };
+  }
+
+  const earthRadiusKm = 6371.0088;
+  const lons = vertices.map(([lon]) => Number(lon));
+  const lats = vertices.map(([, lat]) => Number(lat));
+  const centroid = {
+    lon: lons.reduce((sum, value) => sum + value, 0) / lons.length,
+    lat: lats.reduce((sum, value) => sum + value, 0) / lats.length,
+  };
+  const latScale = Math.PI * earthRadiusKm / 180;
+  const lonScale = latScale * Math.cos((centroid.lat * Math.PI) / 180);
+  const projected = vertices.map(([lon, lat]) => ({
+    x: (Number(lon) - centroid.lon) * lonScale,
+    y: (Number(lat) - centroid.lat) * latScale,
+  }));
+  let shoelace = 0;
+  let perimeterKm = 0;
+  for (let index = 0; index < projected.length; index += 1) {
+    const current = projected[index];
+    const next = projected[(index + 1) % projected.length];
+    shoelace += current.x * next.y - next.x * current.y;
+    perimeterKm += Math.hypot(next.x - current.x, next.y - current.y);
+  }
+
+  const lowerName = String(aoi?.name || '').toLowerCase();
+  const focus = lowerName.includes('glacier')
+    ? 'Glacier'
+    : lowerName.includes('watershed') || lowerName.includes('catchment')
+      ? 'Watershed'
+      : lowerName.includes('lake') || lowerName.includes('reservoir')
+        ? 'Lake/reservoir'
+        : 'Custom study area';
+
+  return {
+    vertexCount: vertices.length,
+    areaKm2: Math.abs(shoelace) / 2,
+    perimeterKm,
+    centroid,
+    bounds: {
+      minLat: Math.min(...lats),
+      maxLat: Math.max(...lats),
+      minLon: Math.min(...lons),
+      maxLon: Math.max(...lons),
+    },
+    geometryType: aoi?.geometry?.type || 'Polygon',
+    focus,
+    characteristics: {
+      glacier: focus === 'Glacier' ? { area_km2: Math.abs(shoelace) / 2, retreat_ready: true } : null,
+      watershed: focus === 'Watershed' ? { catchment_area_km2: Math.abs(shoelace) / 2 } : null,
+      lake: focus === 'Lake/reservoir' ? { surface_area_km2: Math.abs(shoelace) / 2 } : null,
+    },
+  };
+};
 
 function App() {
   // State management
@@ -41,13 +458,27 @@ function App() {
   const [outcomes, setOutcomes] = useState([]);
   const [selectedOutcomeId, setSelectedOutcomeId] = useState('long_term_hotspot');
   const [datasetId, setDatasetId] = useState('');
-  const [homeModule, setHomeModule] = useState('dashboard');
+  const [homeModule, setHomeModule] = useState('projects');
   const [datasetReady, setDatasetReady] = useState(false);
-  const [outcomeReady, setOutcomeReady] = useState(false);
   const [datasetLoading, setDatasetLoading] = useState(true);
   const [showDocumentation, setShowDocumentation] = useState(false);
   const [codePanelOpen, setCodePanelOpen] = useState(false);
   const [codeMapOutput, setCodeMapOutput] = useState(null);
+  const [researchPanelOpen, setResearchPanelOpen] = useState(false);
+  const [researchMapOutput, setResearchMapOutput] = useState(null);
+  const [projects, setProjects] = useState([]);
+  const [projectsLoading, setProjectsLoading] = useState(true);
+  const [projectsError, setProjectsError] = useState('');
+  const [activeProject, setActiveProject] = useState(null);
+  const [projectDirty, setProjectDirty] = useState(false);
+  const [projectSaveState, setProjectSaveState] = useState('idle');
+  const [projectToolState, setProjectToolState] = useState({ code: {}, research: {} });
+  const projectBaselineRef = useRef('');
+  const latestProjectFingerprintRef = useRef('');
+  const projectRestoreTimerRef = useRef(null);
+  const pendingProjectRestoreRef = useRef(null);
+  const projectRestoreSnapshotRef = useRef(null);
+  const codeWorkspaceLiveRef = useRef(null);
   const [yearOptions, setYearOptions] = useState([]);
   const [yearRangeLoading, setYearRangeLoading] = useState(false);
   const [yearRangeError, setYearRangeError] = useState('');
@@ -62,29 +493,31 @@ function App() {
   const [currentDateIndex, setCurrentDateIndex] = useState(0);
   const [currentDate, setCurrentDate] = useState(null);
   const [variables, setVariables] = useState([]);
-  const [selectedVariable, setSelectedVariable] = useState('temperature_C');
+  const [selectedVariable, setSelectedVariable] = useState('');
   const [comparisonVariables, setComparisonVariables] = useState([]);
+  const [selectedAnalysisItems, setSelectedAnalysisItems] = useState([]);
+  const [analysisGraphEntries, setAnalysisGraphEntries] = useState({});
+  const [analysisGraphHeights, setAnalysisGraphHeights] = useState(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('analysisGraphHeights') || '{}');
+      return stored && typeof stored === 'object' ? stored : {};
+    } catch {
+      return {};
+    }
+  });
   const [variablesContextKey, setVariablesContextKey] = useState('');
   const [searchToolsOpen, setSearchToolsOpen] = useState(false);
   const [activeToolPanel, setActiveToolPanel] = useState('');
-  const [regionSelectMode, setRegionSelectMode] = useState(false);
-  const [regionBounds, setRegionBounds] = useState(null);
-  const [regionPreview, setRegionPreview] = useState(null);
+  const [polygonDrawMode, setPolygonDrawMode] = useState(false);
+  const [aoiPolygons, setAoiPolygons] = useState([]);
+  const [selectedAoiId, setSelectedAoiId] = useState('');
   const [subregions, setSubregions] = useState([]);
   const [subregionsLoading, setSubregionsLoading] = useState(false);
   const [selectedSubregionId, setSelectedSubregionId] = useState('');
   const [selectedSubregionFeature, setSelectedSubregionFeature] = useState(null);
   const [subregionSearchText, setSubregionSearchText] = useState('');
   const [subregionDropdownOpen, setSubregionDropdownOpen] = useState(false);
-  const [regionLatMin, setRegionLatMin] = useState('');
-  const [regionLatMax, setRegionLatMax] = useState('');
-  const [regionLonMin, setRegionLonMin] = useState('');
-  const [regionLonMax, setRegionLonMax] = useState('');
-  const [regionInputError, setRegionInputError] = useState('');
-  const [searchLat, setSearchLat] = useState('');
-  const [searchLon, setSearchLon] = useState('');
-  const [searchError, setSearchError] = useState('');
-  const [focusLocation, setFocusLocation] = useState(null);
+  const [focusLocations, setFocusLocations] = useState([]);
   const [elevationRange, setElevationRange] = useState({ min: 500, max: 9000 });
   const [selectedElevRange, setSelectedElevRange] = useState({ min: 500, max: 9000 });
   const [mapData, setMapData] = useState([]);
@@ -95,7 +528,17 @@ function App() {
   const [hotspotLoading, setHotspotLoading] = useState(false);
   const [hotspotError, setHotspotError] = useState('');
   const [hotspotMinYears, setHotspotMinYears] = useState(3);
-  const [graphData, setGraphData] = useState([]);
+  const [outcomeMetaLoading, setOutcomeMetaLoading] = useState(false);
+  const [outcomeMetaError, setOutcomeMetaError] = useState('');
+  const [outcomeMeta, setOutcomeMeta] = useState(null);
+  const [outcomeVariable, setOutcomeVariable] = useState('');
+  const [outcomeBandId, setOutcomeBandId] = useState('');
+  const [outcomeViewMode, setOutcomeViewMode] = useState('mean');
+  const [outcomeComparisonId, setOutcomeComparisonId] = useState('');
+  const [outcomeData, setOutcomeData] = useState([]);
+  const [outcomeStats, setOutcomeStats] = useState(null);
+  const [outcomeDataLoading, setOutcomeDataLoading] = useState(false);
+  const [outcomeDataError, setOutcomeDataError] = useState('');
   const [loading, setLoading] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playSpeed, setPlaySpeed] = useState(500); // ms per frame
@@ -109,25 +552,59 @@ function App() {
     const stored = Number(localStorage.getItem('codePanelWidth'));
     return Number.isFinite(stored) ? clamp(stored, 360, 760) : 620;
   });
-  
+  const navigationHistoryRef = useRef([{ view: 'home' }]);
+  const navigationIndexRef = useRef(0);
+  const [navigationPosition, setNavigationPosition] = useState({ index: 0, length: 1 });
+
   const mapAbortRef = useRef(null);
   const hotspotAbortRef = useRef(null);
-  const graphAbortRef = useRef(null);
+  const outcomeDataAbortRef = useRef(null);
+  const graphAbortRef = useRef(new Map());
   const subregionGeometryAbortRef = useRef(null);
   const appContentRef = useRef(null);
+  const selectedAnalysisItemsRef = useRef([]);
+  const analysisGraphEntriesRef = useRef({});
+  const analysisGraphResizeRef = useRef(null);
   const activeYearRange = selectedYearRange.start !== null && selectedYearRange.end !== null
     ? selectedYearRange
     : null;
+  const fullDatasetYearRange = useMemo(() => (
+    yearOptions.length > 0
+      ? { start: yearOptions[0], end: yearOptions[yearOptions.length - 1] }
+      : null
+  ), [yearOptions]);
   const datasetContextKey = activeYearRange
     ? `${datasetId}:${activeYearRange.start}-${activeYearRange.end}`
     : '';
   const selectedVariableReady = Boolean(
     datasetContextKey
-      && variablesContextKey === datasetContextKey
-      && selectedVariable
-      && variables.includes(selectedVariable)
+    && variablesContextKey === datasetContextKey
+    && selectedVariable
+    && variables.includes(selectedVariable)
   );
   const selectedSubregion = subregions.find((item) => item.id === selectedSubregionId) || null;
+  const roiPolygon = aoiPolygons[0] || null;
+  const selectedPolygon = aoiPolygons.find((polygon) => polygon.id === selectedAoiId) || null;
+  const selectedAoiQueryKey = roiPolygon
+    ? JSON.stringify({ id: roiPolygon.id, geometry: roiPolygon.geometry })
+    : '';
+  const glacierRoiSearchBounds = useMemo(
+    () => expandBoundsByKm(roiPolygon?.analysis?.bounds, 5),
+    [selectedAoiQueryKey]
+  );
+  const selectedMapBounds = useMemo(() => {
+    const bounds = selectedSubregion?.bounds;
+    if (bounds) {
+      const mapped = {
+        minLat: Number(bounds.min_lat),
+        maxLat: Number(bounds.max_lat),
+        minLon: Number(bounds.min_lon),
+        maxLon: Number(bounds.max_lon),
+      };
+      if (Object.values(mapped).every(Number.isFinite)) return mapped;
+    }
+    return getGeoJsonBounds(selectedSubregionFeature);
+  }, [selectedSubregion, selectedSubregionFeature]);
   const basinSubregions = useMemo(
     () => subregions.filter((item) => item.kind !== 'glacier'),
     [subregions]
@@ -140,41 +617,97 @@ function App() {
   const filteredBasinSubregions = useMemo(() => {
     const items = normalizedSubregionQuery
       ? basinSubregions.filter((item) => {
-          const searchText = `${item.label || ''} ${item.id || ''} basin`.toLowerCase();
-          return searchText.includes(normalizedSubregionQuery);
-        })
+        const searchText = `${item.label || ''} ${item.id || ''} basin`.toLowerCase();
+        return searchText.includes(normalizedSubregionQuery);
+      })
       : basinSubregions;
     return items.slice(0, normalizedSubregionQuery ? 20 : 8);
   }, [basinSubregions, normalizedSubregionQuery]);
   const filteredGlacierSubregions = useMemo(() => {
-    const items = normalizedSubregionQuery
-      ? glacierSubregions.filter((item) => {
-          const searchText = `${item.label || ''} ${item.id || ''} glacier`.toLowerCase();
-          return searchText.includes(normalizedSubregionQuery);
-        })
+    const roiScopedGlaciers = glacierRoiSearchBounds
+      ? glacierSubregions.filter((item) => boundsIntersect(getSubregionBounds(item), glacierRoiSearchBounds))
       : glacierSubregions;
+    const items = normalizedSubregionQuery
+      ? roiScopedGlaciers.filter((item) => {
+        const searchText = `${item.label || ''} ${item.id || ''} glacier`.toLowerCase();
+        return searchText.includes(normalizedSubregionQuery);
+      })
+      : roiScopedGlaciers;
     return items.slice(0, normalizedSubregionQuery ? 20 : 12);
-  }, [glacierSubregions, normalizedSubregionQuery]);
+  }, [glacierRoiSearchBounds, glacierSubregions, normalizedSubregionQuery]);
   const isHotspotMode = analysisMode === 'hotspot';
+  const isOutcomeMode = analysisMode === 'outcome';
   const glacierViewEnabled = mapViewMode === 'glacier';
+  const abortGraphRequests = useCallback(() => {
+    graphAbortRef.current.forEach((entry) => entry?.controller?.abort?.());
+    graphAbortRef.current.clear();
+  }, []);
+  const selectedDataset = datasets.find((d) => d.id === datasetId);
+  const selectedOutcome = outcomes.find((item) => item.id === selectedOutcomeId) || null;
+  const activeAnalysisItem = selectedAnalysisItems[0] || null;
+  const selectedAnalysisIdSet = useMemo(
+    () => new Set(selectedAnalysisItems.map((item) => item.id)),
+    [selectedAnalysisItems]
+  );
   const variableLabel = formatVariableLabel(selectedVariable);
-  const graphVariableKeys = useMemo(() => (
-    Array.from(new Set([selectedVariable, ...comparisonVariables]))
-      .filter((variable) => variable && variables.includes(variable))
-  ), [selectedVariable, comparisonVariables, variables]);
-  const graphSeries = useMemo(() => graphVariableKeys.map((variable) => ({
-    key: variable,
-    label: formatVariableLabel(variable),
-  })), [graphVariableKeys]);
+  const activeContextComparisonVariables = useMemo(() => (
+    selectedAnalysisItems
+      .filter((item) => (
+        item.datasetId === datasetId
+        && sameYearRange(item.yearRange, activeYearRange)
+        && item.variable !== selectedVariable
+        && variables.includes(item.variable)
+      ))
+      .map((item) => item.variable)
+  ), [activeYearRange, datasetId, selectedAnalysisItems, selectedVariable, variables]);
+  const hasResearchMapOutput = researchPanelOpen && Array.isArray(researchMapOutput?.data) && researchMapOutput.data.length > 0;
   const hasCodeMapOutput = codePanelOpen && Array.isArray(codeMapOutput?.data) && codeMapOutput.data.length > 0;
-  const displayedMapData = hasCodeMapOutput ? codeMapOutput.data : isHotspotMode ? hotspotData : mapData;
+  const hasToolMapOutput = hasResearchMapOutput || hasCodeMapOutput;
+  const activeToolMapOutput = hasResearchMapOutput ? researchMapOutput : codeMapOutput;
+  const outcomeBand = useMemo(() => (
+    (outcomeMeta?.bands || []).find((band) => String(band.id) === String(outcomeBandId)) || null
+  ), [outcomeMeta, outcomeBandId]);
+  const outcomeComparison = useMemo(() => (
+    (outcomeMeta?.comparisons || []).find((comparison) => String(comparison.id) === String(outcomeComparisonId)) || null
+  ), [outcomeMeta, outcomeComparisonId]);
+  const outcomeAvailableBandIds = useMemo(() => {
+    const coverageList = outcomeMeta?.coverage_by_variable?.[outcomeVariable];
+    if (!coverageList) {
+      return new Set((outcomeMeta?.bands || []).map((band) => String(band.id)));
+    }
+    return new Set(
+      coverageList
+        .filter((coverage) => (coverage.available_years || []).length > 0)
+        .map((coverage) => String(coverage.band_id))
+    );
+  }, [outcomeMeta, outcomeVariable]);
+  const outcomeCoverage = useMemo(() => {
+    const coverageList = outcomeMeta?.coverage_by_variable?.[outcomeVariable] || outcomeMeta?.coverage_by_band;
+    if (!coverageList) return null;
+    return coverageList.find((coverage) => String(coverage.band_id) === String(outcomeBandId)) || null;
+  }, [outcomeMeta, outcomeBandId, outcomeVariable]);
+  const isOutcomeDifferenceMode = outcomeViewMode === 'difference';
+  const outcomeAggregation = outcomeMeta?.aggregation_by_variable?.[outcomeVariable] || 'mean';
+  const outcomeAggregationLabel = outcomeAggregation === 'sum' ? 'Sum' : 'Mean';
+  const outcomeMapTitle = isOutcomeDifferenceMode
+    ? (outcomeComparison?.label ? `Change: ${outcomeComparison.label}` : 'Saved Outcome Change')
+    : (outcomeBand?.label ? `Band: ${outcomeBand.label}` : 'Saved Outcome');
+  const outcomeVariableLabel = isOutcomeDifferenceMode
+    ? `${formatVariableLabel(outcomeVariable)} Change`
+    : formatVariableLabel(outcomeVariable);
+  const displayedMapData = hasToolMapOutput ? activeToolMapOutput.data : isOutcomeMode ? outcomeData : isHotspotMode ? hotspotData : mapData;
   const hotspotMinYearsMax = activeYearRange
     ? Math.max(2, activeYearRange.end - activeYearRange.start + 1)
     : 2;
   const mapPointCount = displayedMapData.length;
-  const displayedVariableLabel = hasCodeMapOutput ? (codeMapOutput.label || 'Code Result') : variableLabel;
-  const displayedAnalysisMode = hasCodeMapOutput ? 'daily' : analysisMode;
-  const displayedLayerStyle = hasCodeMapOutput ? codeMapOutput.style : null;
+  const displayedVariableLabel = hasToolMapOutput ? (activeToolMapOutput.label || 'Derived Result') : isOutcomeMode ? outcomeVariableLabel : variableLabel;
+  const displayedAnalysisMode = hasToolMapOutput || isOutcomeMode ? 'daily' : analysisMode;
+  const displayedLayerStyle = hasToolMapOutput
+    ? activeToolMapOutput.style
+    : isOutcomeMode && isOutcomeDifferenceMode
+      ? { palette: 'blue_red' }
+      : null;
+  const displayedMapDate = isOutcomeMode ? outcomeMapTitle : currentDate;
   const mapRequestKey = useMemo(() => [
     datasetId,
     activeYearRange?.start,
@@ -184,6 +717,7 @@ function App() {
     selectedElevRange.max,
     selectedVariable,
     selectedSubregionId,
+    selectedAoiQueryKey,
   ].join('|'), [
     datasetId,
     activeYearRange?.start,
@@ -193,8 +727,194 @@ function App() {
     selectedElevRange.max,
     selectedVariable,
     selectedSubregionId,
+    selectedAoiQueryKey,
   ]);
   const [mapFrameReadyKey, setMapFrameReadyKey] = useState('');
+  const codeToolStateForProjectStorage = useMemo(
+    () => getCodeStateForProjectStorage(projectToolState.code || {}),
+    [projectToolState.code]
+  );
+
+  const projectWorkspaceSnapshot = useMemo(() => ({
+    schemaVersion: 1,
+    view: showDocumentation ? 'documentation' : (analysisMode === 'outcome' ? 'outcome' : 'dashboard'),
+    dashboard: {
+      datasetId,
+      selectedOutcomeId,
+      selectedYearRange,
+      currentDate,
+      selectedVariable,
+      comparisonVariables: activeContextComparisonVariables,
+      analysisItems: selectedAnalysisItems,
+      selectedSubregionId,
+      aoiPolygons,
+      selectedAoiId,
+      focusLocations,
+      selectedElevRange,
+      mapViewMode,
+      analysisMode,
+      hotspotMinYears,
+      outcomeVariable,
+      outcomeBandId,
+      outcomeViewMode,
+      outcomeComparisonId,
+    },
+    layout: {
+      theme,
+      bottomPanelHeight,
+      codePanelWidth,
+      codePanelOpen,
+      researchPanelOpen,
+    },
+    tools: {
+      code: codeToolStateForProjectStorage,
+      research: projectToolState.research,
+    },
+  }), [
+    analysisMode,
+    bottomPanelHeight,
+    codePanelOpen,
+    codePanelWidth,
+    activeContextComparisonVariables,
+    currentDate,
+    datasetId,
+    hotspotMinYears,
+    mapViewMode,
+    outcomeBandId,
+    outcomeComparisonId,
+    outcomeVariable,
+    outcomeViewMode,
+    codeToolStateForProjectStorage,
+    projectToolState.research,
+    aoiPolygons,
+    selectedAoiId,
+    focusLocations,
+    researchPanelOpen,
+    selectedElevRange,
+    selectedAnalysisItems,
+    selectedOutcomeId,
+    selectedSubregionId,
+    selectedVariable,
+    selectedYearRange,
+    showDocumentation,
+    theme,
+  ]);
+
+  const projectWorkspaceFingerprint = useMemo(
+    () => buildProjectFingerprint(projectWorkspaceSnapshot, projectToolState.code?.code || ''),
+    [projectToolState.code?.code, projectWorkspaceSnapshot]
+  );
+
+  useEffect(() => {
+    latestProjectFingerprintRef.current = projectWorkspaceFingerprint;
+  }, [projectWorkspaceFingerprint]);
+
+  const handleCodeWorkspaceStateChange = useCallback((state) => {
+    setProjectToolState((current) => ({ ...current, code: state }));
+  }, []);
+
+  const handleResearchWorkspaceStateChange = useCallback((state) => {
+    setProjectToolState((current) => ({ ...current, research: state }));
+  }, []);
+
+  useEffect(() => {
+    if (!activeProject || !projectBaselineRef.current) return;
+    setProjectDirty(projectWorkspaceFingerprint !== projectBaselineRef.current);
+  }, [activeProject, projectWorkspaceFingerprint]);
+
+  useEffect(() => () => {
+    if (projectRestoreTimerRef.current) window.clearTimeout(projectRestoreTimerRef.current);
+  }, []);
+
+  const applyNavigationEntry = useCallback((entry) => {
+    const view = entry?.view || 'home';
+    const documentationBase = entry?.baseView || 'home';
+
+    setIsPlaying(false);
+    setSearchToolsOpen(false);
+    setActiveToolPanel('');
+    setRegionSelectMode(false);
+    setPolygonDrawMode(false);
+    setRegionPreview(null);
+    setCodePanelOpen(false);
+    setCodeMapOutput(null);
+    setResearchPanelOpen(false);
+    setResearchMapOutput(null);
+    setError(null);
+
+    if (view === 'documentation') {
+      setShowDocumentation(true);
+      setDatasetReady(documentationBase === 'dashboard' || documentationBase === 'outcome');
+      if (documentationBase === 'outcome') {
+        setAnalysisMode('outcome');
+      }
+      return;
+    }
+
+    setShowDocumentation(false);
+    setDatasetReady(view === 'dashboard' || view === 'outcome');
+    if (view === 'outcome') {
+      setAnalysisMode('outcome');
+    }
+  }, []);
+
+  const recordNavigation = useCallback((entry) => {
+    const currentIndex = navigationIndexRef.current;
+    const currentEntry = navigationHistoryRef.current[currentIndex];
+    const isSameEntry = currentEntry?.view === entry.view
+      && currentEntry?.baseView === entry.baseView;
+    if (isSameEntry) return;
+
+    const nextHistory = [
+      ...navigationHistoryRef.current.slice(0, currentIndex + 1),
+      entry,
+    ];
+    const nextIndex = nextHistory.length - 1;
+    navigationHistoryRef.current = nextHistory;
+    navigationIndexRef.current = nextIndex;
+    setNavigationPosition({ index: nextIndex, length: nextHistory.length });
+  }, []);
+
+  const handleNavigateBack = useCallback(() => {
+    const nextIndex = navigationIndexRef.current - 1;
+    if (nextIndex < 0) return;
+    navigationIndexRef.current = nextIndex;
+    setNavigationPosition({ index: nextIndex, length: navigationHistoryRef.current.length });
+    applyNavigationEntry(navigationHistoryRef.current[nextIndex]);
+  }, [applyNavigationEntry]);
+
+  const handleNavigateForward = useCallback(() => {
+    const nextIndex = navigationIndexRef.current + 1;
+    if (nextIndex >= navigationHistoryRef.current.length) return;
+    navigationIndexRef.current = nextIndex;
+    setNavigationPosition({ index: nextIndex, length: navigationHistoryRef.current.length });
+    applyNavigationEntry(navigationHistoryRef.current[nextIndex]);
+  }, [applyNavigationEntry]);
+
+  const navigationControls = (
+    <NavigationControls
+      canGoBack={navigationPosition.index > 0}
+      canGoForward={navigationPosition.index < navigationPosition.length - 1}
+      onBack={handleNavigateBack}
+      onForward={handleNavigateForward}
+    />
+  );
+
+  useEffect(() => {
+    const handleHistoryShortcut = (event) => {
+      if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        handleNavigateBack();
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        handleNavigateForward();
+      }
+    };
+
+    window.addEventListener('keydown', handleHistoryShortcut);
+    return () => window.removeEventListener('keydown', handleHistoryShortcut);
+  }, [handleNavigateBack, handleNavigateForward]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -226,10 +946,24 @@ function App() {
   }, [codePanelWidth]);
 
   useEffect(() => {
-    setComparisonVariables((prev) => (
-      prev.filter((variable) => variable !== selectedVariable && variables.includes(variable))
-    ));
-  }, [selectedVariable, variables]);
+    selectedAnalysisItemsRef.current = selectedAnalysisItems;
+  }, [selectedAnalysisItems]);
+
+  useEffect(() => {
+    analysisGraphEntriesRef.current = analysisGraphEntries;
+  }, [analysisGraphEntries]);
+
+  useEffect(() => {
+    localStorage.setItem('analysisGraphHeights', JSON.stringify(analysisGraphHeights));
+  }, [analysisGraphHeights]);
+
+  useEffect(() => {
+    setComparisonVariables((prev) => {
+      const isSame = prev.length === activeContextComparisonVariables.length
+        && prev.every((variable, index) => variable === activeContextComparisonVariables[index]);
+      return isSame ? prev : activeContextComparisonVariables;
+    });
+  }, [activeContextComparisonVariables]);
 
   useEffect(() => {
     setCodeMapOutput(null);
@@ -240,6 +974,7 @@ function App() {
     selectedElevRange.min,
     selectedElevRange.max,
     selectedSubregionId,
+    selectedAoiQueryKey,
     activeYearRange?.start,
     activeYearRange?.end,
   ]);
@@ -263,6 +998,30 @@ function App() {
     };
 
     document.body.classList.add('is-resizing-bottom');
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  }, []);
+
+  const handleAnalysisGraphResizeStart = useCallback((itemId, event) => {
+    event.preventDefault();
+    const card = event.currentTarget.closest('.analysis-graph-card');
+    if (!card) return;
+    const startHeight = card.getBoundingClientRect().height;
+    const startY = event.clientY;
+    analysisGraphResizeRef.current = itemId;
+    document.body.classList.add('is-resizing-analysis-graph');
+
+    const handleMouseMove = (moveEvent) => {
+      const nextHeight = clamp(startHeight + moveEvent.clientY - startY, 270, 680);
+      setAnalysisGraphHeights((prev) => ({ ...prev, [itemId]: nextHeight }));
+    };
+    const handleMouseUp = () => {
+      analysisGraphResizeRef.current = null;
+      document.body.classList.remove('is-resizing-analysis-graph');
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
   }, []);
@@ -294,14 +1053,20 @@ function App() {
     const loadHomeOptions = async () => {
       try {
         setDatasetLoading(true);
-        const [datasetsResponse, outcomesResponse] = await Promise.all([
+        const [datasetsResponse, outcomesResponse, projectsResponse] = await Promise.all([
           apiService.getDatasets(),
           apiService.getOutcomes().catch(() => ({ outcomes: [] })),
+          apiService.getProjects().catch((projectError) => {
+            console.warn('Could not load saved projects:', projectError);
+            setProjectsError('Saved projects are unavailable from this backend.');
+            return { projects: [] };
+          }),
         ]);
         const list = datasetsResponse.datasets || [];
         const outcomeList = outcomesResponse.outcomes || [];
         setDatasets(list);
         setOutcomes(outcomeList);
+        setProjects(projectsResponse.projects || []);
         if (outcomeList.length > 0) {
           const firstOutcome = outcomeList.find((item) => item.ready) || outcomeList[0];
           setSelectedOutcomeId(firstOutcome.id);
@@ -315,6 +1080,7 @@ function App() {
         setError('Failed to load dataset list from backend.');
       } finally {
         setDatasetLoading(false);
+        setProjectsLoading(false);
       }
     };
 
@@ -322,18 +1088,77 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!regionBounds) return;
-    setRegionLatMin(regionBounds.minLat.toFixed(4));
-    setRegionLatMax(regionBounds.maxLat.toFixed(4));
-    setRegionLonMin(regionBounds.minLon.toFixed(4));
-    setRegionLonMax(regionBounds.maxLon.toFixed(4));
-  }, [regionBounds]);
+    if (!selectedOutcome?.ready) {
+      setOutcomeMeta(null);
+      setOutcomeMetaError('');
+      setOutcomeVariable('');
+      setOutcomeBandId('');
+      setOutcomeComparisonId('');
+      return;
+    }
+
+    let isMounted = true;
+    const loadOutcomeMeta = async () => {
+      try {
+        setOutcomeMetaLoading(true);
+        setOutcomeMetaError('');
+        const response = await apiService.getOutcomeMeta(selectedOutcome.id);
+        if (!isMounted) return;
+        const restoredDashboard = projectRestoreSnapshotRef.current?.workspace?.dashboard || {};
+        const canRestoreOutcome = restoredDashboard.selectedOutcomeId === selectedOutcome.id;
+        const restoredVariable = canRestoreOutcome && (response.variables || []).includes(restoredDashboard.outcomeVariable)
+          ? restoredDashboard.outcomeVariable
+          : ((response.variables || [])[0] || '');
+        const restoredBand = canRestoreOutcome && (response.bands || []).some((band) => String(band.id) === String(restoredDashboard.outcomeBandId))
+          ? String(restoredDashboard.outcomeBandId)
+          : String((response.bands || [])[0]?.id || '');
+        const restoredComparison = canRestoreOutcome && (response.comparisons || []).some((comparison) => String(comparison.id) === String(restoredDashboard.outcomeComparisonId))
+          ? String(restoredDashboard.outcomeComparisonId)
+          : String((response.comparisons || [])[0]?.id || '');
+        setOutcomeMeta(response);
+        setOutcomeVariable(restoredVariable);
+        setOutcomeBandId(restoredBand);
+        setOutcomeComparisonId(restoredComparison);
+      } catch (err) {
+        if (!isMounted) return;
+        const detail = err?.response?.data?.detail;
+        setOutcomeMeta(null);
+        setOutcomeMetaError(detail || 'Failed to load outcome metadata.');
+      } finally {
+        if (isMounted) {
+          setOutcomeMetaLoading(false);
+        }
+      }
+    };
+
+    loadOutcomeMeta();
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedOutcome?.id, selectedOutcome?.ready]);
 
   useEffect(() => {
-    if (isHotspotMode && isPlaying) {
+    if (!outcomeMeta || !outcomeVariable || outcomeAvailableBandIds.size === 0) return;
+
+    if (!outcomeAvailableBandIds.has(String(outcomeBandId))) {
+      const firstAvailableBand = (outcomeMeta.bands || []).find((band) => outcomeAvailableBandIds.has(String(band.id)));
+      setOutcomeBandId(String(firstAvailableBand?.id || ''));
+    }
+
+    const validComparisons = (outcomeMeta.comparisons || []).filter(
+      (comparison) => outcomeAvailableBandIds.has(String(comparison.earlier_band_id))
+        && outcomeAvailableBandIds.has(String(comparison.later_band_id))
+    );
+    if (!validComparisons.some((comparison) => String(comparison.id) === String(outcomeComparisonId))) {
+      setOutcomeComparisonId(String(validComparisons[0]?.id || ''));
+    }
+  }, [outcomeAvailableBandIds, outcomeBandId, outcomeComparisonId, outcomeMeta, outcomeVariable]);
+
+  useEffect(() => {
+    if ((isHotspotMode || isOutcomeMode) && isPlaying) {
       setIsPlaying(false);
     }
-  }, [isHotspotMode, isPlaying]);
+  }, [isHotspotMode, isOutcomeMode, isPlaying]);
 
   useEffect(() => {
     if (!activeYearRange) return;
@@ -342,8 +1167,6 @@ function App() {
   }, [activeYearRange]);
 
   useEffect(() => {
-    if (!datasetReady) return;
-
     let isActive = true;
     const loadSubregions = async () => {
       try {
@@ -366,10 +1189,10 @@ function App() {
     return () => {
       isActive = false;
     };
-  }, [datasetReady]);
+  }, []);
 
   useEffect(() => {
-    if (!datasetReady || !selectedSubregionId) {
+    if (!selectedSubregionId) {
       subregionGeometryAbortRef.current?.abort?.();
       setSelectedSubregionFeature(null);
       return;
@@ -399,7 +1222,7 @@ function App() {
 
     loadSubregionGeometry();
     return () => controller.abort();
-  }, [datasetReady, selectedSubregionId]);
+  }, [selectedSubregionId]);
 
   useEffect(() => {
     if (!datasetId) {
@@ -434,9 +1257,14 @@ function App() {
         const defaultEndYear = Math.min(minYear + 1, maxYear);
 
         setSelectedYearRange((prev) => {
+          const restoredDashboard = projectRestoreSnapshotRef.current?.workspace?.dashboard || {};
+          const restoredRange = restoredDashboard.datasetId === datasetId ? restoredDashboard.selectedYearRange : null;
+          const restoredStart = Number(restoredRange?.start);
+          const restoredEnd = Number(restoredRange?.end);
+          const hasRestoredSelection = Number.isInteger(restoredStart) && Number.isInteger(restoredEnd);
           const hasExistingSelection = Number.isInteger(prev.start) && Number.isInteger(prev.end);
-          const currentStart = hasExistingSelection ? prev.start : minYear;
-          const currentEnd = hasExistingSelection ? prev.end : defaultEndYear;
+          const currentStart = hasRestoredSelection ? restoredStart : hasExistingSelection ? prev.start : minYear;
+          const currentEnd = hasRestoredSelection ? restoredEnd : hasExistingSelection ? prev.end : defaultEndYear;
           const nextStart = Math.min(Math.max(currentStart, minYear), maxYear);
           const nextEnd = Math.min(Math.max(currentEnd, minYear), maxYear);
           return {
@@ -477,47 +1305,68 @@ function App() {
         setComparisonVariables([]);
         setVariablesContextKey('');
         setMapData([]);
-        setGraphData([]);
         setHotspotData([]);
-        
-        // Fetch available dates (critical)
-        const datesResponse = await apiService.getAvailableDates(datasetId, activeYearRange);
-        if (datesResponse.dates && datesResponse.dates.length > 0) {
-          setDates(datesResponse.dates);
-          setCurrentDate(datesResponse.dates[0]);
-          setCurrentDateIndex(0);
-          setLoading(false); // Allow UI to show while other data loads
-        } else {
-          setError(
-            `No data available for dataset '${datasetId}' in ${activeYearRange.start}-${activeYearRange.end}.`
-          );
-          setLoading(false);
-          return;
-        }
-        
+
+        const restoredDashboard = pendingProjectRestoreRef.current?.workspace?.dashboard || {};
+
         // Fixed elevation band for all datasets.
         setElevationRange({ min: 500, max: 9000 });
-        setSelectedElevRange({ min: 500, max: 9000 });
-        
+        setSelectedElevRange(restoredDashboard.selectedElevRange || { min: 500, max: 9000 });
+
         // Fetch stats (optional - non-blocking)
         apiService.getStats(datasetId, activeYearRange)
           .then(statsResponse => setStats(statsResponse))
           .catch(err => console.warn('Could not load stats:', err));
 
-        // Fetch available variables (non-blocking)
-        apiService.getAvailableVariables(datasetId, activeYearRange)
-          .then(varResponse => {
-            if (varResponse.variables && varResponse.variables.length > 0) {
-              setVariables(varResponse.variables);
-              setSelectedVariable(varResponse.default_variable || varResponse.variables[0]);
-              setVariablesContextKey(contextKey);
-            }
-          })
-          .catch(err => {
-            setVariablesContextKey('');
-            console.warn('Could not load variables:', err);
-          });
-        
+        const varResponse = await apiService.getAvailableVariables(datasetId, activeYearRange);
+        if (varResponse.variables && varResponse.variables.length > 0) {
+          const shouldDeferVariable = Boolean(restoredDashboard.deferVariableSelection);
+          const restoredItems = normalizeAnalysisItems(restoredDashboard.analysisItems, restoredDashboard);
+          const restoredActiveItem = restoredItems.find((item) => (
+            item.datasetId === datasetId
+            && sameYearRange(item.yearRange, activeYearRange)
+            && varResponse.variables.includes(item.variable)
+          ));
+          const existingContextItem = selectedAnalysisItemsRef.current.find((item) => (
+            item.datasetId === datasetId
+            && sameYearRange(item.yearRange, activeYearRange)
+            && varResponse.variables.includes(item.variable)
+          ));
+          const legacyRestoredVariable = restoredDashboard.datasetId === datasetId
+            && sameYearRange(restoredDashboard.selectedYearRange, activeYearRange)
+            && varResponse.variables.includes(restoredDashboard.selectedVariable)
+            ? restoredDashboard.selectedVariable
+            : '';
+          const restoredVariable = restoredActiveItem?.variable
+            || legacyRestoredVariable
+            || existingContextItem?.variable
+            || (shouldDeferVariable ? '' : (varResponse.default_variable || varResponse.variables[0]));
+          setVariables(varResponse.variables);
+          setSelectedVariable(restoredVariable);
+          setVariablesContextKey(contextKey);
+          if (restoredItems.length > 0) {
+            setSelectedAnalysisItems(restoredItems);
+          } else if (restoredVariable) {
+            const nextItem = createAnalysisItem({
+              datasetId,
+              datasetLabel: selectedDataset?.label || datasetId,
+              yearRange: activeYearRange,
+              variable: restoredVariable,
+            });
+            setSelectedAnalysisItems((prev) => (
+              nextItem
+                ? [nextItem, ...prev.filter((item) => item.id !== nextItem.id)]
+                : prev
+            ));
+          } else if (pendingProjectRestoreRef.current) {
+            setSelectedAnalysisItems([]);
+          }
+        } else {
+          setVariablesContextKey('');
+          setError(`No variables available for dataset '${datasetId}'.`);
+        }
+        setLoading(false);
+
       } catch (err) {
         console.error('Initialization error:', err);
         setError('Failed to connect to backend. Please ensure the FastAPI server is running on port 8000.');
@@ -528,9 +1377,53 @@ function App() {
     initialize();
   }, [datasetReady, datasetId, activeYearRange]);
 
+  useEffect(() => {
+    if (!datasetReady || !datasetId || !activeYearRange || !selectedVariableReady || isOutcomeMode) return;
+
+    const controller = new AbortController();
+    const loadDatesForVariable = async () => {
+      try {
+        const restoredDashboard = projectRestoreSnapshotRef.current?.workspace?.dashboard || {};
+        const datesResponse = await apiService.getAvailableDates(datasetId, activeYearRange);
+        if (controller.signal.aborted) return;
+        if (datesResponse.dates && datesResponse.dates.length > 0) {
+          const restoredDate = restoredDashboard.datasetId === datasetId
+            && restoredDashboard.selectedVariable === selectedVariable
+            && datesResponse.dates.includes(restoredDashboard.currentDate)
+            ? restoredDashboard.currentDate
+            : datesResponse.dates[0];
+          setDates(datesResponse.dates);
+          setCurrentDate(restoredDate);
+          setCurrentDateIndex(Math.max(0, datesResponse.dates.indexOf(restoredDate)));
+          pendingProjectRestoreRef.current = null;
+          if (projectRestoreTimerRef.current) window.clearTimeout(projectRestoreTimerRef.current);
+          projectRestoreTimerRef.current = window.setTimeout(() => {
+            projectBaselineRef.current = latestProjectFingerprintRef.current;
+            setProjectDirty(false);
+          }, 250);
+        } else {
+          setDates([]);
+          setCurrentDate(null);
+          setCurrentDateIndex(0);
+          setError(`No dates found for ${formatVariableLabel(selectedVariable)} in ${activeYearRange.start}-${activeYearRange.end}.`);
+        }
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        console.warn('Could not load dates:', err);
+        setDates([]);
+        setCurrentDate(null);
+        setCurrentDateIndex(0);
+        setError('Failed to load available dates for the selected variable.');
+      }
+    };
+
+    loadDatesForVariable();
+    return () => controller.abort();
+  }, [activeYearRange, datasetId, datasetReady, isOutcomeMode, selectedVariable, selectedVariableReady]);
+
   // Fetch map data when date or elevation changes
   useEffect(() => {
-    if (!datasetReady || !datasetId || !currentDate || !activeYearRange || !selectedVariableReady || isHotspotMode) return;
+    if (!datasetReady || !datasetId || !currentDate || !activeYearRange || !selectedVariableReady || isHotspotMode || isOutcomeMode) return;
 
     const controller = new AbortController();
     if (mapAbortRef.current) {
@@ -548,13 +1441,14 @@ function App() {
           datasetId,
           controller.signal,
           activeYearRange,
-          selectedSubregionId || undefined
+          roiPolygon ? undefined : (selectedSubregionId || undefined),
+          roiPolygon || undefined
         );
-        
+
         if (controller.signal.aborted) return;
         setMapData(response.data || []);
         setMapFrameReadyKey(mapRequestKey);
-        
+
         if (response.query_time_ms) {
           console.log(`Query completed in ${response.query_time_ms}ms`);
         }
@@ -567,15 +1461,15 @@ function App() {
     };
 
     fetchMapData();
-    
+
     return () => {
       controller.abort();
     };
-  }, [datasetReady, datasetId, currentDate, selectedElevRange, selectedVariable, selectedVariableReady, activeYearRange, selectedSubregionId, isHotspotMode, mapRequestKey]);
+  }, [datasetReady, datasetId, currentDate, selectedElevRange, selectedVariable, selectedVariableReady, activeYearRange, selectedSubregionId, roiPolygon, isHotspotMode, isOutcomeMode, mapRequestKey]);
 
   // Fetch hotspot trends for long-term change analysis
   useEffect(() => {
-    if (!datasetReady || !datasetId || !activeYearRange || !selectedVariableReady || !isHotspotMode) return;
+    if (!datasetReady || !datasetId || !activeYearRange || !selectedVariableReady || !isHotspotMode || isOutcomeMode) return;
 
     const controller = new AbortController();
     if (hotspotAbortRef.current) {
@@ -595,8 +1489,9 @@ function App() {
           datasetId,
           controller.signal,
           activeYearRange,
-          selectedSubregionId || undefined,
-          hotspotMinYears
+          roiPolygon ? undefined : (selectedSubregionId || undefined),
+          hotspotMinYears,
+          roiPolygon || undefined
         );
 
         setHotspotData(response.data || []);
@@ -627,90 +1522,253 @@ function App() {
     selectedVariable,
     selectedVariableReady,
     selectedSubregionId,
+    roiPolygon,
     isHotspotMode,
+    isOutcomeMode,
     hotspotMinYears,
   ]);
 
-  // Fetch graph data when elevation changes
   useEffect(() => {
-    if (!datasetReady || !datasetId || !dates || dates.length === 0 || !activeYearRange || !selectedVariableReady) return;
+    if (!datasetReady || !isOutcomeMode || !selectedOutcome?.ready || !outcomeVariable) return;
+    if (outcomeViewMode === 'mean' && !outcomeBandId) return;
+    if (outcomeViewMode === 'difference' && !outcomeComparisonId) return;
 
     const controller = new AbortController();
-    if (graphAbortRef.current) {
-      graphAbortRef.current.abort();
+    if (outcomeDataAbortRef.current) {
+      outcomeDataAbortRef.current.abort();
     }
-    graphAbortRef.current = controller;
+    outcomeDataAbortRef.current = controller;
 
-    const fetchGraphData = async () => {
+    const loadOutcomeData = async () => {
       try {
-        const variablesForGraph = graphVariableKeys.length > 0 ? graphVariableKeys : [selectedVariable];
-        const fetchSeries = async (variable) => {
-          const startDate = dates[0];
-          const endDate = dates[dates.length - 1];
-
-          return apiService.getBasinMean(
-            startDate,
-            endDate,
-            selectedElevRange.min,
-            selectedElevRange.max,
-            variable,
-            datasetId,
+        setOutcomeDataLoading(true);
+        setOutcomeDataError('');
+        const response = outcomeViewMode === 'difference'
+          ? await apiService.getOutcomeDifference(
+            selectedOutcome.id,
+            outcomeVariable,
+            outcomeComparisonId,
             controller.signal,
-            activeYearRange,
-            selectedSubregionId || undefined,
-            regionBounds || undefined
+            roiPolygon || undefined
+          )
+          : await apiService.getOutcomeData(
+            selectedOutcome.id,
+            outcomeVariable,
+            outcomeBandId,
+            controller.signal,
+            roiPolygon || undefined
           );
-        };
-
-        const responses = await Promise.all(
-          variablesForGraph.map(async (variable) => ({
-            variable,
-            response: await fetchSeries(variable),
-          }))
-        );
-
         if (controller.signal.aborted) return;
-
-        if (responses.length === 1) {
-          setGraphData(responses[0].response.data || []);
-          return;
-        }
-
-        const mergedByDate = new Map();
-        responses.forEach(({ variable, response }) => {
-          (response.data || []).forEach((point) => {
-            const date = point.date;
-            if (!date) return;
-            const existing = mergedByDate.get(date) || { date };
-            existing[variable] = point.mean_value ?? point.mean_temp ?? point.value;
-            existing[`${variable}__pixels`] = point.pixel_count ?? point.count;
-            mergedByDate.set(date, existing);
-          });
-        });
-
-        setGraphData(Array.from(mergedByDate.values()).sort((a, b) => a.date.localeCompare(b.date)));
+        setOutcomeData(response.data || []);
+        setOutcomeStats(response.stats || null);
       } catch (err) {
         const isCanceled = err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED';
         if (isCanceled) return;
-        console.error('Error fetching graph data:', err);
-        // Don't block the app if graph fails
-        setGraphData([]);
+        const detail = err?.response?.data?.detail;
+        setOutcomeData([]);
+        setOutcomeStats(null);
+        setOutcomeDataError(detail || 'Failed to load saved outcome map.');
+      } finally {
+        if (!controller.signal.aborted) {
+          setOutcomeDataLoading(false);
+        }
       }
     };
 
-    // Delay graph load to prioritize map
-    const timer = setTimeout(fetchGraphData, regionBounds ? 200 : 1000);
+    loadOutcomeData();
     return () => {
-      clearTimeout(timer);
       controller.abort();
     };
-  }, [datasetReady, datasetId, dates, selectedElevRange, selectedVariable, selectedVariableReady, graphVariableKeys, regionBounds, activeYearRange, selectedSubregionId]);
+  }, [
+    datasetReady,
+    isOutcomeMode,
+    selectedOutcome?.id,
+    selectedOutcome?.ready,
+    outcomeVariable,
+    outcomeBandId,
+    outcomeComparisonId,
+    outcomeViewMode,
+    roiPolygon,
+    selectedAoiQueryKey,
+  ]);
+
+  // Fetch graph data for every selected analysis item when filters change.
+  useEffect(() => {
+    if (!datasetReady || isOutcomeMode) return;
+
+    const activeItems = selectedAnalysisItems.filter((item) => (
+      item?.datasetId
+      && item?.variable
+      && normalizeYearRange(item.yearRange)
+    ));
+
+    if (activeItems.length === 0) {
+      setAnalysisGraphEntries({});
+      return;
+    }
+
+    const activeIds = new Set(activeItems.map((item) => item.id));
+    setAnalysisGraphEntries((prev) => {
+      let changed = false;
+      const next = {};
+      Object.entries(prev).forEach(([id, entry]) => {
+        if (activeIds.has(id)) {
+          next[id] = entry;
+        } else {
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+
+    const inFlightGraphs = graphAbortRef.current;
+    inFlightGraphs.forEach((entry, id) => {
+      if (!activeIds.has(id)) {
+        entry?.controller?.abort?.();
+        inFlightGraphs.delete(id);
+      }
+    });
+
+    const entries = analysisGraphEntriesRef.current;
+    const itemsToLoad = activeItems
+      .map((item) => ({
+        item,
+        requestKey: getAnalysisGraphRequestKey(item, selectedElevRange, selectedSubregionId, selectedAoiQueryKey),
+      }))
+      .filter(({ item, requestKey }) => {
+        const entry = entries[item.id];
+        const pending = inFlightGraphs.get(item.id);
+        if (pending?.requestKey === requestKey) return false;
+        return !(entry && entry.requestKey === requestKey && !entry.loading && !entry.error);
+      });
+
+    if (itemsToLoad.length === 0) return;
+
+    setAnalysisGraphEntries((prev) => {
+      const next = { ...prev };
+      itemsToLoad.forEach(({ item, requestKey }) => {
+        next[item.id] = {
+          ...(next[item.id] || {}),
+          requestKey,
+          loading: true,
+          error: '',
+        };
+      });
+      return next;
+    });
+
+    const fetchGraphData = async () => {
+      let nextIndex = 0;
+      const loadOne = async ({ item, requestKey }) => {
+        const existing = inFlightGraphs.get(item.id);
+        if (existing && existing.requestKey !== requestKey) {
+          existing.controller?.abort?.();
+        }
+
+        const controller = new AbortController();
+        inFlightGraphs.set(item.id, { requestKey, controller });
+        try {
+          const datesResponse = await apiService.getAvailableDates(item.datasetId, item.yearRange);
+          if (controller.signal.aborted) return;
+          const itemDates = datesResponse.dates || [];
+          if (itemDates.length === 0) {
+            setAnalysisGraphEntries((prev) => ({
+              ...prev,
+              [item.id]: {
+                ...(prev[item.id] || {}),
+                requestKey,
+                data: [],
+                loading: false,
+                error: `No dates found for ${item.variableLabel}.`,
+              },
+            }));
+            return;
+          }
+
+          const response = await apiService.getBasinMean(
+            itemDates[0],
+            itemDates[itemDates.length - 1],
+            selectedElevRange.min,
+            selectedElevRange.max,
+            item.variable,
+            item.datasetId,
+            controller.signal,
+            item.yearRange,
+            roiPolygon ? undefined : (selectedSubregionId || undefined),
+            roiPolygon || undefined
+          );
+
+          if (controller.signal.aborted) return;
+          const currentEntry = analysisGraphEntriesRef.current[item.id];
+          const stillSelected = selectedAnalysisItemsRef.current.some((candidate) => candidate.id === item.id);
+          if (!stillSelected || (currentEntry && currentEntry.requestKey !== requestKey)) return;
+          setAnalysisGraphEntries((prev) => ({
+            ...prev,
+            [item.id]: {
+              requestKey,
+              data: response.data || [],
+              loading: false,
+              error: '',
+            },
+          }));
+        } catch (err) {
+          const isCanceled = err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED';
+          if (isCanceled || controller.signal.aborted) return;
+          console.error(`Error fetching graph data for ${item.id}:`, err);
+          const currentEntry = analysisGraphEntriesRef.current[item.id];
+          if (currentEntry && currentEntry.requestKey !== requestKey) return;
+          setAnalysisGraphEntries((prev) => ({
+            ...prev,
+            [item.id]: {
+              ...(prev[item.id] || {}),
+              requestKey,
+              loading: false,
+              error: 'Could not load this analysis graph.',
+            },
+          }));
+        } finally {
+          const pending = inFlightGraphs.get(item.id);
+          if (pending?.requestKey === requestKey) {
+            inFlightGraphs.delete(item.id);
+          }
+        }
+      };
+
+      const workers = Array.from(
+        { length: Math.min(GRAPH_FETCH_CONCURRENCY, itemsToLoad.length) },
+        async () => {
+          while (nextIndex < itemsToLoad.length) {
+            const item = itemsToLoad[nextIndex];
+            nextIndex += 1;
+            await loadOne(item);
+          }
+        }
+      );
+      await Promise.all(workers);
+    };
+
+    // Delay graph load slightly to prioritize the active map frame.
+    const timer = setTimeout(fetchGraphData, roiPolygon || selectedSubregionId ? 160 : 450);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [
+    datasetReady,
+    selectedAnalysisItems,
+    selectedElevRange.min,
+    selectedElevRange.max,
+    selectedSubregionId,
+    roiPolygon,
+    selectedAoiQueryKey,
+    isOutcomeMode,
+    abortGraphRequests,
+  ]);
 
   // Keep one frame ahead in the bounded cache. Playback only advances after
   // the visible frame is ready, preventing slow requests from being cancelled
   // repeatedly at 2x/5x speed.
   useEffect(() => {
-    if (!isPlaying || isHotspotMode || mapFrameReadyKey !== mapRequestKey) return undefined;
+    if (!isPlaying || isHotspotMode || isOutcomeMode || mapFrameReadyKey !== mapRequestKey) return undefined;
     const nextIndex = currentDateIndex + 1;
     if (nextIndex >= dates.length) return undefined;
 
@@ -721,7 +1779,8 @@ function App() {
       selectedVariable,
       datasetId,
       activeYearRange,
-      selectedSubregionId || undefined
+      roiPolygon ? undefined : (selectedSubregionId || undefined),
+      roiPolygon || undefined
     ).catch(() => {
       // The foreground request remains the source of truth if prefetch fails.
     });
@@ -729,6 +1788,7 @@ function App() {
   }, [
     isPlaying,
     isHotspotMode,
+    isOutcomeMode,
     mapFrameReadyKey,
     mapRequestKey,
     currentDateIndex,
@@ -739,10 +1799,11 @@ function App() {
     datasetId,
     activeYearRange,
     selectedSubregionId,
+    roiPolygon,
   ]);
 
   useEffect(() => {
-    if (!isPlaying || isHotspotMode || mapFrameReadyKey !== mapRequestKey || dates.length === 0) {
+    if (!isPlaying || isHotspotMode || isOutcomeMode || mapFrameReadyKey !== mapRequestKey || dates.length === 0) {
       return undefined;
     }
 
@@ -760,7 +1821,7 @@ function App() {
     }, playSpeed);
 
     return () => window.clearTimeout(timer);
-  }, [isPlaying, isHotspotMode, mapFrameReadyKey, mapRequestKey, dates, playSpeed]);
+  }, [isPlaying, isHotspotMode, isOutcomeMode, mapFrameReadyKey, mapRequestKey, dates, playSpeed]);
 
   // Handle date change
   const handleDateChange = useCallback((index) => {
@@ -785,25 +1846,120 @@ function App() {
   }, []);
 
   const handleAnalysisModeChange = useCallback((mode) => {
-    setAnalysisMode(mode === 'hotspot' ? 'hotspot' : 'daily');
+    const nextMode = ['daily', 'hotspot', 'outcome'].includes(mode) ? mode : 'daily';
+    setAnalysisMode(nextMode);
     setHotspotError('');
-    if (mode === 'hotspot') {
+    setOutcomeDataError('');
+    if (nextMode !== 'daily') {
       setIsPlaying(false);
     }
   }, []);
 
   const handlePrimaryVariableChange = useCallback((variable) => {
+    if (!datasetId || !activeYearRange || !variable) return;
+    const nextItem = createAnalysisItem({
+      datasetId,
+      datasetLabel: selectedDataset?.label || datasetId,
+      yearRange: activeYearRange,
+      variable,
+    });
+    if (!nextItem) return;
+    setAnalysisMode((prev) => (prev === 'outcome' ? 'daily' : prev));
+    setSelectedAnalysisItems((prev) => [
+      nextItem,
+      ...prev.filter((item) => item.id !== nextItem.id),
+    ]);
     setSelectedVariable(variable);
-  }, []);
+    setIsPlaying(false);
+  }, [activeYearRange, datasetId, selectedDataset?.label]);
 
-  const handleComparisonVariableToggle = useCallback((variable) => {
-    if (variable === selectedVariable) return;
-    setComparisonVariables((prev) => (
-      prev.includes(variable)
-        ? prev.filter((item) => item !== variable)
-        : [...prev, variable]
-    ));
-  }, [selectedVariable]);
+  const handleActivateAnalysisItem = useCallback((itemId) => {
+    const item = selectedAnalysisItems.find((candidate) => candidate.id === itemId);
+    if (!item) return;
+    setAnalysisMode((prev) => (prev === 'outcome' ? 'daily' : prev));
+    setSelectedAnalysisItems((prev) => [
+      item,
+      ...prev.filter((candidate) => candidate.id !== item.id),
+    ]);
+    setDatasetId(item.datasetId);
+    setSelectedYearRange(item.yearRange);
+    setSelectedVariable(item.variable);
+    setIsPlaying(false);
+    setCodeMapOutput(null);
+    setResearchMapOutput(null);
+  }, [selectedAnalysisItems]);
+
+  const handleRemoveAnalysisItem = useCallback((itemId) => {
+    const nextItems = selectedAnalysisItems.filter((item) => item.id !== itemId);
+    const removedActiveItem = selectedAnalysisItems[0]?.id === itemId;
+    setSelectedAnalysisItems(nextItems);
+    setAnalysisGraphEntries((prev) => {
+      if (!prev[itemId]) return prev;
+      const next = { ...prev };
+      delete next[itemId];
+      return next;
+    });
+
+    if (!removedActiveItem) return;
+    const nextActiveItem = nextItems[0];
+    setIsPlaying(false);
+    setCodeMapOutput(null);
+    setResearchMapOutput(null);
+    if (!nextActiveItem) {
+      setSelectedVariable('');
+      setDates([]);
+      setCurrentDate(null);
+      setCurrentDateIndex(0);
+      setMapData([]);
+      setHotspotData([]);
+      setHotspotSummary(null);
+      return;
+    }
+    setDatasetId(nextActiveItem.datasetId);
+    setSelectedYearRange(nextActiveItem.yearRange);
+    setSelectedVariable(nextActiveItem.variable);
+  }, [selectedAnalysisItems]);
+
+  const handleVariableSelectionToggle = useCallback((variable, checked) => {
+    if (variable === GLACIER_LAYER_VARIABLE) {
+      setMapViewMode(checked ? 'glacier' : 'basin');
+      return;
+    }
+    if (!datasetId || !activeYearRange || !variable) return;
+    if (checked) {
+      handlePrimaryVariableChange(variable);
+      return;
+    }
+    handleRemoveAnalysisItem(buildAnalysisItemId(datasetId, activeYearRange, variable));
+  }, [activeYearRange, datasetId, handlePrimaryVariableChange, handleRemoveAnalysisItem]);
+
+  const handleVariableDatasetChange = useCallback((nextDatasetId) => {
+    const nextDataset = datasets.find((item) => item.id === nextDatasetId);
+    if (!nextDataset || !nextDataset.ready || nextDataset.id === datasetId) return;
+
+    mapAbortRef.current?.abort?.();
+    hotspotAbortRef.current?.abort?.();
+    outcomeDataAbortRef.current?.abort?.();
+    abortGraphRequests();
+    setDatasetId(nextDataset.id);
+    setSelectedYearRange({ start: null, end: null });
+    setVariables([]);
+    setSelectedVariable('');
+    setComparisonVariables([]);
+    setVariablesContextKey('');
+    setMapData([]);
+    setHotspotData([]);
+    setHotspotSummary(null);
+    setOutcomeData([]);
+    setOutcomeStats(null);
+    setCodeMapOutput(null);
+    setResearchMapOutput(null);
+    setAnalysisMode('daily');
+    setIsPlaying(false);
+    setError(null);
+    setHotspotError('');
+    setOutcomeDataError('');
+  }, [abortGraphRequests, datasetId, datasets]);
 
   const handleHotspotMinYearsChange = useCallback((value) => {
     const parsed = Number.parseInt(value, 10);
@@ -812,62 +1968,10 @@ function App() {
     setHotspotMinYears(clamped);
   }, [hotspotMinYearsMax]);
 
-  const handleToggleRegion = useCallback(() => {
-    if (regionSelectMode) {
-      setRegionSelectMode(false);
-      setRegionBounds(null);
-      setRegionPreview(null);
-      return;
-    }
-    if (regionBounds) {
-      setRegionBounds(null);
-      setRegionPreview(null);
-      return;
-    }
-    setRegionSelectMode(true);
-  }, [regionSelectMode, regionBounds]);
-
-  const handleRegionSelect = useCallback((bounds) => {
-    setRegionBounds(bounds);
-    setRegionSelectMode(false);
-    setRegionPreview(null);
-    setRegionInputError('');
-  }, []);
-
-  const handleRegionPreview = useCallback((bounds) => {
-    setRegionPreview(bounds);
-  }, []);
-
-  const handleRegionApply = useCallback(() => {
-    const minLat = parseFloat(regionLatMin);
-    const maxLat = parseFloat(regionLatMax);
-    const minLon = parseFloat(regionLonMin);
-    const maxLon = parseFloat(regionLonMax);
-
-    if (![minLat, maxLat, minLon, maxLon].every((v) => Number.isFinite(v))) {
-      setRegionInputError('Enter valid latitude and longitude values.');
-      return;
-    }
-    if (minLat < -90 || maxLat > 90 || minLon < -180 || maxLon > 180) {
-      setRegionInputError('Lat must be -90 to 90 and Lon -180 to 180.');
-      return;
-    }
-    const bounds = {
-      minLat: Math.min(minLat, maxLat),
-      maxLat: Math.max(minLat, maxLat),
-      minLon: Math.min(minLon, maxLon),
-      maxLon: Math.max(minLon, maxLon),
-    };
-    setRegionInputError('');
-    setRegionBounds(bounds);
-    setRegionSelectMode(false);
-    setRegionPreview(null);
-  }, [regionLatMin, regionLatMax, regionLonMin, regionLonMax]);
-
   const handleSubregionChange = useCallback((value) => {
     setSelectedSubregionId(value);
     setSelectedSubregionFeature(null);
-    setRegionInputError('');
+    if (value) setPolygonDrawMode(false);
     const nextLabel = subregions.find((item) => item.id === value)?.label || '';
     setSubregionSearchText(nextLabel);
     setSubregionDropdownOpen(false);
@@ -883,20 +1987,45 @@ function App() {
     }
   }, [selectedSubregionId, selectedSubregion, subregionDropdownOpen]);
 
-  const handleSearch = useCallback(() => {
-    const lat = parseFloat(searchLat);
-    const lon = parseFloat(searchLon);
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-      setSearchError('Enter valid latitude and longitude.');
-      return;
-    }
-    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-      setSearchError('Latitude must be -90 to 90 and longitude -180 to 180.');
-      return;
-    }
-    setSearchError('');
-    setFocusLocation({ lat, lon });
-  }, [searchLat, searchLon]);
+  const handleUpdateFocusLocation = useCallback((id, lat, lon) => {
+    setFocusLocations((prev) => prev.map((loc) => loc.id === id ? { ...loc, lat, lon } : loc));
+  }, []);
+
+  const handleRemoveFocusLocation = useCallback((id) => {
+    setFocusLocations((prev) => prev.filter((loc) => loc.id !== id));
+  }, []);
+
+  const handleTogglePolygonDraw = useCallback(() => {
+    setPolygonDrawMode((prev) => !prev);
+  }, []);
+
+  const handleAoiComplete = useCallback((geometry) => {
+    const created = {
+      id: `polygon-${Date.now()}`,
+      name: aoiPolygons.length === 0 ? 'ROI' : `Polygon ${aoiPolygons.length + 1}`,
+      createdAt: Date.now(),
+      geometry,
+    };
+    const draft = normalizeAoiPolygon(created, aoiPolygons.length);
+    if (!draft) return;
+    setAoiPolygons((prev) => normalizeAoiPolygons([...prev, draft]));
+    setSelectedAoiId(draft.id);
+    setPolygonDrawMode(false);
+    setIsPlaying(false);
+  }, [aoiPolygons.length]);
+
+  const handleRenameAoi = useCallback((id, name) => {
+    setAoiPolygons((prev) => normalizeAoiPolygons(prev.map((polygon) => {
+      if (polygon.id !== id) return polygon;
+      const next = { ...polygon, name };
+      return { ...next, analysis: analyzeAoiGeometry(next) };
+    })));
+  }, []);
+
+  const handleRemoveAoi = useCallback((id) => {
+    setAoiPolygons((prev) => normalizeAoiPolygons(prev.filter((polygon) => polygon.id !== id)));
+    setSelectedAoiId((current) => (current === id ? '' : current));
+  }, []);
 
   const handleYearStartChange = useCallback((value) => {
     const nextStart = Number.parseInt(value, 10);
@@ -966,6 +2095,198 @@ function App() {
     }
   }, [ncFile, ncDatasetName]);
 
+  const applyProjectPayload = useCallback((payload) => {
+    const project = payload?.project;
+    const workspace = payload?.workspace || {};
+    const dashboard = workspace.dashboard || {};
+    const layout = workspace.layout || {};
+    const tools = workspace.tools || {};
+    if (!project?.id) throw new Error('The project file is missing its identity metadata.');
+    const restoredAnalysisItems = normalizeAnalysisItems(dashboard.analysisItems, dashboard);
+
+    if (projectRestoreTimerRef.current) window.clearTimeout(projectRestoreTimerRef.current);
+    projectBaselineRef.current = '';
+    pendingProjectRestoreRef.current = payload;
+    projectRestoreSnapshotRef.current = payload;
+    setActiveProject(project);
+    const restoredCodeState = { ...(tools.code || {}), code: payload.code || tools.code?.code || '' };
+    setProjectToolState({
+      code: restoredCodeState,
+      research: tools.research || {},
+    });
+    codeWorkspaceLiveRef.current = restoredCodeState;
+    if (dashboard.datasetId) setDatasetId(dashboard.datasetId);
+    if (dashboard.selectedOutcomeId) setSelectedOutcomeId(dashboard.selectedOutcomeId);
+    if (dashboard.selectedYearRange) setSelectedYearRange(dashboard.selectedYearRange);
+    setCurrentDate(dashboard.currentDate || null);
+    setCurrentDateIndex(0);
+    setDates([]);
+    setSelectedVariable(dashboard.selectedVariable || '');
+    setSelectedAnalysisItems(restoredAnalysisItems);
+    setAnalysisGraphEntries({});
+    setComparisonVariables(dashboard.comparisonVariables || []);
+    setSelectedSubregionId(dashboard.selectedSubregionId || '');
+    const restoredAois = normalizeAoiPolygons(dashboard.aoiPolygons);
+    setAoiPolygons(restoredAois);
+    setSelectedAoiId(restoredAois.some((polygon) => polygon.id === dashboard.selectedAoiId) ? dashboard.selectedAoiId : '');
+    setPolygonDrawMode(false);
+    setFocusLocations(dashboard.focusLocations || []);
+    setSelectedElevRange(dashboard.selectedElevRange || { min: 500, max: 9000 });
+    setMapViewMode(dashboard.mapViewMode || 'basin');
+    setAnalysisMode(dashboard.analysisMode || 'daily');
+    setHotspotMinYears(Number(dashboard.hotspotMinYears) || 3);
+    setOutcomeVariable(dashboard.outcomeVariable || '');
+    setOutcomeBandId(dashboard.outcomeBandId || '');
+    setOutcomeViewMode(dashboard.outcomeViewMode || 'mean');
+    setOutcomeComparisonId(dashboard.outcomeComparisonId || '');
+    if (layout.theme === 'light' || layout.theme === 'dark') setTheme(layout.theme);
+    setBottomPanelHeight(clamp(Number(layout.bottomPanelHeight) || 360, 180, 520));
+    setCodePanelWidth(clamp(Number(layout.codePanelWidth) || 620, 360, 760));
+    setCodePanelOpen(Boolean(layout.codePanelOpen));
+    setResearchPanelOpen(!layout.codePanelOpen && Boolean(layout.researchPanelOpen));
+    setShowDocumentation(workspace.view === 'documentation');
+    setDatasetReady(true);
+    setError(null);
+    setProjectsError('');
+    setProjectDirty(false);
+    setProjectSaveState('idle');
+    recordNavigation({ view: workspace.view === 'outcome' ? 'outcome' : 'dashboard' });
+
+    projectRestoreTimerRef.current = window.setTimeout(() => {
+      projectBaselineRef.current = latestProjectFingerprintRef.current;
+      setProjectDirty(false);
+    }, 1800);
+  }, [recordNavigation]);
+
+  const handleCreateProject = useCallback(async ({ name, description }) => {
+    if (activeProject && projectDirty && !window.confirm('The current project has unsaved changes. Create a new project without saving them?')) return false;
+    setProjectsError('');
+    try {
+      const projectYearRange = fullDatasetYearRange || activeYearRange || selectedYearRange;
+      const freshWorkspace = {
+        ...projectWorkspaceSnapshot,
+        view: 'dashboard',
+        dashboard: {
+          ...projectWorkspaceSnapshot.dashboard,
+          selectedYearRange: projectYearRange,
+          currentDate: null,
+          selectedVariable: '',
+          comparisonVariables: [],
+          analysisItems: [],
+          deferVariableSelection: true,
+          selectedSubregionId: '',
+          aoiPolygons: [],
+          selectedAoiId: '',
+          analysisMode: 'daily',
+          mapViewMode: 'basin',
+        },
+        layout: {
+          ...projectWorkspaceSnapshot.layout,
+          codePanelOpen: false,
+          researchPanelOpen: false,
+        },
+        tools: { code: {}, research: {} },
+      };
+      const payload = await apiService.createProject({
+        name,
+        description,
+        workspace: freshWorkspace,
+        code: '',
+      });
+      setProjects((current) => [payload.project, ...current.filter((item) => item.id !== payload.project.id)]);
+      applyProjectPayload(payload);
+      return true;
+    } catch (projectError) {
+      setProjectsError(projectError?.response?.data?.detail || projectError?.message || 'Could not create the project.');
+      return false;
+    }
+  }, [activeProject, activeYearRange, applyProjectPayload, fullDatasetYearRange, projectDirty, projectWorkspaceSnapshot, selectedYearRange]);
+
+  const handleOpenProject = useCallback(async (projectId) => {
+    if (activeProject?.id !== projectId && projectDirty && !window.confirm('The current project has unsaved changes. Open another project without saving them?')) return;
+    setProjectsError('');
+    try {
+      const payload = await apiService.getProject(projectId);
+      applyProjectPayload(payload);
+      setProjects((current) => current.map((item) => item.id === projectId ? payload.project : item));
+    } catch (projectError) {
+      setProjectsError(projectError?.response?.data?.detail || projectError?.message || 'Could not open the project.');
+    }
+  }, [activeProject?.id, applyProjectPayload, projectDirty]);
+
+  const handleSaveProject = useCallback(async () => {
+    if (!activeProject || projectSaveState === 'saving') return;
+    setProjectSaveState('saving');
+    const liveCodeState = codeWorkspaceLiveRef.current || projectToolState.code || {};
+    const codeStateForStorage = getCodeStateForProjectStorage(liveCodeState);
+    const workspaceToSave = {
+      ...projectWorkspaceSnapshot,
+      tools: {
+        ...projectWorkspaceSnapshot.tools,
+        code: codeStateForStorage,
+      },
+    };
+    const savedFingerprint = buildProjectFingerprint(workspaceToSave, liveCodeState.code || '');
+    try {
+      const payload = await apiService.saveProject(
+        activeProject.id,
+        workspaceToSave,
+        liveCodeState.code || ''
+      );
+      setActiveProject(payload.project);
+      setProjects((current) => [payload.project, ...current.filter((item) => item.id !== payload.project.id)]);
+      projectBaselineRef.current = savedFingerprint;
+      setProjectDirty(false);
+      setProjectSaveState('saved');
+      window.setTimeout(() => setProjectSaveState('idle'), 1400);
+    } catch (projectError) {
+      console.error('Project save failed:', projectError);
+      setProjectSaveState('error');
+    }
+  }, [activeProject, projectSaveState, projectToolState.code?.code, projectWorkspaceFingerprint, projectWorkspaceSnapshot]);
+
+  const handleArchiveProject = useCallback(async (projectId) => {
+    if (activeProject?.id === projectId && projectDirty && !window.confirm('This project has unsaved changes. Archive its last saved version?')) return;
+    setProjectsError('');
+    try {
+      await apiService.archiveProject(projectId);
+      setProjects((current) => current.filter((item) => item.id !== projectId));
+      if (activeProject?.id === projectId) {
+        setActiveProject(null);
+        projectBaselineRef.current = '';
+        setProjectDirty(false);
+      }
+    } catch (projectError) {
+      setProjectsError(projectError?.response?.data?.detail || projectError?.message || 'Could not archive the project.');
+    }
+  }, [activeProject?.id, projectDirty]);
+
+  const handleDeleteProject = useCallback(async (projectId) => {
+    setProjectsError('');
+    try {
+      await apiService.deleteProject(projectId);
+      setProjects((current) => current.filter((item) => item.id !== projectId));
+      if (activeProject?.id === projectId) {
+        setActiveProject(null);
+        projectBaselineRef.current = '';
+        setProjectDirty(false);
+      }
+    } catch (projectError) {
+      setProjectsError(projectError?.response?.data?.detail || projectError?.message || 'Could not delete the project.');
+    }
+  }, [activeProject?.id]);
+
+  useEffect(() => {
+    const handleSaveShortcut = (event) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== 's') return;
+      if (!activeProject) return;
+      event.preventDefault();
+      handleSaveProject();
+    };
+    window.addEventListener('keydown', handleSaveShortcut);
+    return () => window.removeEventListener('keydown', handleSaveShortcut);
+  }, [activeProject, handleSaveProject]);
+
   const handleStartDataset = useCallback(() => {
     if (!datasetId) {
       setError('Please select a dataset first.');
@@ -978,28 +2299,33 @@ function App() {
     apiService.clearCache();
     mapAbortRef.current?.abort?.();
     hotspotAbortRef.current?.abort?.();
-    graphAbortRef.current?.abort?.();
+    outcomeDataAbortRef.current?.abort?.();
+    abortGraphRequests();
     subregionGeometryAbortRef.current?.abort?.();
-    setRegionBounds(null);
-    setRegionPreview(null);
-    setSelectedSubregionId('');
-    setSelectedSubregionFeature(null);
-    setGraphData([]);
+    setSelectedAnalysisItems([]);
+    setAnalysisGraphEntries({});
     setMapData([]);
     setHotspotData([]);
     setHotspotSummary(null);
     setHotspotLoading(false);
     setHotspotError('');
     setHotspotMinYears(3);
+    setPolygonDrawMode(false);
+    setOutcomeData([]);
+    setOutcomeStats(null);
+    setOutcomeDataLoading(false);
+    setOutcomeDataError('');
     setAnalysisMode('daily');
     setMapViewMode('basin');
     setError(null);
     setShowDocumentation(false);
-    setOutcomeReady(false);
     setCodePanelOpen(false);
     setCodeMapOutput(null);
+    setResearchPanelOpen(false);
+    setResearchMapOutput(null);
     setDatasetReady(true);
-  }, [datasetId, activeYearRange]);
+    recordNavigation({ view: 'dashboard' });
+  }, [abortGraphRequests, datasetId, activeYearRange, recordNavigation]);
 
   const handleStartOutcome = useCallback(() => {
     const selectedOutcome = outcomes.find((item) => item.id === selectedOutcomeId);
@@ -1011,57 +2337,71 @@ function App() {
     apiService.clearCache();
     mapAbortRef.current?.abort?.();
     hotspotAbortRef.current?.abort?.();
-    graphAbortRef.current?.abort?.();
+    outcomeDataAbortRef.current?.abort?.();
+    abortGraphRequests();
     subregionGeometryAbortRef.current?.abort?.();
     setIsPlaying(false);
     setShowDocumentation(false);
     setError(null);
     setLoading(false);
     setMapViewMode('basin');
-    setDatasetReady(false);
+    if (selectedOutcome.dataset && datasets.some((item) => item.id === selectedOutcome.dataset)) {
+      setDatasetId(selectedOutcome.dataset);
+    }
     setCodePanelOpen(false);
     setCodeMapOutput(null);
-    setOutcomeReady(true);
-  }, [outcomes, selectedOutcomeId]);
+    setResearchPanelOpen(false);
+    setResearchMapOutput(null);
+    setOutcomeData([]);
+    setOutcomeStats(null);
+    setOutcomeDataError('');
+    setOutcomeDataLoading(false);
+    setAnalysisMode('outcome');
+    setDatasetReady(true);
+    recordNavigation({ view: 'dashboard' });
+  }, [abortGraphRequests, datasets, outcomes, selectedOutcomeId, recordNavigation]);
 
   const handleGoHome = useCallback(() => {
     setIsPlaying(false);
-    mapAbortRef.current?.abort?.();
-    hotspotAbortRef.current?.abort?.();
-    graphAbortRef.current?.abort?.();
-    subregionGeometryAbortRef.current?.abort?.();
     setRegionSelectMode(false);
     setRegionPreview(null);
-    setRegionBounds(null);
-    setSelectedSubregionId('');
-    setSelectedSubregionFeature(null);
-    setFocusLocation(null);
-    setHotspotData([]);
-    setHotspotSummary(null);
-    setHotspotLoading(false);
-    setHotspotError('');
-    setHotspotMinYears(3);
     setAnalysisMode('daily');
-    setMapViewMode('basin');
-    setOutcomeReady(false);
+    setOutcomeData([]);
+    setOutcomeStats(null);
+    setOutcomeDataError('');
+    outcomeDataAbortRef.current?.abort?.();
     setCodePanelOpen(false);
     setCodeMapOutput(null);
+    setResearchPanelOpen(false);
+    setResearchMapOutput(null);
     setError(null);
     setShowDocumentation(false);
     setDatasetReady(false);
-  }, []);
+    recordNavigation({ view: 'home' });
+  }, [recordNavigation]);
 
   const handleToggleDocumentation = useCallback(() => {
-    setShowDocumentation((prev) => !prev);
+    if (showDocumentation) {
+      handleNavigateBack();
+      return;
+    }
+
+    const baseView = datasetReady ? 'dashboard' : 'home';
+    setShowDocumentation(true);
     setCodePanelOpen(false);
     setCodeMapOutput(null);
-  }, []);
+    setResearchPanelOpen(false);
+    setResearchMapOutput(null);
+    recordNavigation({ view: 'documentation', baseView });
+  }, [datasetReady, handleNavigateBack, recordNavigation, showDocumentation]);
 
   const handleToggleCodePanel = useCallback(() => {
     setShowDocumentation(false);
     setSearchToolsOpen(false);
     setActiveToolPanel('');
     setIsPlaying(false);
+    setResearchPanelOpen(false);
+    setResearchMapOutput(null);
     setCodePanelOpen((prev) => {
       if (prev) {
         setCodeMapOutput(null);
@@ -1079,65 +2419,54 @@ function App() {
     setCodeMapOutput(output);
   }, []);
 
+  const handleToggleResearchPanel = useCallback(() => {
+    setShowDocumentation(false);
+    setSearchToolsOpen(false);
+    setActiveToolPanel('');
+    setIsPlaying(false);
+    setCodePanelOpen(false);
+    setCodeMapOutput(null);
+    setResearchPanelOpen((prev) => {
+      if (prev) setResearchMapOutput(null);
+      return !prev;
+    });
+  }, []);
+
+  const handleCloseResearchPanel = useCallback(() => {
+    setResearchPanelOpen(false);
+    setResearchMapOutput(null);
+  }, []);
+
+  const handleResearchMapOutputChange = useCallback((output) => {
+    setResearchMapOutput(output);
+  }, []);
+
   const handleHomeModuleChange = useCallback((moduleName) => {
-    const nextModule = moduleName === 'outcomes' ? 'outcomes' : 'dashboard';
+    const nextModule = ['projects', 'outcomes'].includes(moduleName) ? moduleName : 'dashboard';
     setHomeModule(nextModule);
     setError(null);
-    if (nextModule === 'outcomes') {
+    if (nextModule !== 'dashboard') {
       setShowDocumentation(false);
     }
   }, []);
 
-  const regionAction = regionSelectMode ? 'cancel' : regionBounds ? 'clear' : 'select';
-  const regionActionLabel = regionSelectMode ? 'Cancel Selection' : regionBounds ? 'Clear Selection' : 'Select Region';
-
-  const selectedDataset = datasets.find((d) => d.id === datasetId);
-  const selectedOutcome = outcomes.find((item) => item.id === selectedOutcomeId) || null;
   const yearMin = yearOptions.length > 0 ? yearOptions[0] : null;
   const yearMax = yearOptions.length > 0 ? yearOptions[yearOptions.length - 1] : null;
+  const regionContextLabel = roiPolygon?.name || selectedSubregion?.label || 'Full basin';
+  const analysisContextLabel = hasToolMapOutput
+    ? 'Derived result'
+    : isOutcomeMode
+      ? 'Saved outcome'
+      : isHotspotMode
+        ? 'Trend hotspots'
+        : 'Daily map';
 
 
-  const renderCoordinateSearchPanel = (className = 'search-panel') => (
-    <div className={className}>
-      <h3>Jump to Coordinates</h3>
-      <div className="search-row">
-        <label htmlFor="search-lat">Latitude</label>
-        <input
-          id="search-lat"
-          type="number"
-          step="0.0001"
-          value={searchLat}
-          onChange={(e) => setSearchLat(e.target.value)}
-          placeholder="e.g. 34.12"
-        />
-      </div>
-      <div className="search-row">
-        <label htmlFor="search-lon">Longitude</label>
-        <input
-          id="search-lon"
-          type="number"
-          step="0.0001"
-          value={searchLon}
-          onChange={(e) => setSearchLon(e.target.value)}
-          placeholder="e.g. 75.12"
-        />
-      </div>
-      {searchError && <div className="search-error">{searchError}</div>}
-      <button
-        className="search-btn"
-        type="button"
-        onClick={() => {
-          handleSearch();
-          setSearchToolsOpen(false);
-        }}
-      >
-        Go To Location
-      </button>
-    </div>
-  );
+
 
   const renderQuickRegionResults = () => {
     const hasResults = filteredBasinSubregions.length > 0 || filteredGlacierSubregions.length > 0;
+    const coordinateMatch = parseCoordinates(subregionSearchText);
     return (
       <div className="quick-region-results">
         <div className="quick-region-header">
@@ -1145,17 +2474,21 @@ function App() {
           <span>{subregionSearchText.trim() ? 'Filtered results' : 'Start typing to filter'}</span>
         </div>
         <div className="quick-region-list">
-          <button
-            type="button"
-            className={`quick-region-item ${selectedSubregionId === '' ? 'selected' : ''}`}
-            onClick={() => {
-              handleSubregionChange('');
-              setSearchToolsOpen(false);
-            }}
-          >
-            <span>Custom Rectangle</span>
-            <small>Draw or enter manual bounds</small>
-          </button>
+          {coordinateMatch && (
+            <button
+              type="button"
+              className="quick-region-item coordinate-item"
+              onClick={() => {
+                const newId = Date.now().toString();
+                setFocusLocations((prev) => [...prev, { lat: coordinateMatch.lat, lon: coordinateMatch.lon, id: newId }]);
+                setSearchToolsOpen(false);
+                setSubregionSearchText('');
+              }}
+            >
+              <span>Coordinate Pin: {coordinateMatch.lat.toFixed(4)}, {coordinateMatch.lon.toFixed(4)}</span>
+              <small>Click to add marker</small>
+            </button>
+          )}
           {hasResults ? (
             <>
               {filteredBasinSubregions.map((region) => (
@@ -1197,11 +2530,11 @@ function App() {
     );
   };
 
-  const renderRegionSelectionPanel = (className = 'region-panel') => (
+  const renderRegionSelectionPanel = (className = 'region-panel', showSubregionPicker = true) => (
     <div className={className}>
-      <h3>Region Selection</h3>
-      <div className="subregion-picker">
-        <label htmlFor="subregion-select">Sub-Region</label>
+      <h3>Basin Search</h3>
+      {showSubregionPicker && <div className="subregion-picker">
+        <label htmlFor="subregion-select">Basin or Glacier</label>
         <div className="subregion-combobox">
           <input
             id="subregion-select"
@@ -1225,16 +2558,6 @@ function App() {
           />
           {subregionDropdownOpen && !subregionsLoading && (
             <div className="subregion-dropdown" role="listbox" aria-label="Sub-region suggestions">
-              <button
-                type="button"
-                className={`subregion-option ${selectedSubregionId === '' ? 'selected' : ''}`}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => handleSubregionChange('')}
-              >
-                <span className="subregion-option-label">Custom Rectangle (draw/manual)</span>
-                <span className="subregion-option-meta">No preset selection</span>
-              </button>
-
               {(filteredBasinSubregions.length > 0 || filteredGlacierSubregions.length > 0) ? (
                 <>
                   {filteredBasinSubregions.length > 0 && (
@@ -1286,94 +2609,22 @@ function App() {
         {subregionsLoading && (
           <div className="subregion-loading">Loading sub-regions...</div>
         )}
+      </div>}
+      <div className="region-panel-note">
+        {showSubregionPicker
+          ? 'Choose a basin or glacier. Use the Polygon tool on the map for the ROI and other polygons.'
+          : 'Search for a basin or glacier above, or draw a polygon on the map.'}
       </div>
-      <div className="region-panel-note">Draw a rectangle, enter coordinates, or choose a sub-region.</div>
-      <button
-        className={`region-btn mode-${regionAction} ${regionSelectMode ? 'active' : ''}`}
-        onClick={() => {
-          handleToggleRegion();
-          setSearchToolsOpen(false);
-        }}
-        type="button"
-      >
-        <span className="region-square" />
-        <span key={regionActionLabel} className="region-btn-label">{regionActionLabel}</span>
-      </button>
-      <div className="region-manual">
-        <div className="region-manual-row">
-          <label htmlFor="region-lat-min">Lat Min</label>
-          <input
-            id="region-lat-min"
-            type="number"
-            step="0.0001"
-            value={regionLatMin}
-            onChange={(e) => setRegionLatMin(e.target.value)}
-            placeholder="e.g. 33.5"
-          />
-        </div>
-        <div className="region-manual-row">
-          <label htmlFor="region-lat-max">Lat Max</label>
-          <input
-            id="region-lat-max"
-            type="number"
-            step="0.0001"
-            value={regionLatMax}
-            onChange={(e) => setRegionLatMax(e.target.value)}
-            placeholder="e.g. 36.2"
-          />
-        </div>
-        <div className="region-manual-row">
-          <label htmlFor="region-lon-min">Lon Min</label>
-          <input
-            id="region-lon-min"
-            type="number"
-            step="0.0001"
-            value={regionLonMin}
-            onChange={(e) => setRegionLonMin(e.target.value)}
-            placeholder="e.g. 73.9"
-          />
-        </div>
-        <div className="region-manual-row">
-          <label htmlFor="region-lon-max">Lon Max</label>
-          <input
-            id="region-lon-max"
-            type="number"
-            step="0.0001"
-            value={regionLonMax}
-            onChange={(e) => setRegionLonMax(e.target.value)}
-            placeholder="e.g. 76.4"
-          />
-        </div>
-        {regionInputError && <div className="region-error">{regionInputError}</div>}
-        <button
-          className="region-apply"
-          type="button"
-          onClick={() => {
-            handleRegionApply();
-            setSearchToolsOpen(false);
-          }}
-        >
-          Apply Coordinates
-        </button>
-      </div>
-      {(regionBounds || regionPreview) && (
+      {selectedSubregion && (
         <div className="region-details">
           <div className="region-row">
-            Lat: {(regionPreview || regionBounds).minLat.toFixed(3)} to {(regionPreview || regionBounds).maxLat.toFixed(3)}
+            Selected: {selectedSubregion.label}
+            {selectedSubregion.kind === 'glacier' ? '' : ` (ID: ${selectedSubregion.id})`}
           </div>
-          <div className="region-row">
-            Lon: {(regionPreview || regionBounds).minLon.toFixed(3)} to {(regionPreview || regionBounds).maxLon.toFixed(3)}
-          </div>
-          {selectedSubregion && (
-            <div className="region-row">
-              Sub-Region: {selectedSubregion.label}
-              {selectedSubregion.kind === 'glacier' ? '' : ` (ID: ${selectedSubregion.id})`}
-            </div>
-          )}
         </div>
       )}
-      {!regionBounds && (
-        <div className="region-hint">Draw a rectangle or pick a sub-region for faster local analysis.</div>
+      {!selectedSubregion && (
+        <div className="region-hint">Pick a basin/glacier here, or draw a polygon directly on the map.</div>
       )}
     </div>
   );
@@ -1381,73 +2632,54 @@ function App() {
   const renderVariablePanel = (className = 'variable-panel') => (
     <div className={className}>
       <h3>Variable Selection</h3>
-      <div className="variable-view-picker">
-        <label>Map View</label>
-        <div className="map-mode-switch">
-          <button
-            type="button"
-            className={`map-mode-btn ${!glacierViewEnabled ? 'active' : ''}`}
-            onClick={() => setMapViewMode('basin')}
-          >
-            Basin View
-          </button>
-          <button
-            type="button"
-            className={`map-mode-btn ${glacierViewEnabled ? 'active' : ''}`}
-            onClick={() => setMapViewMode('glacier')}
-          >
-            Glacier View
-          </button>
-        </div>
+      <div className="variable-dataset-picker">
+        <label htmlFor="dashboard-variable-dataset">Dataset</label>
+        <select
+          id="dashboard-variable-dataset"
+          value={datasetId}
+          onChange={(event) => handleVariableDatasetChange(event.target.value)}
+        >
+          {datasets.map((dataset) => (
+            <option key={dataset.id} value={dataset.id} disabled={!dataset.ready}>
+              {dataset.label}{dataset.ready ? '' : ' (missing)'}
+            </option>
+          ))}
+        </select>
       </div>
-      {variables.length === 0 && (
-        <div className="variable-empty">No variables available</div>
-      )}
-      {variables.length > 0 && (
-        <div className="variable-options">
-          {variables.map((variable) => (
-            <label className="variable-option" key={variable}>
+      <div className="variable-options">
+        <label className={`variable-option ${glacierViewEnabled ? 'active' : ''}`} key={GLACIER_LAYER_VARIABLE}>
+          <input
+            type="checkbox"
+            checked={glacierViewEnabled}
+            onChange={(event) => handleVariableSelectionToggle(GLACIER_LAYER_VARIABLE, event.target.checked)}
+          />
+          <span>Glaciers</span>
+          {glacierViewEnabled && <em>Overlay</em>}
+        </label>
+        {variables.map((variable) => {
+          const analysisId = buildAnalysisItemId(datasetId, activeYearRange, variable);
+          const isSelected = selectedAnalysisIdSet.has(analysisId);
+          const isActive = selectedVariable === variable && activeAnalysisItem?.id === analysisId;
+          return (
+            <label className={`variable-option ${isActive ? 'active' : ''}`} key={variable}>
               <input
-                type="radio"
-                name="primary-map-variable"
-                checked={selectedVariable === variable}
-                onChange={() => handlePrimaryVariableChange(variable)}
+                type="checkbox"
+                checked={isSelected}
+                onChange={(event) => handleVariableSelectionToggle(variable, event.target.checked)}
+                disabled={!activeYearRange}
               />
               <span>{formatVariableLabel(variable)}</span>
+              {isActive && <em>Map</em>}
             </label>
-          ))}
-        </div>
+          );
+        })}
+      </div>
+      {variables.length === 0 && (
+        <div className="variable-empty">No dataset variables available</div>
       )}
-      {variables.length > 1 && (
-        <div className="comparison-options">
-          <div className="comparison-header">
-            <label>Plot Comparison</label>
-            {comparisonVariables.length > 0 && (
-              <button
-                type="button"
-                className="comparison-clear"
-                onClick={() => setComparisonVariables([])}
-              >
-                Clear
-              </button>
-            )}
-          </div>
-          <div className="comparison-list">
-            {variables.map((variable) => (
-              <label
-                className={`comparison-option ${variable === selectedVariable ? 'primary' : ''}`}
-                key={`compare-${variable}`}
-              >
-                <input
-                  type="checkbox"
-                  checked={variable === selectedVariable || comparisonVariables.includes(variable)}
-                  disabled={variable === selectedVariable}
-                  onChange={() => handleComparisonVariableToggle(variable)}
-                />
-                <span>{formatVariableLabel(variable)}</span>
-              </label>
-            ))}
-          </div>
+      {selectedAnalysisItems.length > 0 && (
+        <div className="selected-analysis-note">
+          {selectedAnalysisItems.length} selected layer{selectedAnalysisItems.length === 1 ? '' : 's'}
         </div>
       )}
     </div>
@@ -1455,12 +2687,12 @@ function App() {
 
   const renderHotspotPanel = (className = 'hotspot-panel') => (
     <div className={className}>
-      <h3>Long-Term Hotspots</h3>
-      <p>Identify where the selected variable changed the fastest across the chosen years.</p>
-      <div className="hotspot-mode-switch">
+      <h3>Analysis Mode</h3>
+      <p>Switch between daily fields, live trend fitting, and saved outcome layers.</p>
+      <div className="hotspot-mode-switch analysis-mode-switch">
         <button
           type="button"
-          className={`hotspot-mode-btn ${!isHotspotMode ? 'active' : ''}`}
+          className={`hotspot-mode-btn ${analysisMode === 'daily' ? 'active' : ''}`}
           onClick={() => handleAnalysisModeChange('daily')}
         >
           Daily Map
@@ -1471,6 +2703,15 @@ function App() {
           onClick={() => handleAnalysisModeChange('hotspot')}
         >
           Trend Hotspots
+        </button>
+        <button
+          type="button"
+          className={`hotspot-mode-btn ${isOutcomeMode ? 'active' : ''}`}
+          onClick={() => handleAnalysisModeChange('outcome')}
+          disabled={!selectedOutcome?.ready}
+          title={!selectedOutcome?.ready ? 'Generate outcome outputs first' : 'Show saved analyzed output on the dashboard'}
+        >
+          Saved Outcome
         </button>
       </div>
       {isHotspotMode && (
@@ -1528,10 +2769,130 @@ function App() {
           )}
         </>
       )}
-      {!isHotspotMode && (
+      {isOutcomeMode && renderOutcomeControls('outcome-panel embedded-outcome-panel')}
+      {!isHotspotMode && !isOutcomeMode && (
         <div className="hotspot-hint">
           Daily map mode shows date-wise values. Switch to hotspot mode for long-term trend intensity.
         </div>
+      )}
+    </div>
+  );
+
+  const renderOutcomeControls = (className = 'outcome-panel') => (
+    <div className={className}>
+      <h3>Saved Outcome</h3>
+      {outcomeMetaLoading && <div className="outcome-loading-text">Loading outcome metadata...</div>}
+      {outcomeMetaError && <div className="outcome-error-text">{outcomeMetaError}</div>}
+      {!outcomeMetaLoading && !outcomeMetaError && outcomeMeta && (
+        <>
+          <div className="outcome-name">{outcomeMeta.label || selectedOutcome?.label || 'Long Term Hotspot Analysis'}</div>
+          <p>{outcomeMeta.description || selectedOutcome?.description || 'Precomputed spatial analysis output.'}</p>
+          <div className="outcome-mode-switch">
+            <button
+              type="button"
+              className={`outcome-mode-btn ${outcomeViewMode === 'mean' ? 'active' : ''}`}
+              onClick={() => setOutcomeViewMode('mean')}
+            >
+              Band Value
+            </button>
+            <button
+              type="button"
+              className={`outcome-mode-btn ${outcomeViewMode === 'difference' ? 'active' : ''}`}
+              onClick={() => setOutcomeViewMode('difference')}
+              disabled={!outcomeComparisonId}
+              title={!outcomeComparisonId ? 'Generate band difference outputs first' : 'Show later minus earlier change'}
+            >
+              Change
+            </button>
+          </div>
+
+          <div className="outcome-selector-group">
+            <label>Variable</label>
+            <div className="outcome-band-options">
+              {(outcomeMeta.variables || []).map((variable) => (
+                <label className="outcome-band-option" key={`outcome-variable-${variable}`}>
+                  <input
+                    type="radio"
+                    name="outcome-variable"
+                    checked={outcomeVariable === variable}
+                    onChange={() => setOutcomeVariable(variable)}
+                  />
+                  <span>{formatVariableLabel(variable)}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {outcomeViewMode === 'mean' && (
+            <div className="outcome-selector-group">
+              <label>Base Band</label>
+              <div className="outcome-band-options">
+                {(outcomeMeta.bands || []).map((band) => (
+                  <label className="outcome-band-option" key={`outcome-band-${band.id}`}>
+                    <input
+                      type="radio"
+                      name="outcome-band"
+                      checked={String(outcomeBandId) === String(band.id)}
+                      disabled={!outcomeAvailableBandIds.has(String(band.id))}
+                      onChange={() => setOutcomeBandId(String(band.id))}
+                    />
+                    <span>{band.label}{!outcomeAvailableBandIds.has(String(band.id)) ? ' (unavailable)' : ''}</span>
+                  </label>
+                ))}
+              </div>
+              {(outcomeCoverage?.missing_years || []).length > 0 && (
+                <p>Missing source year(s): {outcomeCoverage.missing_years.join(', ')}. Values use available samples only.</p>
+              )}
+            </div>
+          )}
+
+          {outcomeViewMode === 'difference' && (
+            <div className="outcome-selector-group">
+              <label>Change Pair</label>
+              <div className="outcome-band-options">
+                {(outcomeMeta.comparisons || []).map((comparison) => {
+                  const disabled = !outcomeAvailableBandIds.has(String(comparison.earlier_band_id))
+                    || !outcomeAvailableBandIds.has(String(comparison.later_band_id));
+                  return (
+                    <label className="outcome-band-option" key={`outcome-comparison-${comparison.id}`}>
+                      <input
+                        type="radio"
+                        name="outcome-comparison"
+                        checked={String(outcomeComparisonId) === String(comparison.id)}
+                        disabled={disabled}
+                        onChange={() => setOutcomeComparisonId(String(comparison.id))}
+                      />
+                      <span>{comparison.label}{disabled ? ' (unavailable)' : ''}</span>
+                    </label>
+                  );
+                })}
+                {(outcomeMeta.comparisons || []).length === 0 && (
+                  <div className="outcome-empty-text">No saved difference layers found. Run python compute_band_differences.py.</div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="hotspot-summary">
+            <div className="hotspot-summary-row">
+              <span>Total rows</span>
+              <strong>{Number(outcomeMeta.row_count || 0).toLocaleString()}</strong>
+            </div>
+            <div className="hotspot-summary-row">
+              <span>Unique points</span>
+              <strong>{Number(outcomeMeta.point_count || 0).toLocaleString()}</strong>
+            </div>
+            <div className="hotspot-summary-row">
+              <span>Map points</span>
+              <strong>{outcomeData.length.toLocaleString()}</strong>
+            </div>
+          </div>
+          {outcomeDataLoading && <div className="outcome-loading-text">Loading saved outcome map...</div>}
+          {outcomeDataError && <div className="outcome-error-text">{outcomeDataError}</div>}
+        </>
+      )}
+      {!outcomeMetaLoading && !outcomeMetaError && !outcomeMeta && (
+        <div className="outcome-empty-text">Select a ready outcome module from the setup screen.</div>
       )}
     </div>
   );
@@ -1556,6 +2917,22 @@ function App() {
           </span>
         </div>
       )}
+      {roiPolygon && (
+        <>
+          <div className="info-item">
+            <span className="label">ROI:</span>
+            <span className="value">{roiPolygon.name}</span>
+          </div>
+          <div className="info-item">
+            <span className="label">ROI Area:</span>
+            <span className="value">{roiPolygon.analysis.areaKm2.toFixed(2)} km²</span>
+          </div>
+          <div className="info-item">
+            <span className="label">ROI Vertices:</span>
+            <span className="value">{roiPolygon.analysis.vertexCount}</span>
+          </div>
+        </>
+      )}
       {activeYearRange && (
         <div className="info-item">
           <span className="label">Year Range:</span>
@@ -1577,6 +2954,76 @@ function App() {
     </div>
   );
 
+  const renderOutcomeSummaryPanel = () => (
+    <div className="outcome-dashboard-summary">
+      <div className="outcome-summary-header">
+        <div>
+          <h3>{outcomeMeta?.label || selectedOutcome?.label || 'Saved Outcome'}</h3>
+          <p>{outcomeMapTitle}</p>
+        </div>
+        <button
+          type="button"
+          className="comparison-clear"
+          onClick={() => setActiveToolPanel('hotspot')}
+        >
+          Edit outcome
+        </button>
+      </div>
+      <div className="outcome-summary-grid">
+        <div className="outcome-summary-card">
+          <span>Variable</span>
+          <strong>{outcomeVariableLabel || 'Select'}</strong>
+        </div>
+        <div className="outcome-summary-card">
+          <span>Aggregation</span>
+          <strong>{outcomeAggregationLabel}</strong>
+        </div>
+        <div className="outcome-summary-card">
+          <span>{isOutcomeDifferenceMode ? 'Comparison' : 'Band'}</span>
+          <strong>{isOutcomeDifferenceMode ? (outcomeComparison?.label || 'N/A') : (outcomeBand?.label || 'N/A')}</strong>
+        </div>
+        <div className="outcome-summary-card">
+          <span>Map Points</span>
+          <strong>{outcomeData.length.toLocaleString()}</strong>
+        </div>
+        {outcomeStats && (
+          <>
+            <div className="outcome-summary-card">
+              <span>{isOutcomeDifferenceMode ? 'Min Change' : `Min ${outcomeAggregationLabel}`}</span>
+              <strong>
+                {Number.isFinite(isOutcomeDifferenceMode ? outcomeStats.min_change : outcomeStats.min)
+                  ? (isOutcomeDifferenceMode ? outcomeStats.min_change : outcomeStats.min).toFixed(3)
+                  : 'N/A'}
+              </strong>
+            </div>
+            <div className="outcome-summary-card">
+              <span>{isOutcomeDifferenceMode ? 'Max Change' : `Max ${outcomeAggregationLabel}`}</span>
+              <strong>
+                {Number.isFinite(isOutcomeDifferenceMode ? outcomeStats.max_change : outcomeStats.max)
+                  ? (isOutcomeDifferenceMode ? outcomeStats.max_change : outcomeStats.max).toFixed(3)
+                  : 'N/A'}
+              </strong>
+            </div>
+            <div className="outcome-summary-card">
+              <span>{isOutcomeDifferenceMode ? 'Mean Change' : 'Basin Mean'}</span>
+              <strong>
+                {Number.isFinite(isOutcomeDifferenceMode ? outcomeStats.mean_change : outcomeStats.mean)
+                  ? (isOutcomeDifferenceMode ? outcomeStats.mean_change : outcomeStats.mean).toFixed(3)
+                  : 'N/A'}
+              </strong>
+            </div>
+          </>
+        )}
+      </div>
+      {outcomeDataLoading && <div className="outcome-loading-text">Loading saved outcome map...</div>}
+      {outcomeDataError && <div className="outcome-error-text">{outcomeDataError}</div>}
+      <div className="outcome-footnote">
+        Source: saved parquet outputs in {outcomeMeta?.output_directory || 'Outcomes/Long_term_hotspot/Outputs'}.
+        Difference layers are later band value minus earlier band value.
+      </div>
+    </div>
+  );
+
   const renderElevationPanel = (className = 'strip-elevation-panel') => (
     <div className={className}>
       <ElevationFilter
@@ -1592,27 +3039,21 @@ function App() {
   if (datasetLoading) {
     return (
       <div className="loading-screen">
+        <div className="screen-navigation">{navigationControls}</div>
         <div className="loading-spinner"></div>
         <p>Loading datasets...</p>
       </div>
     );
   }
 
-  if (!datasetReady && !outcomeReady) {
+  if (!datasetReady) {
     if (showDocumentation) {
       return (
         <div className="app" data-theme={theme}>
           <header className="app-header">
             <h1>Himalayan Basin Visualization</h1>
             <div className="header-controls">
-              <button
-                className="home-btn"
-                onClick={handleToggleDocumentation}
-                type="button"
-                title="Back to dataset selection"
-              >
-                Back
-              </button>
+              {navigationControls}
               <button
                 className="theme-toggle"
                 onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
@@ -1639,11 +3080,28 @@ function App() {
 
     return (
       <div className="dataset-screen">
+        <div className="screen-navigation">{navigationControls}</div>
         <div className="dataset-card">
-          <h2>Start Here</h2>
-          <p>Select the workflow, then narrow the dataset and year window before loading.</p>
+          <div className="setup-intro">
+            <span className="setup-eyebrow">Hydrological research platform</span>
+            <h2>Research project hub</h2>
+            <p>Create a persistent project, continue saved work, or open a temporary exploration. Projects remember dashboard state and code between sessions.</p>
+          </div>
           {error && <div className="dataset-error">{error}</div>}
-          <div className="home-module-options">
+          <div className="home-module-options" role="radiogroup" aria-label="Research workflow">
+            <label className={`home-module-option ${homeModule === 'projects' ? 'active' : ''}`}>
+              <input
+                type="radio"
+                name="home-module"
+                value="projects"
+                checked={homeModule === 'projects'}
+                onChange={() => handleHomeModuleChange('projects')}
+              />
+              <div className="home-module-text">
+                <div className="home-module-title">Projects</div>
+                <div className="home-module-meta">Create, open, and continue permanent research workspaces.</div>
+              </div>
+            </label>
             <label className={`home-module-option ${homeModule === 'dashboard' ? 'active' : ''}`}>
               <input
                 type="radio"
@@ -1653,8 +3111,8 @@ function App() {
                 onChange={() => handleHomeModuleChange('dashboard')}
               />
               <div className="home-module-text">
-                <div className="home-module-title">Interactive Dashboard</div>
-                <div className="home-module-meta">Live analysis: map, time slider, region tools, and graphs.</div>
+                <div className="home-module-title">Explore & analyze</div>
+                <div className="home-module-meta">Interactive map, variables, time series, research methods, and code.</div>
               </div>
             </label>
             <label className={`home-module-option ${homeModule === 'outcomes' ? 'active' : ''}`}>
@@ -1666,96 +3124,128 @@ function App() {
                 onChange={() => handleHomeModuleChange('outcomes')}
               />
               <div className="home-module-text">
-                <div className="home-module-title">Outcomes</div>
-                <div className="home-module-meta">Precomputed outputs ready for quick comparison and review.</div>
+                <div className="home-module-title">Review outcomes</div>
+                <div className="home-module-meta">Inspect precomputed research outputs and comparisons.</div>
               </div>
             </label>
           </div>
+          {homeModule === 'projects' && (
+            <Suspense fallback={<DeferredPanelFallback />}>
+              <ProjectsHome
+                projects={projects}
+                loading={projectsLoading}
+                error={projectsError}
+                onCreate={handleCreateProject}
+                onOpen={handleOpenProject}
+                onArchive={handleArchiveProject}
+              />
+            </Suspense>
+          )}
           {homeModule === 'dashboard' && (
             <>
-              <div className="dataset-options">
-                {datasets.map((dataset) => (
-                  <label
-                    key={dataset.id}
-                    className={`dataset-option ${datasetId === dataset.id ? 'active' : ''} ${!dataset.ready ? 'disabled' : ''}`}
-                  >
-                    <input
-                      type="radio"
-                      name="dataset"
-                      value={dataset.id}
-                      checked={datasetId === dataset.id}
-                      disabled={!dataset.ready}
-                      onChange={() => setDatasetId(dataset.id)}
-                    />
-                    <div className="dataset-text">
-                      <div className="dataset-name">{dataset.label}</div>
-                      <div className="dataset-meta">
-                        Source files: parquet {dataset.parquet_files} | geotiff {dataset.geotiff_files || 0} | csv {dataset.csv_files}
+              <section className="setup-section" aria-labelledby="dataset-heading">
+                <div className="setup-section-heading">
+                  <span className="setup-step">1</span>
+                  <div>
+                    <h3 id="dataset-heading">Data source</h3>
+                    <p>Select the collection that will drive the map, variables, and time series.</p>
+                  </div>
+                </div>
+                <div className="dataset-options">
+                  {datasets.map((dataset) => (
+                    <label
+                      key={dataset.id}
+                      className={`dataset-option ${datasetId === dataset.id ? 'active' : ''} ${!dataset.ready ? 'disabled' : ''}`}
+                    >
+                      <input
+                        type="radio"
+                        name="dataset"
+                        value={dataset.id}
+                        checked={datasetId === dataset.id}
+                        disabled={!dataset.ready}
+                        onChange={() => setDatasetId(dataset.id)}
+                      />
+                      <div className="dataset-text">
+                        <div className="dataset-name">{dataset.label}</div>
+                        <div className="dataset-meta">
+                          {dataset.parquet_files} parquet · {dataset.geotiff_files || 0} geotiff · {dataset.csv_files} csv
+                        </div>
                       </div>
+                    </label>
+                  ))}
+                </div>
+              </section>
+              <details className="nc-upload-panel advanced-panel">
+                <summary>
+                  <span>Import NetCDF dataset</span>
+                  <small>Advanced data source</small>
+                </summary>
+                <div className="advanced-panel-body">
+                  <div className="nc-upload-header">
+                    <h3>Upload NetCDF (.nc)</h3>
+                    <button
+                      type="button"
+                      className="nc-help-btn"
+                      title="Show accepted NetCDF rules"
+                      aria-label="Show accepted NetCDF rules"
+                      onClick={() => setShowNcHelp((prev) => !prev)}
+                    >
+                      ?
+                    </button>
+                  </div>
+                  <p>Add a satellite NetCDF and convert it into a local parquet dataset without changing the existing ones.</p>
+                  {showNcHelp && (
+                    <div className="nc-help-box">
+                      <div><strong>Accepted file extensions:</strong> .nc, .nc4, .cdf, .netcdf</div>
+                      <div><strong>Time support:</strong> works with standard time coords; if missing, app creates a fallback date.</div>
+                      <div><strong>Spatial coords:</strong> latitude/longitude are auto-detected from names or CF metadata.</div>
+                      <div><strong>Grid format:</strong> supports 1D/1D, 2D/2D and common model-style lat/lon layouts.</div>
+                      <div><strong>Variables:</strong> ingests numeric spatial variables (with or without explicit time dim).</div>
+                      <div><strong>Elevation:</strong> optional; if missing, default elevation is used.</div>
+                      <div><strong>Behavior:</strong> data is converted to parquet and stored as a new reusable dataset.</div>
                     </div>
-                  </label>
-                ))}
-              </div>
-              <div className="nc-upload-panel">
-                <div className="nc-upload-header">
-                  <h3>Upload NetCDF (.nc)</h3>
+                  )}
+                  <div className="nc-upload-row">
+                    <label htmlFor="nc-dataset-name">Dataset Name (optional)</label>
+                    <input
+                      id="nc-dataset-name"
+                      type="text"
+                      value={ncDatasetName}
+                      onChange={(e) => setNcDatasetName(e.target.value)}
+                      placeholder="e.g. Sentinel Snow 2024"
+                      disabled={ncUploading}
+                    />
+                  </div>
+                  <div className="nc-upload-row">
+                    <label htmlFor="nc-file-input">NetCDF File</label>
+                    <input
+                      id="nc-file-input"
+                      type="file"
+                      accept=".nc,.nc4,.cdf,.netcdf"
+                      onChange={(e) => setNcFile(e.target.files?.[0] || null)}
+                      disabled={ncUploading}
+                    />
+                  </div>
+                  {ncUploadError && <div className="dataset-error">{ncUploadError}</div>}
+                  {ncUploadMessage && <div className="dataset-success">{ncUploadMessage}</div>}
                   <button
+                    className="dataset-start-btn nc-upload-btn"
                     type="button"
-                    className="nc-help-btn"
-                    title="Show accepted NetCDF rules"
-                    aria-label="Show accepted NetCDF rules"
-                    onClick={() => setShowNcHelp((prev) => !prev)}
+                    onClick={handleNcUpload}
+                    disabled={ncUploading || !ncFile}
                   >
-                    ?
+                    {ncUploading ? 'Uploading & Converting...' : 'Upload NC Dataset'}
                   </button>
                 </div>
-                <p>Add a satellite NetCDF and convert it into a local parquet dataset without changing the existing ones.</p>
-                {showNcHelp && (
-                  <div className="nc-help-box">
-                    <div><strong>Accepted file extensions:</strong> .nc, .nc4, .cdf, .netcdf</div>
-                    <div><strong>Time support:</strong> works with standard time coords; if missing, app creates a fallback date.</div>
-                    <div><strong>Spatial coords:</strong> latitude/longitude are auto-detected from names or CF metadata.</div>
-                    <div><strong>Grid format:</strong> supports 1D/1D, 2D/2D and common model-style lat/lon layouts.</div>
-                    <div><strong>Variables:</strong> ingests numeric spatial variables (with or without explicit time dim).</div>
-                    <div><strong>Elevation:</strong> optional; if missing, default elevation is used.</div>
-                    <div><strong>Behavior:</strong> data is converted to parquet and stored as a new reusable dataset.</div>
+              </details>
+              <section className="year-range-panel setup-section" aria-labelledby="year-range-heading">
+                <div className="setup-section-heading">
+                  <span className="setup-step">2</span>
+                  <div>
+                    <h3 id="year-range-heading">Time window</h3>
+                    <p>Use the smallest period needed for faster indexing and loading.</p>
                   </div>
-                )}
-                <div className="nc-upload-row">
-                  <label htmlFor="nc-dataset-name">Dataset Name (optional)</label>
-                  <input
-                    id="nc-dataset-name"
-                    type="text"
-                    value={ncDatasetName}
-                    onChange={(e) => setNcDatasetName(e.target.value)}
-                    placeholder="e.g. Sentinel Snow 2024"
-                    disabled={ncUploading}
-                  />
                 </div>
-                <div className="nc-upload-row">
-                  <label htmlFor="nc-file-input">NetCDF File</label>
-                  <input
-                    id="nc-file-input"
-                    type="file"
-                    accept=".nc,.nc4,.cdf,.netcdf"
-                    onChange={(e) => setNcFile(e.target.files?.[0] || null)}
-                    disabled={ncUploading}
-                  />
-                </div>
-                {ncUploadError && <div className="dataset-error">{ncUploadError}</div>}
-                {ncUploadMessage && <div className="dataset-success">{ncUploadMessage}</div>}
-                <button
-                  className="dataset-start-btn nc-upload-btn"
-                  type="button"
-                  onClick={handleNcUpload}
-                  disabled={ncUploading || !ncFile}
-                >
-                  {ncUploading ? 'Uploading & Converting...' : 'Upload NC Dataset'}
-                </button>
-              </div>
-              <div className="year-range-panel">
-                <h3>Year Range</h3>
-                <p>Choose a smaller time window first to keep indexing and loading fast.</p>
                 {yearRangeLoading && <div className="year-range-loading">Loading available years...</div>}
                 {yearRangeError && <div className="dataset-error">{yearRangeError}</div>}
                 {!yearRangeLoading && !yearRangeError && yearMin !== null && yearMax !== null && (
@@ -1817,60 +3307,90 @@ function App() {
                     </div>
                   </>
                 )}
+              </section>
+              <section className="home-region-card" aria-labelledby="home-region-heading">
+                <div className="home-region-heading">
+                  <div className="setup-section-heading">
+                    <span className="setup-step">3</span>
+                    <div>
+                      <h3 id="home-region-heading">Study region</h3>
+                      <p>Optionally start from a basin or glacier. Draw the ROI and other polygons on the map.</p>
+                    </div>
+                  </div>
+                  <span className={`home-region-status ${selectedSubregionId ? 'active' : ''}`}>
+                    {regionContextLabel}
+                  </span>
+                </div>
+                {renderRegionSelectionPanel('region-panel home-region-controls')}
+              </section>
+              <div className="setup-actions">
+                <div className="setup-ready-summary" aria-live="polite">
+                  <strong>{selectedDataset?.label || 'Select a data source'}</strong>
+                  <span>{activeYearRange ? `${activeYearRange.start}–${activeYearRange.end}` : 'Choose a time window'} · {regionContextLabel}</span>
+                </div>
+                <button
+                  className="dataset-start-btn"
+                  type="button"
+                  onClick={handleStartDataset}
+                  disabled={
+                    !selectedDataset ||
+                    !selectedDataset.ready ||
+                    yearRangeLoading ||
+                    !activeYearRange
+                  }
+                >
+                  Open map workspace
+                </button>
               </div>
-              <button
-                className="dataset-start-btn"
-                type="button"
-                onClick={handleStartDataset}
-                disabled={
-                  !selectedDataset ||
-                  !selectedDataset.ready ||
-                  yearRangeLoading ||
-                  !activeYearRange
-                }
-              >
-                Open Dashboard
-              </button>
             </>
           )}
           {homeModule === 'outcomes' && (
             <>
-              <div className="dataset-options">
-                {outcomes.map((outcome) => (
-                  <label
-                    key={outcome.id}
-                    className={`dataset-option ${selectedOutcomeId === outcome.id ? 'active' : ''} ${!outcome.ready ? 'disabled' : ''}`}
-                  >
-                    <input
-                      type="radio"
-                      name="outcome"
-                      value={outcome.id}
-                      checked={selectedOutcomeId === outcome.id}
-                      disabled={!outcome.ready}
-                      onChange={() => setSelectedOutcomeId(outcome.id)}
-                    />
-                    <div className="dataset-text">
-                      <div className="dataset-name">{outcome.label}</div>
-                      <div className="dataset-meta">
-                        {outcome.description}
+              <section className="setup-section" aria-labelledby="outcome-heading">
+                <div className="setup-section-heading">
+                  <span className="setup-step">1</span>
+                  <div>
+                    <h3 id="outcome-heading">Research output</h3>
+                    <p>Select a completed analysis to inspect its spatial results and evidence.</p>
+                  </div>
+                </div>
+                <div className="dataset-options">
+                  {outcomes.map((outcome) => (
+                    <label
+                      key={outcome.id}
+                      className={`dataset-option ${selectedOutcomeId === outcome.id ? 'active' : ''} ${!outcome.ready ? 'disabled' : ''}`}
+                    >
+                      <input
+                        type="radio"
+                        name="outcome"
+                        value={outcome.id}
+                        checked={selectedOutcomeId === outcome.id}
+                        disabled={!outcome.ready}
+                        onChange={() => setSelectedOutcomeId(outcome.id)}
+                      />
+                      <div className="dataset-text">
+                        <div className="dataset-name">{outcome.label}</div>
+                        <div className="dataset-meta">
+                          {outcome.description}
+                        </div>
+                        <div className="dataset-meta">
+                          dataset: {String(outcome.dataset || '').toUpperCase()} | status: {outcome.ready ? 'ready' : 'missing outputs'}
+                        </div>
                       </div>
-                      <div className="dataset-meta">
-                        dataset: {String(outcome.dataset || '').toUpperCase()} | status: {outcome.ready ? 'ready' : 'missing outputs'}
-                      </div>
-                    </div>
-                  </label>
-                ))}
-                {outcomes.length === 0 && (
-                  <div className="dataset-meta">No outcome modules found from backend.</div>
-                )}
-              </div>
+                    </label>
+                  ))}
+                  {outcomes.length === 0 && (
+                    <div className="dataset-meta">No outcome modules found from backend.</div>
+                  )}
+                </div>
+              </section>
               <button
                 className="dataset-start-btn"
                 type="button"
                 onClick={handleStartOutcome}
                 disabled={!selectedOutcome || !selectedOutcome.ready}
               >
-                Open Outcome View
+                Open outcome workspace
               </button>
             </>
           )}
@@ -1879,7 +3399,7 @@ function App() {
             type="button"
             onClick={handleToggleDocumentation}
           >
-            Open Scientific Documentation
+            Scientific documentation
           </button>
         </div>
       </div>
@@ -1887,9 +3407,10 @@ function App() {
   }
 
   // Loading screen
-  if (!outcomeReady && loading) {
+  if (loading) {
     return (
       <div className="loading-screen">
+        <div className="screen-navigation">{navigationControls}</div>
         <div className="loading-spinner"></div>
         <p>Loading temperature data...</p>
       </div>
@@ -1900,6 +3421,7 @@ function App() {
   if (error) {
     return (
       <div className="error-screen">
+        <div className="screen-navigation">{navigationControls}</div>
         <div className="error-icon">!</div>
         <h2>Connection Error</h2>
         <p>{error}</p>
@@ -1915,57 +3437,36 @@ function App() {
     );
   }
 
-  if (outcomeReady) {
-    return (
-      <div className="app" data-theme={theme}>
-        <header className="app-header">
-          <h1>Himalayan Basin Visualization</h1>
-          <div className="header-controls">
-            <button
-              className="home-btn"
-              onClick={handleGoHome}
-              type="button"
-              title="Back to module selection"
-            >
-              Home
-            </button>
-            <div className="dataset-badge">
-              Outcome: Long Term Hotspot Analysis
-            </div>
-            <button
-              className="theme-toggle"
-              onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
-              aria-label="Toggle theme"
-              title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-            >
-              {theme === 'dark' ? 'Light Theme' : 'Dark Theme'}
-            </button>
-          </div>
-        </header>
-        <div className="app-content">
-          <Suspense fallback={<DeferredPanelFallback />}>
-            <OutcomeLongTermHotspotPage theme={theme} />
-          </Suspense>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="app" data-theme={theme}>
       {/* Header */}
       <header className="app-header dashboard-header">
         <div className="dashboard-brand">
-          <h1>Himalayan Basin Visualization</h1>
+          <div className="dashboard-title">
+            <h1>Himalayan Basin</h1>
+            <span>Hydrological research workspace</span>
+          </div>
           {!showDocumentation && (
-            <button
-              type="button"
-              className={`dashboard-code-toggle ${codePanelOpen ? 'active' : ''}`}
-              onClick={handleToggleCodePanel}
-              title={codePanelOpen ? 'Close Python code workspace' : 'Open Python code workspace'}
-            >
-              Code
-            </button>
+            <div className="dashboard-method-buttons">
+              <button
+                type="button"
+                className={`dashboard-code-toggle ${researchPanelOpen ? 'active' : ''}`}
+                onClick={handleToggleResearchPanel}
+                title={researchPanelOpen ? 'Close guided research methods' : 'Apply research methods to this dashboard selection'}
+                aria-pressed={researchPanelOpen}
+              >
+                Research methods
+              </button>
+              <button
+                type="button"
+                className={`dashboard-code-toggle ${codePanelOpen ? 'active' : ''}`}
+                onClick={handleToggleCodePanel}
+                title={codePanelOpen ? 'Close Python code workspace' : 'Open Python code workspace'}
+                aria-pressed={codePanelOpen}
+              >
+                Code
+              </button>
+            </div>
           )}
         </div>
         {!showDocumentation && (
@@ -1993,7 +3494,7 @@ function App() {
                     setSelectedSubregionFeature(null);
                   }
                 }}
-                placeholder="Search regions/glaciers, or open coordinate tools"
+                placeholder="Search basin or glacier"
                 aria-label="Search regions or glaciers"
               />
               {selectedSubregion && (
@@ -2008,6 +3509,7 @@ function App() {
                   setSubregionDropdownOpen(true);
                 }}
                 aria-expanded={searchToolsOpen}
+                aria-label="Open coordinate and region tools"
               >
                 Tools
               </button>
@@ -2017,7 +3519,7 @@ function App() {
                 <div className="mega-heading">
                   <div>
                     <strong>Map Search & Region Tools</strong>
-                    <span>Coordinates, rectangle selection, sub-basins, and glacier regions.</span>
+                    <span>Coordinates, sub-basins, glacier regions, and polygons.</span>
                   </div>
                   <button
                     type="button"
@@ -2030,14 +3532,31 @@ function App() {
                 </div>
                 {renderQuickRegionResults()}
                 <div className="mega-grid">
-                  {renderCoordinateSearchPanel('search-panel mega-card')}
-                  {renderRegionSelectionPanel('region-panel mega-card')}
+                  {renderRegionSelectionPanel('region-panel mega-card', false)}
                 </div>
               </div>
             )}
           </div>
         )}
         <div className="header-controls">
+          {navigationControls}
+          {activeProject && !showDocumentation && (
+            <div className="active-project-control" title={activeProject.description || 'Persistent project workspace'}>
+              <span className={`project-save-dot ${projectDirty ? 'dirty' : ''}`} aria-hidden="true" />
+              <span className="active-project-name">{activeProject.name}</span>
+              <span className="active-project-state">
+                {projectSaveState === 'saving' ? 'Saving…' : projectSaveState === 'error' ? 'Save failed' : projectDirty ? 'Unsaved' : 'Saved'}
+              </span>
+              <button
+                type="button"
+                onClick={handleSaveProject}
+                disabled={projectSaveState === 'saving' || (!projectDirty && projectSaveState !== 'error')}
+                title="Save project (Ctrl+S)"
+              >
+                Save
+              </button>
+            </div>
+          )}
           <button
             className="home-btn"
             onClick={handleGoHome}
@@ -2055,14 +3574,9 @@ function App() {
             {showDocumentation ? 'Analysis' : 'Docs'}
           </button>
           {selectedDataset && (
-            <div className="dataset-badge">
+            <div className="dataset-badge" title="Active dataset and time window">
               {selectedDataset.label}
-              {activeYearRange && ` | Years: ${activeYearRange.start}-${activeYearRange.end}`}
-            </div>
-          )}
-          {stats && (
-            <div className="stats-badge">
-              {stats.total_dates} days | {stats.total_files} files | {stats.total_size_mb} MB
+              {activeYearRange && ` · ${activeYearRange.start}–${activeYearRange.end}`}
             </div>
           )}
           <button
@@ -2071,7 +3585,7 @@ function App() {
             aria-label="Toggle theme"
             title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
           >
-            Theme: {theme === 'dark' ? 'Dark' : 'Light'}
+            {theme === 'dark' ? 'Light mode' : 'Dark mode'}
           </button>
         </div>
       </header>
@@ -2087,8 +3601,10 @@ function App() {
                 setSearchToolsOpen(false);
               }}
               title={`Variable: ${variableLabel || 'Select a variable'}`}
+              aria-expanded={activeToolPanel === 'variables'}
             >
-              <strong>Variable</strong>
+              <span>Variable</span>
+              <strong>{displayedVariableLabel || 'Select'}</strong>
             </button>
             <button
               type="button"
@@ -2098,8 +3614,10 @@ function App() {
                 setSearchToolsOpen(false);
               }}
               title={`Elevation: ${selectedElevRange.min}m - ${selectedElevRange.max}m`}
+              aria-expanded={activeToolPanel === 'elevation'}
             >
-              <strong>Elevation</strong>
+              <span>Elevation</span>
+              <strong>{selectedElevRange.min}–{selectedElevRange.max} m</strong>
             </button>
             <button
               type="button"
@@ -2109,25 +3627,33 @@ function App() {
                 setSearchToolsOpen(false);
               }}
               title="Live summary of the current selection"
+              aria-expanded={activeToolPanel === 'summary'}
             >
-              <span className="strip-icon">i</span>
-              <strong>Live Summary</strong>
+              <span>Region</span>
+              <strong>{regionContextLabel}</strong>
             </button>
             <button
               type="button"
-              className={`strip-btn ${activeToolPanel === 'hotspot' ? 'active' : ''} ${isHotspotMode ? 'mode-on' : ''}`}
+              className={`strip-btn ${activeToolPanel === 'hotspot' ? 'active' : ''} ${(isHotspotMode || isOutcomeMode) ? 'mode-on' : ''}`}
               onClick={() => {
                 setActiveToolPanel((prev) => (prev === 'hotspot' ? '' : 'hotspot'));
                 setSearchToolsOpen(false);
               }}
-              title={`Analysis: ${isHotspotMode ? 'Trend Hotspots' : 'Daily Map'}`}
+              title={`Analysis: ${analysisContextLabel}`}
+              aria-expanded={activeToolPanel === 'hotspot'}
             >
-              <strong>Analysis</strong>
+              <span>Analysis</span>
+              <strong>{analysisContextLabel}</strong>
             </button>
           </div>
           <div className="strip-right">
-            <span className="mini-status">Date {currentDate || '...'}</span>
-            <span className="mini-status">Points {mapPointCount.toLocaleString()}</span>
+            {stats && (
+              <span className="mini-status" title={`${stats.total_files} files · ${stats.total_size_mb} MB`}>
+                {stats.total_dates} dates
+              </span>
+            )}
+            <span className="mini-status"><b>{isOutcomeMode ? 'Layer' : 'Date'}</b> {isOutcomeMode ? outcomeMapTitle : (currentDate || 'Loading')}</span>
+            <span className="mini-status"><b>Points</b> {mapPointCount.toLocaleString()}</span>
           </div>
           {activeToolPanel && (
             <div className={`strip-popover strip-popover-${activeToolPanel}`}>
@@ -2151,7 +3677,7 @@ function App() {
       {/* Main content */}
       <div
         ref={appContentRef}
-        className={`app-content ${showDocumentation ? 'docs-only-content' : ''} ${codePanelOpen ? 'code-split-content' : ''}`}
+        className={`app-content ${showDocumentation ? 'docs-only-content' : ''} ${(codePanelOpen || researchPanelOpen) ? 'code-split-content' : ''}`}
       >
         {showDocumentation ? (
           <Suspense fallback={<DeferredPanelFallback />}>
@@ -2164,108 +3690,426 @@ function App() {
           </Suspense>
         ) : (
           <>
-        {codePanelOpen && (
-          <Suspense fallback={<DeferredPanelFallback />}>
-            <DashboardCodePanel
-              theme={theme}
-              datasetId={datasetId}
-              datasetLabel={selectedDataset?.label || ''}
-              yearRange={activeYearRange}
-              currentDate={currentDate}
-              dates={dates}
-              selectedVariable={selectedVariable}
-              selectedElevRange={selectedElevRange}
-              selectedSubregionId={selectedSubregionId}
-              selectedSubregionLabel={selectedSubregion?.label || ''}
-              onClose={handleCloseCodePanel}
-              onMapOutputChange={handleCodeMapOutputChange}
-              outputPortalTargetId={codePanelOpen ? 'code-output-dock' : null}
-              panelWidth={codePanelWidth}
-            />
-          </Suspense>
-        )}
-        {codePanelOpen && (
-          <div
-            className="code-resize-handle"
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize code and map panels"
-            title="Drag to resize code panel"
-            onMouseDown={handleCodeResizeStart}
-          />
-        )}
-        <main className="main-content">
-          {/* Map */}
-          <div className="map-container">
-            <Suspense fallback={<DeferredPanelFallback />}>
-              <MapView
-                data={displayedMapData}
-                currentDate={currentDate}
-                theme={theme}
-                variableLabel={displayedVariableLabel}
-                selectionEnabled={regionSelectMode}
-                onSelectionComplete={handleRegionSelect}
-                onSelectionPreview={handleRegionPreview}
-                selectionBounds={regionBounds}
-                selectedSubregionFeature={selectedSubregionFeature}
-                glacierViewEnabled={hasCodeMapOutput ? false : glacierViewEnabled}
-                focusLocation={focusLocation}
-                analysisMode={displayedAnalysisMode}
-                hotspotSummary={hasCodeMapOutput ? null : hotspotSummary}
-                layerStyle={displayedLayerStyle}
-              />
-            </Suspense>
-          </div>
-
-          <div
-            className={`bottom-analysis-panel ${codePanelOpen ? 'code-output-mode' : ''}`}
-            style={{ height: `${bottomPanelHeight}px` }}
-          >
-            <div
-              className="bottom-resize-handle"
-              role="separator"
-              aria-orientation="horizontal"
-              aria-label="Resize bottom analysis panel"
-              title="Drag to resize bottom panel"
-              onMouseDown={handleBottomResizeStart}
-            />
-            {codePanelOpen ? (
-              <div id="code-output-dock" className="code-output-dock" />
-            ) : (
-              <>
-                <div className="controls-container">
-                  {isHotspotMode && (
-                    <div className="hotspot-time-note">
-                      Hotspot mode uses the full selected year range for trend fitting. The time slider only moves the graph marker.
-                    </div>
-                  )}
-                  <TimeSlider
-                    dates={dates}
-                    currentIndex={currentDateIndex}
-                    isPlaying={isPlaying}
-                    playSpeed={playSpeed}
-                    onDateChange={handleDateChange}
-                    onPlayPause={handlePlayPause}
-                    onSpeedChange={handleSpeedChange}
-                  />
-                </div>
-
-                <div className="graph-container">
-                  <Suspense fallback={<DeferredPanelFallback />}>
-                    <TempGraph
-                      data={graphData}
-                      currentDate={currentDate}
-                      variableLabel={variableLabel}
-                      series={graphSeries}
-                      showPointStats={Boolean(regionBounds)}
-                      pointStatsLabel="Region points/day"
-                    />
-                  </Suspense>
-                </div>
-              </>
+            {researchPanelOpen && (
+              <Suspense fallback={<DeferredPanelFallback />}>
+                <ResearchToolkitPanel
+                  datasets={datasets}
+                  datasetId={datasetId}
+                  datasetLabel={selectedDataset?.label || ''}
+                  variables={variables}
+                  selectedVariable={selectedVariable}
+                  comparisonVariables={comparisonVariables}
+                  yearRange={activeYearRange}
+                  selectedElevRange={selectedElevRange}
+                  selectedSubregionId={selectedSubregionId}
+                  selectedSubregionLabel={selectedSubregion?.label || ''}
+                  selectedAoi={roiPolygon}
+                  onClose={handleCloseResearchPanel}
+                  onMapOutputChange={handleResearchMapOutputChange}
+                  initialWorkspaceState={projectToolState.research}
+                  onWorkspaceStateChange={handleResearchWorkspaceStateChange}
+                  outputPortalTargetId={researchPanelOpen ? 'research-output-dock' : null}
+                  panelWidth={codePanelWidth}
+                />
+              </Suspense>
             )}
-          </div>
-        </main>
+            {codePanelOpen && (
+              <Suspense fallback={<DeferredPanelFallback />}>
+                <DashboardCodePanel
+                  key={activeProject?.id || 'temporary-code-panel'}
+                  theme={theme}
+                  datasetId={datasetId}
+                  datasetLabel={selectedDataset?.label || ''}
+                  yearRange={activeYearRange}
+                  currentDate={currentDate}
+                  dates={dates}
+                  selectedVariable={selectedVariable}
+                  selectedElevRange={selectedElevRange}
+                  selectedSubregionId={selectedSubregionId}
+                  selectedSubregionLabel={selectedSubregion?.label || ''}
+                  onClose={handleCloseCodePanel}
+                  onMapOutputChange={handleCodeMapOutputChange}
+                  initialWorkspaceState={projectToolState.code}
+                  onWorkspaceStateChange={handleCodeWorkspaceStateChange}
+                  workspaceStateRef={codeWorkspaceLiveRef}
+                  outputPortalTargetId={codePanelOpen ? 'code-output-dock' : null}
+                  panelWidth={codePanelWidth}
+                />
+              </Suspense>
+            )}
+            {(codePanelOpen || researchPanelOpen) && (
+              <div
+                className="code-resize-handle"
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize analysis tools and map panels"
+                title="Drag to resize tools panel"
+                onMouseDown={handleCodeResizeStart}
+              />
+            )}
+            <main className="main-content">
+              {/* Map */}
+              <div className="map-container">
+                <Suspense fallback={<DeferredPanelFallback />}>
+                  <MapView
+                    data={displayedMapData}
+                    currentDate={displayedMapDate}
+                    theme={theme}
+                    variableLabel={displayedVariableLabel}
+                    selectedSubregionFeature={selectedSubregionFeature}
+                    glacierViewEnabled={hasToolMapOutput ? false : glacierViewEnabled}
+                    glacierFilterBounds={selectedMapBounds}
+                    glacierFilterAoi={roiPolygon}
+                    glacierFilterSubregionId={selectedSubregionId || undefined}
+                    focusLocations={focusLocations}
+                    onUpdateFocusLocation={handleUpdateFocusLocation}
+                    onRemoveFocusLocation={handleRemoveFocusLocation}
+                    analysisMode={displayedAnalysisMode}
+                    hotspotSummary={hasToolMapOutput ? null : hotspotSummary}
+                    layerStyle={displayedLayerStyle}
+                    atlasRegions={subregions}
+                    polygonDrawEnabled={polygonDrawMode}
+                    onPolygonDrawToggle={handleTogglePolygonDraw}
+                    onAoiComplete={handleAoiComplete}
+                    aoiPolygons={aoiPolygons}
+                    selectedAoiId={selectedAoiId}
+                    onAoiSelect={setSelectedAoiId}
+                  />
+                </Suspense>
+                {(selectedAnalysisItems.length > 0 || glacierViewEnabled || focusLocations.length > 0 || aoiPolygons.length > 0 || selectedSubregionId) && (
+                  <div className="map-layers-panel" onMouseDown={(e) => e.stopPropagation()}>
+                    <h4>Map Layers</h4>
+                    <div className="layer-items">
+                      {glacierViewEnabled && (
+                        <div className="layer-item analysis-layer-item active">
+                          <button
+                            type="button"
+                            className="layer-activate"
+                            onClick={() => setMapViewMode('glacier')}
+                            title="Glacier outline overlay"
+                            aria-pressed="true"
+                          >
+                            <span className="layer-name">Glaciers</span>
+                            <span className="layer-meta">
+                              {roiPolygon ? 'ROI neighborhood' : selectedSubregionId ? 'Selected region' : 'Visible map'}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            className="layer-remove"
+                            title="Remove glacier overlay"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setMapViewMode('basin');
+                            }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      )}
+                      {selectedAnalysisItems.map((item, index) => {
+                        const isActive = index === 0;
+                        const graphEntry = analysisGraphEntries[item.id] || {};
+                        return (
+                          <div
+                            key={item.id}
+                            className={`layer-item analysis-layer-item ${isActive ? 'active' : ''}`}
+                          >
+                            <button
+                              type="button"
+                              className="layer-activate"
+                              onClick={() => handleActivateAnalysisItem(item.id)}
+                              title={isActive ? 'Active spatial layer' : 'View this layer on the map'}
+                              aria-pressed={isActive}
+                            >
+                              <span className="layer-name">{item.variableLabel}</span>
+                              <span className="layer-meta">{item.datasetLabel} · {item.yearRange.start}-{item.yearRange.end}</span>
+                              {graphEntry.loading && <span className="layer-status">Updating</span>}
+                            </button>
+                            <button
+                              type="button"
+                              className="layer-remove"
+                              title="Remove analysis layer"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRemoveAnalysisItem(item.id);
+                              }}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        );
+                      })}
+                      {aoiPolygons.map((polygon) => {
+                        const selected = polygon.id === selectedAoiId;
+                        return (
+                          <div
+                            key={polygon.id}
+                            className={`layer-item overlay-layer-item aoi-layer-item ${selected ? 'active' : ''}`}
+                            onClick={() => setSelectedAoiId(polygon.id)}
+                          >
+                            <div className="aoi-layer-main">
+                              <input
+                                type="text"
+                                value={polygon.name}
+                                onFocus={() => setSelectedAoiId(polygon.id)}
+                                onChange={(e) => handleRenameAoi(polygon.id, e.target.value)}
+                                className="layer-input"
+                                title="Rename polygon"
+                              />
+                              {polygon.role === 'roi' && <div className="layer-meta">ROI</div>}
+                            </div>
+                            <button
+                              type="button"
+                              className="layer-remove"
+                              title="Remove polygon"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRemoveAoi(polygon.id);
+                              }}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        );
+                      })}
+                      {selectedPolygon && (
+                        <div className="aoi-details">
+                          <button
+                            type="button"
+                            className="aoi-clear-selection"
+                            onClick={() => setSelectedAoiId('')}
+                          >
+                            Hide details
+                          </button>
+                          {selectedPolygon.role === 'roi' && (
+                            <div className="aoi-details-row">
+                              <span>Role</span>
+                              <strong>ROI · variable loading boundary</strong>
+                            </div>
+                          )}
+                          <div className="aoi-details-row">
+                            <span>Area</span>
+                            <strong>{selectedPolygon.analysis.areaKm2.toFixed(2)} km²</strong>
+                          </div>
+                          <div className="aoi-details-row">
+                            <span>Geometry</span>
+                            <strong>{selectedPolygon.analysis.geometryType} · {selectedPolygon.analysis.focus}</strong>
+                          </div>
+                          <div className="aoi-details-row">
+                            <span>Perimeter</span>
+                            <strong>{selectedPolygon.analysis.perimeterKm.toFixed(2)} km</strong>
+                          </div>
+                          {selectedPolygon.analysis.centroid && (
+                            <div className="aoi-details-row">
+                              <span>Centroid</span>
+                              <strong>{selectedPolygon.analysis.centroid.lat.toFixed(4)}, {selectedPolygon.analysis.centroid.lon.toFixed(4)}</strong>
+                            </div>
+                          )}
+                          <details>
+                            <summary>Vertex coordinates</summary>
+                            <ol className="aoi-coordinate-list">
+                              {getAoiVertices(selectedPolygon).map(([lon, lat], index) => (
+                                <li key={`${selectedPolygon.id}-${index}`}>
+                                  {Number(lat).toFixed(5)}, {Number(lon).toFixed(5)}
+                                </li>
+                              ))}
+                            </ol>
+                          </details>
+                          <div className="aoi-analysis-note">
+                            {selectedPolygon.analysis.focus === 'Glacier'
+                              ? 'Glacier area and retreat workflows can use this boundary.'
+                              : selectedPolygon.analysis.focus === 'Watershed'
+                                ? 'Catchment workflows can use this boundary.'
+                                : selectedPolygon.analysis.focus === 'Lake/reservoir'
+                                  ? 'Surface-area workflows can use this boundary.'
+                                  : 'Ready for polygon-based analysis.'}
+                          </div>
+                        </div>
+                      )}
+                      {selectedSubregionId && (
+                        <div className="layer-item overlay-layer-item">
+                          <input
+                            type="text"
+                            value={selectedSubregion?.label || 'Selected basin'}
+                            readOnly
+                            className="layer-input"
+                            title="Selected basin or glacier"
+                          />
+                          <button
+                            type="button"
+                            className="layer-remove"
+                            title="Remove active basin/glacier filter"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedSubregionId('');
+                              setSelectedSubregionFeature(null);
+                              setSubregionSearchText('');
+                            }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      )}
+                      {focusLocations.map((loc) => (
+                        <div key={loc.id} className="layer-item overlay-layer-item">
+                          <input
+                            type="text"
+                            value={loc.label !== undefined ? loc.label : `Pin: ${loc.lat.toFixed(2)}, ${loc.lon.toFixed(2)}`}
+                            onChange={(e) => {
+                              setFocusLocations((prev) => prev.map((l) => l.id === loc.id ? { ...l, label: e.target.value } : l));
+                            }}
+                            className="layer-input"
+                            title="Rename Pin Layer"
+                          />
+                          <button
+                            type="button"
+                            className="layer-remove"
+                            title="Remove pin layer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveFocusLocation(loc.id);
+                            }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div
+                className={`bottom-analysis-panel ${(codePanelOpen || researchPanelOpen) ? 'code-output-mode' : ''}`}
+                style={{ height: `${bottomPanelHeight}px` }}
+              >
+                <div
+                  className="bottom-resize-handle"
+                  role="separator"
+                  aria-orientation="horizontal"
+                  aria-label="Resize bottom analysis panel"
+                  title="Drag to resize bottom panel"
+                  onMouseDown={handleBottomResizeStart}
+                />
+                {(codePanelOpen || researchPanelOpen) ? (
+                  <div
+                    id={researchPanelOpen ? 'research-output-dock' : 'code-output-dock'}
+                    className="code-output-dock"
+                  />
+                ) : (
+                  <>
+                    <div className="controls-container">
+                      {isHotspotMode && (
+                        <div className="hotspot-time-note">
+                          Hotspot mode uses the full selected year range for trend fitting. The time slider only moves the graph marker.
+                        </div>
+                      )}
+                      {!isOutcomeMode && (
+                        <TimeSlider
+                          dates={dates}
+                          currentIndex={currentDateIndex}
+                          isPlaying={isPlaying}
+                          playSpeed={playSpeed}
+                          onDateChange={handleDateChange}
+                          onPlayPause={handlePlayPause}
+                          onSpeedChange={handleSpeedChange}
+                        />
+                      )}
+                    </div>
+
+                    <div className="graph-container">
+                      {isOutcomeMode ? (
+                        renderOutcomeSummaryPanel()
+                      ) : selectedAnalysisItems.length === 0 ? (
+                        <div className="analysis-empty-state">
+                          No analysis layers selected.
+                        </div>
+                      ) : (
+                        <Suspense fallback={<DeferredPanelFallback />}>
+                          <div className="analysis-graphs-list">
+                            {selectedAnalysisItems.map((item, index) => {
+                              const graphEntry = analysisGraphEntries[item.id] || {};
+                              const hasGraphData = Array.isArray(graphEntry.data) && graphEntry.data.length > 0;
+                              return (
+                                <section
+                                  className={`analysis-graph-card ${index === 0 ? 'active' : ''}`}
+                                  key={item.id}
+                                  style={{ height: `${analysisGraphHeights[item.id] || 340}px` }}
+                                >
+                                  <div className="analysis-card-toolbar">
+                                    <button
+                                      type="button"
+                                      className="analysis-card-title"
+                                      onClick={() => handleActivateAnalysisItem(item.id)}
+                                      aria-pressed={index === 0}
+                                      title={index === 0 ? 'Active spatial layer' : 'Show this variable on the map'}
+                                    >
+                                      <strong>{item.variableLabel}</strong>
+                                      <span>{item.datasetLabel} · {item.yearRange.start}-{item.yearRange.end}</span>
+                                    </button>
+                                    <div className="analysis-card-actions">
+                                      {graphEntry.loading && (
+                                        <span className="analysis-card-status">Updating</span>
+                                      )}
+                                      <button
+                                        type="button"
+                                        className="analysis-card-action"
+                                        onClick={() => handleActivateAnalysisItem(item.id)}
+                                        title={index === 0 ? 'Active spatial layer' : 'Show this variable on the map'}
+                                      >
+                                        Map
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="analysis-card-remove"
+                                        onClick={() => handleRemoveAnalysisItem(item.id)}
+                                        title="Remove this analysis"
+                                      >
+                                        Remove
+                                      </button>
+                                    </div>
+                                  </div>
+                                  {graphEntry.error && !hasGraphData ? (
+                                    <div className="analysis-graph-message error">{graphEntry.error}</div>
+                                  ) : graphEntry.loading && !hasGraphData ? (
+                                    <div className="analysis-graph-message">Loading graph data...</div>
+                                  ) : (
+                                    <>
+                                      {graphEntry.error && (
+                                        <div className="analysis-graph-message warning">{graphEntry.error}</div>
+                                      )}
+                                      <div className="analysis-graph-body">
+                                        <TempGraph
+                                          data={graphEntry.data || []}
+                                          currentDate={currentDate}
+                                          variableLabel={item.variableLabel}
+                                          series={[{ key: 'value', label: item.variableLabel }]}
+                                          showPointStats={Boolean(roiPolygon || selectedSubregionId)}
+                                          pointStatsLabel={roiPolygon || selectedSubregionId ? 'Region points/day' : 'Data points/day'}
+                                        />
+                                      </div>
+                                    </>
+                                  )}
+                                  <div
+                                    className="analysis-graph-resize-handle"
+                                    role="separator"
+                                    aria-orientation="horizontal"
+                                    aria-label={`Resize ${item.variableLabel} graph`}
+                                    title="Drag to resize graph"
+                                    onMouseDown={(event) => handleAnalysisGraphResizeStart(item.id, event)}
+                                  />
+                                </section>
+                              );
+                            })}
+                          </div>
+                        </Suspense>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            </main>
           </>
         )}
       </div>
@@ -2274,4 +4118,3 @@ function App() {
 }
 
 export default App;
-

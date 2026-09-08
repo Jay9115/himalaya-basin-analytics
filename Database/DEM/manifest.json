@@ -1,0 +1,61 @@
+{
+  "format": "web-overview-point-grid",
+  "sources": [
+    "C:\\Users\\DC\\Downloads\\Himalaya_SRTM_DEM-0000000000-0000000000.tif",
+    "C:\\Users\\DC\\Downloads\\Himalaya_SRTM_DEM-0000000000-0000046592.tif"
+  ],
+  "source_tiles": [
+    {
+      "source": "C:\\Users\\DC\\Downloads\\Himalaya_SRTM_DEM-0000000000-0000000000.tif",
+      "width": 46592,
+      "height": 38299,
+      "cells": 1784427008,
+      "bounds": [
+        72.50724866312194,
+        26.776712494449466,
+        85.06354037843097,
+        37.09808561439753
+      ],
+      "overview_width": 436,
+      "overview_height": 358,
+      "retained_cells": 56638
+    },
+    {
+      "source": "C:\\Users\\DC\\Downloads\\Himalaya_SRTM_DEM-0000000000-0000046592.tif",
+      "width": 42935,
+      "height": 38299,
+      "cells": 1644367565,
+      "bounds": [
+        85.06354037843097,
+        26.776712494449466,
+        96.63429039553247,
+        37.09808561439753
+      ],
+      "overview_width": 402,
+      "overview_height": 358,
+      "retained_cells": 43304
+    }
+  ],
+  "source_crs": "EPSG:4326",
+  "source_cells": 3428794573,
+  "source_bounds": [
+    72.50724866312194,
+    26.776712494449466,
+    96.63429039553247,
+    37.09808561439753
+  ],
+  "source_pixel_size": [
+    0.00026949458523585647,
+    0.00026949458523585647
+  ],
+  "sampling_factor": 107,
+  "overview_cells": 300004,
+  "retained_cells": 99942,
+  "zero_cells_excluded": true,
+  "elevation_min_m": 1.0,
+  "elevation_max_m": 7454.0,
+  "elevation_mean_m": 4008.787841796875,
+  "generated_at": "2026-08-20T08:29:50.291688+00:00",
+  "output": "D:\\ISRO-SWOT\\Webapp\\himalaya-basin-analytics\\Database\\DEM\\Himalaya_SRTM_DEM-0000000000-0000000000.parquet",
+  "output_size_bytes": 317784
+}
