@@ -70,3 +70,7 @@ Thumbs.db
 .env.*
 .env.local
 .env.production
+
+LLM_service/Models/*.gguf
+
+Database/Uploaded_NC/_uploads/*.nc
