@@ -1,169 +1,52 @@
-﻿# Himalaya Basin Analytics WebApp
+# Himalayan Basin Analytics - Vercel Frontend Deployment
 
-Local-first web application for climate and hydro-meteorological analysis over the Himalayan region.
+This is the dedicated deployment branch (`Frontend-deployed`) of the [himalaya-basin-analytics](https://github.com/Jay9115/himalaya-basin-analytics) repository, optimized specifically for zero-configuration continuous deployment on **Vercel**.
 
-This project includes:
-- FastAPI backend for parquet querying and aggregation
-- React + Deck.GL + MapLibre frontend for map and time-series visualization
-- ERA5, CMIP6, CHIRPS, SPHY, and MOD10A1 parquet datasets
-- PMTiles + GeoJSON map assets
-- Offline packaging script for one-click distribution
-- Dedicated architecture documentation in `SYSTEM_ARCHITECTURE.md`
-- Selection-aware Research Toolkit integrated into the dashboard for arbitrary variables, robust trends, anomalies, emergence, change points, cross-dataset relationships, compound signals, and journal figure exports
+## Architecture & Integration
 
-## Current Repository Layout
+- **Frontend Hosting**: Vercel (React 18 + Vite + Deck.GL + MapLibre GL)
+- **Backend API**: Hugging Face Spaces (`https://jay9115-himalaya-web-backend.hf.space`)
+- **Data Repository**: Hugging Face Datasets (`Jay9115/Himalaya-data`)
 
-```text
-himalaya-basin-analytics/
-  backend/
-    main.py
-    requirements.txt
-  frontend/
-    src/
-    dist/                    # built frontend (generated)
-  Database/
-    Full_Shape_ERA5/
-    Full_shape_CMIP6/
-  Map_handle/
-    india_admin.pmtiles
-    upper_indus_basin.geojson
-    fonts/
-  Himalaya_shape/
-    him_watershed.shp (+ sidecar files)
-  pack_offline.ps1
-  start.bat
-  stop.bat
-```
+The frontend communicates directly with the Hugging Face Spaces backend API for all dynamic analytics, parquet queries, PMTiles map vectors, GeoJSON boundaries, and data downloads.
 
-## Data and Map Sources Used at Runtime
+## Environment Variables
 
-Backend runtime paths are resolved relative to app root:
-- Dataset folders:
-  - `Database/Full_Shape_ERA5`
-  - `Database/Full_shape_CMIP6`
-  - `Database/MOD10A1_Parquet`
-- Map assets folder:
-  - `Map_handle/`
+| Variable | Description | Default / Production Value |
+| :--- | :--- | :--- |
+| `VITE_API_URL` | Base URL of the FastAPI backend | `https://jay9115-himalaya-web-backend.hf.space` |
+| `VITE_LLM_URL` | Optional URL for local/hosted LLM assistant | `http://127.0.0.1:8010` |
+| `VITE_INDIA_PM_TILES_URL` | Optional custom PMTiles vector tile source | `${VITE_API_URL}/map-assets/india_admin.pmtiles` |
+| `VITE_BASIN_GEOJSON_URL` | Optional custom basin GeoJSON boundary | `${VITE_API_URL}/map-assets/upper_indus_basin.geojson` |
+| `VITE_GLYPHS_URL` | Optional custom PBF font glyphs | `${VITE_API_URL}/map-assets/fonts/{fontstack}/{range}.pbf` |
 
-Basin boundary overlay currently loads from:
-- `Map_handle/upper_indus_basin.geojson`
+## Deploying to Vercel
 
-India boundary layer currently loads from:
-- `Map_handle/india_admin.pmtiles`
+1. Log into your [Vercel Dashboard](https://vercel.com).
+2. Click **Add New** > **Project**.
+3. Import your GitHub repository: `Jay9115/himalaya-basin-analytics`.
+4. In the configuration modal:
+   - **Branch**: Select `Frontend-deployed`.
+   - **Framework Preset**: Vite (detected automatically).
+   - **Root Directory**: `./` (leave default).
+   - **Build Command**: `npm run build` (or leave default).
+   - **Output Directory**: `dist` (or leave default).
+5. In **Environment Variables**, add:
+   - `VITE_API_URL`: `https://jay9115-himalaya-web-backend.hf.space`
+6. Click **Deploy**.
 
-## Prerequisites (Developer Mode)
+## Local Development
 
-- Python 3.10+ (3.12 tested)
-- Node.js 18+ (16+ works)
-- Windows PowerShell (for scripts)
-
-## Run Locally (Developer Workflow)
-
-### 1) Backend
-
-```powershell
-cd D:\ISRO-SWOT\Webapp\himalaya-basin-analytics\backend
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python main.py
-```
-
-Backend URL:
-- `http://127.0.0.1:8000`
-
-Health check:
-- `http://127.0.0.1:8000/health`
-
-### 2) Frontend (new terminal)
-
-```powershell
-cd D:\ISRO-SWOT\Webapp\himalaya-basin-analytics\frontend
+```bash
+# Install dependencies
 npm install
+
+# Run Vite dev server (points to localhost:8000 by default)
 npm run dev
+
+# Build production bundle
+npm run build
+
+# Preview production build locally
+npm run preview
 ```
-
-Frontend URL:
-- `http://localhost:5173`
-
-### Optional one-click dev launcher
-
-From repo root:
-
-```powershell
-.\start.bat
-```
-
-## Core API Endpoints
-
-- `GET /datasets`
-- `GET /years?dataset=era5|cmip6`
-- `GET /dates?dataset=...&year_start=...&year_end=...`
-- `GET /variables?dataset=...&year_start=...&year_end=...`
-- `GET /elevation-range?dataset=...&year_start=...&year_end=...`
-- `GET /data?date=...&elev_min=...&elev_max=...&variable=...&dataset=...`
-- `GET /basin-mean?start_date=...&end_date=...&elev_min=...&elev_max=...&variable=...&dataset=...`
-- `GET /region-mean?year=...&min_lat=...&max_lat=...&min_lon=...&max_lon=...&elev_min=...&elev_max=...&variable=...&dataset=...`
-- `GET /stats?dataset=...&year_start=...&year_end=...`
-- `GET /map-assets/{asset_path}`
-- `GET /research/capabilities`
-- `POST /research/analyze`
-- `POST /research/figures`
-- `GET /research/runs/{run_id}/{artifact_path}`
-- `GET /research/framework/capabilities`
-- `POST /research/framework/analyze`
-- `POST /research/framework/figures`
-- `GET /research/framework/runs/{run_id}/{artifact_path}`
-
-## Offline Packaging (Distribution Build)
-
-Use this single script to sync a portable offline bundle:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File "D:\ISRO-SWOT\Webapp\himalaya-basin-analytics\pack_offline.ps1"
-```
-
-What it does:
-- Builds frontend (`npm run build`) unless skipped
-- Builds backend executable (`webapp_backend.exe`) with PyInstaller in an isolated build venv
-- Syncs portable runtime to:
-  - `D:\ISRO-SWOT\Webapp_packed\webapp_backend`
-- Mirrors:
-  - `frontend\dist` -> `webapp_backend\frontend_dist`
-  - `Database` -> `webapp_backend\Database`
-  - `Map_handle` -> `webapp_backend\Map_handle`
-- Regenerates:
-  - `D:\ISRO-SWOT\Webapp_packed\START_APP.bat`
-  - `D:\ISRO-SWOT\Webapp_packed\STOP_APP.bat`
-  - `D:\ISRO-SWOT\Webapp_packed\README_OFFLINE.txt`
-- Removes temporary build artifacts by default (`D:\ISRO-SWOT\Webapp_packed\_build`)
-
-Skip frontend build:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File "D:\ISRO-SWOT\Webapp\himalaya-basin-analytics\pack_offline.ps1" -SkipFrontendBuild
-```
-
-Skip backend rebuild (reuse an already-built runtime):
-
-```powershell
-powershell -ExecutionPolicy Bypass -File "D:\ISRO-SWOT\Webapp\himalaya-basin-analytics\pack_offline.ps1" -SkipBackendBuild -BuiltRuntime "D:\YOUR_PATH\dist\webapp_backend"
-```
-
-Keep `_build` artifacts for debugging/repeat builds:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File "D:\ISRO-SWOT\Webapp\himalaya-basin-analytics\pack_offline.ps1" -KeepBuildArtifacts
-```
-
-## Notes
-
-- Runtime analysis uses parquet files; CSV files are not required at runtime.
-- MOD10A1 TIFF sources are converted with `python Database/convert_mod10a1_to_parquet.py`.
-  The full grid is retained for analysis while `_map_sample` provides a bounded,
-  evenly spaced browser preview for responsive rendering.
-- Map asset updates should be made inside `Map_handle/` and then packed again.
-- For scientific method details, use the in-app Documentation tab.
-- For software structure, subsystem responsibilities, and journal-friendly diagrams, see `SYSTEM_ARCHITECTURE.md`.
-- For the generalized dashboard research framework, statistical methods, data-safety design, and figure factory, see `RESEARCH_FRAMEWORK.md`.
-- `RESEARCH_STUDIO.md` documents the earlier fixed ERA5-Land/CHIRPS compatibility workflow that remains available through its API.

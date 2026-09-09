@@ -1,76 +1,33 @@
-# Backend
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-venv/
-env/
-ENV/
-.venv
-pip-log.txt
-pip-delete-this-directory.txt
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.pyre/
-.hypothesis/
-.tox/
-.nox/
-.ipynb_checkpoints/
-.coverage
-coverage.xml
-htmlcov/
-build/
-site/
-.eggs/
-*.egg-info/
-
-# Frontend
-glims_download_91214/
+# Dependencies
 node_modules/
+.pnp
+.pnp.js
+
+# Production build outputs
 dist/
 dist-ssr/
-*.local
+
+# Local cache & logs
 .vite/
 .cache/
-coverage/
-.eslintcache
-
-# IDEs
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.DS_Store
-
-# Logs
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-lerna-debug.log*
-HBapi/workspace/custom_operations/jobs/
-HBapi/workspace/projects/
-HBapi/workspace/archive/
 
-# OS
-Thumbs.db
-.DS_Store
-
-# Data files (optional - uncomment if you don't want to track data)
-*.csv
-*.parquet
-*.tif
-
-# Environment
-.env
-.env.*
+# Environment files - ignore local overrides
 .env.local
-.env.production
+.env.*.local
 
-LLM_service/Models/*.gguf
-
-Database/Uploaded_NC/_uploads/*.nc
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+Thumbs.db
