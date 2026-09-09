@@ -1,4 +1,4 @@
-# Himalayan Basin Analytics - Vercel Frontend Deployment
+# Himalayan Basin Analytics - Vercel Frontend Deployment..
 
 This is the dedicated deployment branch (`Frontend-deployed`) of the [himalaya-basin-analytics](https://github.com/Jay9115/himalaya-basin-analytics) repository, optimized specifically for zero-configuration continuous deployment on **Vercel**.
 
