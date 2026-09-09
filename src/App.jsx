@@ -1355,12 +1355,14 @@ function App() {
         if (years.length === 0) {
           setSelectedYearRange({ start: null, end: null });
           setYearRangeError(`No years found for dataset '${datasetId}'.`);
+          setLoading(false);
           return;
         }
 
         const minYear = Number.isInteger(response.min_year) ? response.min_year : years[0];
         const maxYear = Number.isInteger(response.max_year) ? response.max_year : years[years.length - 1];
         const defaultEndYear = maxYear;
+        const defaultStartYear = Math.max(minYear, defaultEndYear - 1);
 
         setSelectedYearRange((prev) => {
           const restoredDashboard = projectRestoreSnapshotRef.current?.workspace?.dashboard || {};
@@ -1369,7 +1371,7 @@ function App() {
           const restoredEnd = Number(restoredRange?.end);
           const hasRestoredSelection = Number.isInteger(restoredStart) && Number.isInteger(restoredEnd);
           const hasExistingSelection = Number.isInteger(prev.start) && Number.isInteger(prev.end);
-          const currentStart = hasRestoredSelection ? restoredStart : hasExistingSelection ? prev.start : minYear;
+          const currentStart = hasRestoredSelection ? restoredStart : hasExistingSelection ? prev.start : defaultStartYear;
           const currentEnd = hasRestoredSelection ? restoredEnd : hasExistingSelection ? prev.end : defaultEndYear;
           const nextStart = Math.min(Math.max(currentStart, minYear), maxYear);
           const nextEnd = Math.min(Math.max(currentEnd, minYear), maxYear);
@@ -1384,6 +1386,7 @@ function App() {
         setYearOptions([]);
         setSelectedYearRange({ start: null, end: null });
         setYearRangeError('Failed to load available years for selected dataset.');
+        setLoading(false);
       } finally {
         if (isActive) {
           setYearRangeLoading(false);
@@ -1399,7 +1402,12 @@ function App() {
 
   // Initialize: Load dates and elevation range
   useEffect(() => {
-    if (!datasetReady || !datasetId || !activeYearRange) return;
+    if (!datasetReady || !datasetId || !activeYearRange) {
+      if (!activeYearRange) {
+        setLoading(false);
+      }
+      return;
+    }
 
     const initialize = async () => {
       const contextKey = `${datasetId}:${activeYearRange.start}-${activeYearRange.end}`;
