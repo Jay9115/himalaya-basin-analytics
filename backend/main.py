@@ -2,7 +2,7 @@
 FastAPI backend for local geospatial visualization.
 Supports multiple datasets with lazy indexing.
 """
-from datetime import datetime
+from datetime import date, datetime
 from collections import OrderedDict
 import csv
 import hashlib
@@ -12,11 +12,13 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import logging
+import os
 import re
 import sys
 import warnings
 from contextlib import asynccontextmanager
 
+from pydantic import BaseModel
 import numpy as np
 import pandas as pd
 import pyarrow.compute as pc
@@ -37,6 +39,7 @@ from nc_ingest import (
 )
 from custom_operations.data_access import OperationBackendHooks, OperationDataLoader
 from custom_operations.router import build_custom_operations_router
+from export_data.router import build_export_router
 from research_studio.framework_router import build_research_framework_router
 from research_studio.router import build_research_router
 from project_workspace import build_project_workspace_router
@@ -79,7 +82,32 @@ def get_runtime_base_dir() -> Path:
 
 WEBAPP_DIR = get_runtime_base_dir()
 MAP_ASSETS_DIR = WEBAPP_DIR / "Map_handle"
-DATABASE_DIR = WEBAPP_DIR / "Database"
+
+
+def resolve_database_dir() -> Path:
+    """Resolve active database directory from environment variable, config file, or default."""
+    env_dir = os.environ.get("DATABASE_DIR")
+    if env_dir:
+        p = Path(env_dir.strip().strip('"').strip("'")).resolve()
+        if p.exists():
+            return p
+
+    for candidate in [
+        WEBAPP_DIR / "dataset_path.txt",
+        WEBAPP_DIR / "backend" / "dataset_path.txt",
+    ]:
+        if candidate.exists():
+            try:
+                line = candidate.read_text("utf-8").strip().strip('"').strip("'")
+                if line and Path(line).exists():
+                    return Path(line).resolve()
+            except Exception:
+                pass
+
+    return WEBAPP_DIR / "Database"
+
+
+DATABASE_DIR = resolve_database_dir()
 FRONTEND_DIST_CANDIDATES = [
     WEBAPP_DIR / "frontend_dist",
     WEBAPP_DIR / "frontend" / "dist",
@@ -157,6 +185,31 @@ BASE_DATASET_CONFIGS: Dict[str, Dict] = {
 UPLOADED_NC_ROOT = DATABASE_DIR / "Uploaded_NC"
 UPLOADED_NC_MANIFEST = UPLOADED_NC_ROOT / "uploaded_nc_datasets.json"
 UPLOADED_NC_FILES_DIR = UPLOADED_NC_ROOT / "_uploads"
+
+
+def _update_dataset_base_paths(new_db_dir: Path) -> None:
+    """Dynamically update all dataset paths when database directory changes."""
+    global DATABASE_DIR, UPLOADED_NC_ROOT, UPLOADED_NC_MANIFEST, UPLOADED_NC_FILES_DIR
+    DATABASE_DIR = new_db_dir
+    UPLOADED_NC_ROOT = DATABASE_DIR / "Uploaded_NC"
+    UPLOADED_NC_MANIFEST = UPLOADED_NC_ROOT / "uploaded_nc_datasets.json"
+    UPLOADED_NC_FILES_DIR = UPLOADED_NC_ROOT / "_uploads"
+
+    BASE_DATASET_CONFIGS["era5"]["paths"] = [DATABASE_DIR / "Full_Shape_ERA5"]
+    BASE_DATASET_CONFIGS["cmip6"]["paths"] = [DATABASE_DIR / "Full_shape_CMIP6"]
+    BASE_DATASET_CONFIGS["sphy_model"]["paths"] = [DATABASE_DIR / "SPHY_Model"]
+    BASE_DATASET_CONFIGS["chirps"]["paths"] = [DATABASE_DIR / "CHIRPS"]
+    BASE_DATASET_CONFIGS["mod10a1_monthly"]["paths"] = [
+        DATABASE_DIR / "MOD10A1_Parquet",
+        DATABASE_DIR / "MOD10A1_Monthly_GeoTIFF",
+    ]
+    BASE_DATASET_CONFIGS["discharge_network"]["paths"] = [DATABASE_DIR / "Discharge_Geopar"]
+    BASE_DATASET_CONFIGS["himalaya_dem"]["paths"] = [
+        DATABASE_DIR / "DEM",
+        DATABASE_DIR / "Himalaya_DEM",
+    ]
+
+
 DATASET_CONFIGS: Dict[str, Dict] = {}
 
 DEFAULT_DATASET_ID = "era5"
@@ -1538,9 +1591,9 @@ def build_uploaded_dataset_label(name: str) -> str:
 
 
 def resolve_dataset_path(paths: List[Path]) -> Path:
-    """Prefer an existing path that already has parquet, else first existing path."""
+    """Prefer an existing path that already has data files (parquet/geotiff), else first existing path."""
     for path in paths:
-        if path.exists() and list(path.glob("*.parquet")):
+        if path.exists() and (list(path.glob("*.parquet")) or list(path.glob("*.tif")) or list(path.glob("*.tiff"))):
             return path
     for path in paths:
         if path.exists():
@@ -1981,6 +2034,35 @@ def get_geoparquet_files(state: Dict[str, Any]) -> List[Path]:
     if not path.exists():
         return []
     return sorted(path.glob(state.get("file_pattern") or "*.parquet"))
+
+
+def parse_and_normalize_date(date_str: str) -> str:
+    """Parse date from YYYY-MM-DD or Indian DD-MM-YYYY (or DD/MM/YYYY) format and return canonical YYYY-MM-DD."""
+    if not date_str:
+        raise ValueError("Empty date string")
+    raw = str(date_str).strip()
+    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(raw, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            pass
+    raise ValueError(f"Invalid date format: '{date_str}'. Use DD-MM-YYYY or YYYY-MM-DD.")
+
+
+def format_date_indian(date_val: Any) -> Optional[str]:
+    """Format a date or YYYY-MM-DD string into Indian date format DD-MM-YYYY."""
+    if not date_val:
+        return None
+    if isinstance(date_val, (datetime, date)):
+        return date_val.strftime("%d-%m-%Y")
+    text = str(date_val).strip()
+    if len(text) == 10 and text[2] == "-" and text[5] == "-":
+        return text
+    try:
+        dt = datetime.strptime(text[:10], "%Y-%m-%d")
+        return dt.strftime("%d-%m-%Y")
+    except Exception:
+        return text
 
 
 def parse_geoparquet_date_from_path(
@@ -3422,9 +3504,11 @@ def calculate_basin_mean(
             grouped[date_col] = grouped[date_col].dt.strftime("%Y-%m-%d")
 
             for row in grouped.itertuples(index=False):
+                raw_date = getattr(row, date_col)
                 results.append(
                     {
-                        "date": getattr(row, date_col),
+                        "date": raw_date,
+                        "date_display": format_date_indian(raw_date),
                         "mean_value": float(row.mean_value),
                         "pixel_count": int(row.pixel_count),
                     }
@@ -3728,6 +3812,12 @@ def register_custom_operations_router() -> None:
 
 
 register_custom_operations_router()
+app.include_router(
+    build_export_router(
+        hooks=build_operation_backend_hooks(),
+        workspace_root=WEBAPP_DIR / "HBapi" / "workspace" / "exports",
+    )
+)
 app.include_router(build_project_workspace_router(WEBAPP_DIR / "HBapi" / "workspace"))
 app.include_router(build_research_router(WEBAPP_DIR))
 app.include_router(
@@ -3790,6 +3880,63 @@ async def get_datasets():
         content={
             "default_dataset": DEFAULT_DATASET_ID,
             "datasets": get_datasets_summary(),
+        }
+    )
+
+
+class SetDatasetPathRequest(BaseModel):
+    path: str
+
+
+@app.get("/dataset-config")
+async def get_dataset_config():
+    summary = get_datasets_summary()
+    total_files = sum(d["parquet_files"] + d["geotiff_files"] + d["csv_files"] for d in summary)
+    ready_count = sum(1 for d in summary if d["ready"])
+    return JSONResponse(
+        content={
+            "database_dir": str(DATABASE_DIR),
+            "default_database_dir": str(WEBAPP_DIR / "Database"),
+            "is_empty": ready_count == 0,
+            "total_files": total_files,
+            "ready_datasets": ready_count,
+            "datasets": summary,
+        }
+    )
+
+
+@app.post("/dataset-config/set-path")
+async def set_dataset_path(req: SetDatasetPathRequest):
+    raw_path = req.path.strip().strip('"').strip("'")
+    if not raw_path:
+        raise HTTPException(status_code=400, detail="Path cannot be empty")
+
+    target = Path(raw_path).resolve()
+    if not target.exists() or not target.is_dir():
+        raise HTTPException(status_code=400, detail=f"Directory does not exist: {raw_path}")
+
+    _update_dataset_base_paths(target)
+    init_dataset_state()
+
+    # Persist chosen path to dataset_path.txt
+    for save_dest in [WEBAPP_DIR / "dataset_path.txt", WEBAPP_DIR / "backend" / "dataset_path.txt"]:
+        try:
+            save_dest.parent.mkdir(parents=True, exist_ok=True)
+            save_dest.write_text(str(target), encoding="utf-8")
+        except Exception as exc:
+            logger.warning(f"Could not persist dataset_path.txt to {save_dest}: {exc}")
+
+    summary = get_datasets_summary()
+    total_files = sum(d["parquet_files"] + d["geotiff_files"] + d["csv_files"] for d in summary)
+    ready_count = sum(1 for d in summary if d["ready"])
+    return JSONResponse(
+        content={
+            "success": True,
+            "database_dir": str(DATABASE_DIR),
+            "is_empty": ready_count == 0,
+            "total_files": total_files,
+            "ready_datasets": ready_count,
+            "datasets": summary,
         }
     )
 
@@ -4171,6 +4318,9 @@ async def get_available_dates(
             "dates": dates,
             "min_date": dates[0],
             "max_date": dates[-1],
+            "dates_display": [format_date_indian(d) for d in dates],
+            "min_date_display": format_date_indian(dates[0]),
+            "max_date_display": format_date_indian(dates[-1]),
             "total": len(dates),
             "dataset": state["id"],
             "dataset_label": state["label"],
@@ -4627,9 +4777,9 @@ async def get_data(
     aoi_geojson: Optional[str] = Query(None, description="Optional ROI Polygon/MultiPolygon GeoJSON"),
 ):
     try:
-        datetime.strptime(date, "%Y-%m-%d")
+        date = parse_and_normalize_date(date)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD") from exc
+        raise HTTPException(status_code=400, detail="Invalid date format. Use DD-MM-YYYY or YYYY-MM-DD") from exc
 
     year_start, year_end = normalize_year_range(year_start, year_end)
     state = ensure_dataset_loaded(dataset, year_start=year_start, year_end=year_end)
@@ -4660,6 +4810,7 @@ async def get_data(
             "dataset": state["id"],
             "dataset_label": state["label"],
             "date": date,
+            "date_display": format_date_indian(date),
             "elev_min": elev_min,
             "elev_max": elev_max,
             "variable": var_name,
@@ -4690,10 +4841,10 @@ async def get_basin_mean(
     aoi_geojson: Optional[str] = Query(None, description="Optional ROI Polygon/MultiPolygon GeoJSON"),
 ):
     try:
-        datetime.strptime(start_date, "%Y-%m-%d")
-        datetime.strptime(end_date, "%Y-%m-%d")
+        start_date = parse_and_normalize_date(start_date)
+        end_date = parse_and_normalize_date(end_date)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD") from exc
+        raise HTTPException(status_code=400, detail="Invalid date format. Use DD-MM-YYYY or YYYY-MM-DD") from exc
 
     year_start, year_end = normalize_year_range(year_start, year_end)
     state = ensure_dataset_loaded(dataset, year_start=year_start, year_end=year_end)
@@ -4727,6 +4878,8 @@ async def get_basin_mean(
             "dataset_label": state["label"],
             "start_date": start_date,
             "end_date": end_date,
+            "start_date_display": format_date_indian(start_date),
+            "end_date_display": format_date_indian(end_date),
             "elev_min": elev_min,
             "elev_max": elev_max,
             "variable": var_name,

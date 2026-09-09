@@ -379,6 +379,109 @@ body {
   background: color-mix(in srgb, var(--accent) 15%, var(--input-bg) 85%);
 }
 
+.export-data-btn {
+  border-color: var(--accent-2, #2a9d8f) !important;
+  color: var(--accent-2, #2a9d8f) !important;
+}
+
+.export-data-btn:hover {
+  background: color-mix(in srgb, var(--accent-2) 18%, var(--input-bg) 82%) !important;
+}
+
+.dataset-path-btn {
+  border-color: var(--accent, #3b82c4) !important;
+  color: var(--accent, #3b82c4) !important;
+  position: relative;
+}
+
+.dataset-path-btn:hover {
+  background: color-mix(in srgb, var(--accent) 18%, var(--input-bg) 82%) !important;
+}
+
+.dataset-path-btn.has-warning {
+  border-color: #f4a261 !important;
+  color: #f4a261 !important;
+  animation: pulseDatasetWarning 2s infinite;
+}
+
+@keyframes pulseDatasetWarning {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(244, 162, 97, 0.4); }
+  50% { box-shadow: 0 0 0 4px rgba(244, 162, 97, 0); }
+}
+
+.dataset-dot-warning {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #f4a261;
+  margin-left: 5px;
+  vertical-align: middle;
+}
+
+.dataset-path-inline-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.dataset-path-inline-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.dataset-empty-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(244, 162, 97, 0.4);
+  background: rgba(244, 162, 97, 0.08);
+}
+
+.dataset-empty-banner strong {
+  display: block;
+  font-size: 13px;
+  color: #f4a261;
+  margin-bottom: 2px;
+}
+
+.dataset-empty-banner p {
+  margin: 0 !important;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.dataset-empty-action-btn {
+  margin-left: auto;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid #f4a261;
+  background: rgba(244, 162, 97, 0.2);
+  color: #f4a261;
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.dataset-empty-action-btn:hover {
+  background: #f4a261;
+  color: #1a1a24;
+}
+
 .header-search {
   position: relative;
   width: min(760px, 100%);
@@ -3696,6 +3799,56 @@ body {
 .map-aoi-button.active {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.map-aoi-shapefile svg {
+  fill: none;
+}
+
+.map-aoi-shapefile.loading {
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+.map-aoi-shapefile.loading span::after {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-left: 6px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: shp-spin 0.6s linear infinite;
+  vertical-align: middle;
+}
+
+@keyframes shp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.aoi-source-badge {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+
+.aoi-source-badge.shapefile {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+}
+
+.aoi-source-badge.saved {
+  background: color-mix(in srgb, #28a745 15%, transparent);
+  color: #28a745;
 }
 
 .map-aoi-instruction {

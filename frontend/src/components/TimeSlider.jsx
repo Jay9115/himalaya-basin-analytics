@@ -1,16 +1,17 @@
 import React, { useCallback } from 'react';
+import { formatDisplayDate } from '../utils/dateUtils';
 import './TimeSlider.css';
 
-function TimeSlider({ 
-  dates, 
-  currentIndex, 
-  isPlaying, 
-  playSpeed, 
-  onDateChange, 
-  onPlayPause, 
-  onSpeedChange 
+function TimeSlider({
+  dates,
+  currentIndex,
+  isPlaying,
+  playSpeed,
+  onDateChange,
+  onPlayPause,
+  onSpeedChange
 }) {
-  
+
   const handleSliderChange = useCallback((e) => {
     const index = parseInt(e.target.value);
     onDateChange(index);
@@ -37,8 +38,8 @@ function TimeSlider({
   return (
     <div className="time-slider">
       <div className="playback-controls">
-        <button 
-          className="control-btn" 
+        <button
+          className="control-btn"
           onClick={handlePrevious}
           disabled={currentIndex === 0}
           title="Previous day"
@@ -47,9 +48,9 @@ function TimeSlider({
         >
           ‹
         </button>
-        
-        <button 
-          className="control-btn play-btn" 
+
+        <button
+          className="control-btn play-btn"
           onClick={onPlayPause}
           title={isPlaying ? 'Pause' : 'Play'}
           aria-label={isPlaying ? 'Pause' : 'Play'}
@@ -57,9 +58,9 @@ function TimeSlider({
         >
           {isPlaying ? 'Ⅱ' : '▶'}
         </button>
-        
-        <button 
-          className="control-btn" 
+
+        <button
+          className="control-btn"
           onClick={handleNext}
           disabled={currentIndex === dates.length - 1}
           title="Next day"
@@ -72,9 +73,9 @@ function TimeSlider({
 
       <div className="slider-container">
         <div className="slider-label">
-          <span>{dates[0]}</span>
-          <span className="current-date-display">{currentDate}</span>
-          <span>{dates[dates.length - 1]}</span>
+          <span>{formatDisplayDate(dates[0])}</span>
+          <span className="current-date-display">{formatDisplayDate(currentDate)}</span>
+          <span>{formatDisplayDate(dates[dates.length - 1])}</span>
         </div>
         <input
           type="range"
@@ -94,25 +95,25 @@ function TimeSlider({
 
       <div className="speed-controls">
         <span className="speed-label">Speed:</span>
-        <button 
+        <button
           className={`speed-btn ${playSpeed === 1000 ? 'active' : ''}`}
           onClick={() => handleSpeedSelect(1000)}
         >
           0.5x
         </button>
-        <button 
+        <button
           className={`speed-btn ${playSpeed === 500 ? 'active' : ''}`}
           onClick={() => handleSpeedSelect(500)}
         >
           1x
         </button>
-        <button 
+        <button
           className={`speed-btn ${playSpeed === 250 ? 'active' : ''}`}
           onClick={() => handleSpeedSelect(250)}
         >
           2x
         </button>
-        <button 
+        <button
           className={`speed-btn ${playSpeed === 100 ? 'active' : ''}`}
           onClick={() => handleSpeedSelect(100)}
         >
@@ -121,7 +122,9 @@ function TimeSlider({
       </div>
 
       <div className="date-input-container">
-        <label htmlFor="date-input">Jump to date:</label>
+        <label htmlFor="date-input">
+          Jump to date: <span className="date-format-hint">({formatDisplayDate(currentDate)})</span>
+        </label>
         <input
           id="date-input"
           type="date"
@@ -140,6 +143,7 @@ function TimeSlider({
       </div>
     </div>
   );
+
 }
 
 export default React.memo(TimeSlider);

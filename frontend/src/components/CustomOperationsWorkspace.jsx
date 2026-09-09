@@ -4,6 +4,7 @@ import * as monaco from 'monaco-editor';
 import MapView from './MapView';
 import OperationChartRenderer from './OperationChartRenderer';
 import apiService from '../services/api';
+import { formatDisplayDate } from '../utils/dateUtils';
 import './CustomOperationsWorkspace.css';
 
 loader.config({ monaco });
@@ -606,7 +607,7 @@ function CustomOperationsWorkspace({
                 Date
                 <select value={date} onChange={(event) => setDate(event.target.value)} disabled={!dates.length}>
                   {dates.map((item) => (
-                    <option key={item} value={item}>{item}</option>
+                    <option key={item} value={item}>{formatDisplayDate(item)}</option>
                   ))}
                 </select>
               </label>
@@ -616,7 +617,7 @@ function CustomOperationsWorkspace({
                   Start Date
                   <select value={startDate} onChange={(event) => setStartDate(event.target.value)} disabled={!dates.length}>
                     {dates.map((item) => (
-                      <option key={item} value={item}>{item}</option>
+                      <option key={item} value={item}>{formatDisplayDate(item)}</option>
                     ))}
                   </select>
                 </label>
@@ -624,7 +625,7 @@ function CustomOperationsWorkspace({
                   End Date
                   <select value={endDate} onChange={(event) => setEndDate(event.target.value)} disabled={!dates.length}>
                     {dates.map((item) => (
-                      <option key={item} value={item}>{item}</option>
+                      <option key={item} value={item}>{formatDisplayDate(item)}</option>
                     ))}
                   </select>
                 </label>
@@ -755,9 +756,12 @@ function CustomOperationsWorkspace({
                         <tbody>
                           {(output.rows || []).slice(0, 100).map((row, rowIndex) => (
                             <tr key={rowIndex}>
-                              {(output.columns || []).map((column) => (
-                                <td key={column}>{String(valueFromTableRow(output.columns, row, column) ?? '')}</td>
-                              ))}
+                              {(output.columns || []).map((column) => {
+                                const val = valueFromTableRow(output.columns, row, column);
+                                const colLower = String(column || '').toLowerCase();
+                                const displayVal = (colLower === 'date' || colLower.endsWith('_date')) ? formatDisplayDate(val) : String(val ?? '');
+                                return <td key={column}>{displayVal}</td>;
+                              })}
                             </tr>
                           ))}
                         </tbody>

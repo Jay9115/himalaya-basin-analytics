@@ -2,6 +2,8 @@ import React, { lazy, Suspense, useState, useEffect, useCallback, useRef, useMem
 import TimeSlider from './components/TimeSlider';
 import ElevationFilter from './components/ElevationFilter';
 import apiService from './services/api';
+import shpjs, { parseShp, parseDbf, combine as shpCombine } from 'shpjs';
+import { formatDisplayDate } from './utils/dateUtils';
 import './App.css';
 
 const MapView = lazy(() => import('./components/MapView'));
@@ -10,6 +12,8 @@ const DocumentationPage = lazy(() => import('./components/DocumentationPage'));
 const DashboardCodePanel = lazy(() => import('./components/DashboardCodePanel'));
 const ResearchToolkitPanel = lazy(() => import('./components/ResearchToolkitPanel'));
 const ProjectsHome = lazy(() => import('./components/ProjectsHome'));
+const ExportDataModal = lazy(() => import('./components/ExportDataModal'));
+const DatasetConfigModal = lazy(() => import('./components/DatasetConfigModal'));
 
 const DeferredPanelFallback = () => (
   <div className="deferred-panel-loading" role="status" aria-live="polite">
@@ -448,6 +452,88 @@ const analyzeAoiGeometry = (aoi) => {
   };
 };
 
+// ── IndexedDB helpers for shapefile polygon persistence ───────────────
+const SHAPE_DB_NAME = 'hba_shapefiles';
+const SHAPE_DB_VERSION = 1;
+const SHAPE_STORE_NAME = 'polygons';
+
+const shapefileDB = {
+  _open() {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(SHAPE_DB_NAME, SHAPE_DB_VERSION);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(SHAPE_STORE_NAME)) {
+          db.createObjectStore(SHAPE_STORE_NAME, { keyPath: 'id' });
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  },
+  async savePolygons(polygons) {
+    try {
+      const db = await this._open();
+      const tx = db.transaction(SHAPE_STORE_NAME, 'readwrite');
+      const store = tx.objectStore(SHAPE_STORE_NAME);
+      store.clear();
+      polygons.forEach((p) => store.put(p));
+      await new Promise((resolve, reject) => {
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+      db.close();
+    } catch (err) {
+      console.warn('Shapefile DB save failed:', err);
+    }
+  },
+  async loadPolygons() {
+    try {
+      const db = await this._open();
+      const tx = db.transaction(SHAPE_STORE_NAME, 'readonly');
+      const store = tx.objectStore(SHAPE_STORE_NAME);
+      const all = await new Promise((resolve, reject) => {
+        const req = store.getAll();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+      db.close();
+      return all || [];
+    } catch (err) {
+      console.warn('Shapefile DB load failed:', err);
+      return [];
+    }
+  },
+};
+
+const extractPolygonFeatures = (geojson) => {
+  const features = geojson?.type === 'FeatureCollection'
+    ? (geojson.features || [])
+    : geojson?.type === 'Feature'
+      ? [geojson]
+      : geojson?.type === 'Polygon' || geojson?.type === 'MultiPolygon'
+        ? [{ type: 'Feature', properties: {}, geometry: geojson }]
+        : [];
+  const result = [];
+  features.forEach((feature) => {
+    const geom = feature?.geometry;
+    if (!geom) return;
+    if (geom.type === 'Polygon') {
+      result.push(feature);
+    } else if (geom.type === 'MultiPolygon') {
+      // Split MultiPolygon into individual Polygon features
+      (geom.coordinates || []).forEach((coords, idx) => {
+        result.push({
+          type: 'Feature',
+          properties: { ...feature.properties, _partIndex: idx },
+          geometry: { type: 'Polygon', coordinates: coords },
+        });
+      });
+    }
+  });
+  return result;
+};
+
 function App() {
   // State management
   const [theme, setTheme] = useState(() => {
@@ -511,6 +597,11 @@ function App() {
   const [polygonDrawMode, setPolygonDrawMode] = useState(false);
   const [aoiPolygons, setAoiPolygons] = useState([]);
   const [selectedAoiId, setSelectedAoiId] = useState('');
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [datasetConfigModalOpen, setDatasetConfigModalOpen] = useState(false);
+  const [datasetConfig, setDatasetConfig] = useState(null);
+  const [shapefileLoading, setShapefileLoading] = useState(false);
+  const shapefileRestoredRef = useRef(false);
   const [subregions, setSubregions] = useState([]);
   const [subregionsLoading, setSubregionsLoading] = useState(false);
   const [selectedSubregionId, setSelectedSubregionId] = useState('');
@@ -1049,43 +1140,58 @@ function App() {
     window.addEventListener('mouseup', handleMouseUp);
   }, []);
 
-  useEffect(() => {
-    const loadHomeOptions = async () => {
-      try {
-        setDatasetLoading(true);
-        const [datasetsResponse, outcomesResponse, projectsResponse] = await Promise.all([
-          apiService.getDatasets(),
-          apiService.getOutcomes().catch(() => ({ outcomes: [] })),
-          apiService.getProjects().catch((projectError) => {
-            console.warn('Could not load saved projects:', projectError);
-            setProjectsError('Saved projects are unavailable from this backend.');
-            return { projects: [] };
-          }),
-        ]);
-        const list = datasetsResponse.datasets || [];
-        const outcomeList = outcomesResponse.outcomes || [];
-        setDatasets(list);
-        setOutcomes(outcomeList);
-        setProjects(projectsResponse.projects || []);
-        if (outcomeList.length > 0) {
-          const firstOutcome = outcomeList.find((item) => item.ready) || outcomeList[0];
-          setSelectedOutcomeId(firstOutcome.id);
-        }
-        const preferred = list.find((d) => d.id === datasetsResponse.default_dataset && d.ready);
-        const firstReady = list.find((d) => d.ready);
-        const firstAny = list[0];
-        setDatasetId((preferred || firstReady || firstAny)?.id || '');
-      } catch (err) {
-        console.error('Failed to load datasets:', err);
-        setError('Failed to load dataset list from backend.');
-      } finally {
-        setDatasetLoading(false);
-        setProjectsLoading(false);
+  const loadHomeOptions = useCallback(async () => {
+    try {
+      setDatasetLoading(true);
+      const [datasetsResponse, outcomesResponse, projectsResponse, configResponse] = await Promise.all([
+        apiService.getDatasets(),
+        apiService.getOutcomes().catch(() => ({ outcomes: [] })),
+        apiService.getProjects().catch((projectError) => {
+          console.warn('Could not load saved projects:', projectError);
+          setProjectsError('Saved projects are unavailable from this backend.');
+          return { projects: [] };
+        }),
+        apiService.getDatasetConfig().catch(() => null),
+      ]);
+      const list = datasetsResponse.datasets || [];
+      const outcomeList = outcomesResponse.outcomes || [];
+      setDatasets(list);
+      setOutcomes(outcomeList);
+      setProjects(projectsResponse.projects || []);
+      if (configResponse) {
+        setDatasetConfig(configResponse);
       }
-    };
+      if (outcomeList.length > 0) {
+        const firstOutcome = outcomeList.find((item) => item.ready) || outcomeList[0];
+        setSelectedOutcomeId(firstOutcome.id);
+      }
+      const preferred = list.find((d) => d.id === datasetsResponse.default_dataset && d.ready);
+      const firstReady = list.find((d) => d.ready);
+      const firstAny = list[0];
+      setDatasetId((preferred || firstReady || firstAny)?.id || '');
 
-    loadHomeOptions();
+      // If dataset is found empty / almost empty, open the dataset path configuration modal
+      const isDbEmpty = !firstReady || (configResponse && (configResponse.is_empty || configResponse.ready_datasets === 0));
+      if (isDbEmpty) {
+        setDatasetConfigModalOpen(true);
+      }
+    } catch (err) {
+      console.error('Failed to load datasets:', err);
+      setError('Failed to load dataset list from backend.');
+    } finally {
+      setDatasetLoading(false);
+      setProjectsLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    loadHomeOptions();
+  }, [loadHomeOptions]);
+
+  const handleDatasetPathConfigured = useCallback(async () => {
+    apiService.clearCache();
+    await loadHomeOptions();
+  }, [loadHomeOptions]);
 
   useEffect(() => {
     if (!selectedOutcome?.ready) {
@@ -1254,7 +1360,7 @@ function App() {
 
         const minYear = Number.isInteger(response.min_year) ? response.min_year : years[0];
         const maxYear = Number.isInteger(response.max_year) ? response.max_year : years[years.length - 1];
-        const defaultEndYear = Math.min(minYear + 1, maxYear);
+        const defaultEndYear = maxYear;
 
         setSelectedYearRange((prev) => {
           const restoredDashboard = projectRestoreSnapshotRef.current?.workspace?.dashboard || {};
@@ -2025,6 +2131,121 @@ function App() {
   const handleRemoveAoi = useCallback((id) => {
     setAoiPolygons((prev) => normalizeAoiPolygons(prev.filter((polygon) => polygon.id !== id)));
     setSelectedAoiId((current) => (current === id ? '' : current));
+  }, []);
+
+  // ── Shapefile loading handler ──────────────────────────────────────
+  const handleShapefileLoad = useCallback(async (fileList) => {
+    if (!fileList || fileList.length === 0) return;
+    setShapefileLoading(true);
+    try {
+      const files = Array.from(fileList);
+      let geojson = null;
+
+      // Case 1: ZIP file (contains .shp + .dbf etc)
+      const zipFile = files.find((f) => f.name.toLowerCase().endsWith('.zip'));
+      if (zipFile) {
+        const buffer = await zipFile.arrayBuffer();
+        geojson = await shpjs(buffer);
+      } else {
+        // Case 2: GeoJSON file
+        const jsonFile = files.find((f) => {
+          const lower = f.name.toLowerCase();
+          return lower.endsWith('.geojson') || lower.endsWith('.json');
+        });
+        if (jsonFile) {
+          const text = await jsonFile.text();
+          geojson = JSON.parse(text);
+        } else {
+          // Case 3: individual .shp file (with optional .dbf, .prj)
+          const shpFile = files.find((f) => f.name.toLowerCase().endsWith('.shp'));
+          const dbfFile = files.find((f) => f.name.toLowerCase().endsWith('.dbf'));
+          if (shpFile) {
+            const shpBuffer = await shpFile.arrayBuffer();
+            const dbfBuffer = dbfFile ? await dbfFile.arrayBuffer() : undefined;
+            const parsedShp = parseShp(shpBuffer);
+            const parsedDbf = dbfBuffer ? parseDbf(dbfBuffer) : [];
+            geojson = shpCombine([parsedShp, parsedDbf]);
+          }
+        }
+      }
+
+      if (!geojson) {
+        alert('Could not parse the selected file(s). Please provide a .zip, .shp, or .geojson file.');
+        return;
+      }
+
+      // Handle shpjs returning array of FeatureCollections (multi-layer zip)
+      if (Array.isArray(geojson)) {
+        geojson = {
+          type: 'FeatureCollection',
+          features: geojson.flatMap((fc) => fc?.features || []),
+        };
+      }
+
+      const polygonFeatures = extractPolygonFeatures(geojson);
+      if (polygonFeatures.length === 0) {
+        alert('No polygon geometries found in the shapefile. Only Polygon and MultiPolygon features are supported.');
+        return;
+      }
+
+      const sourceFileName = (zipFile || files.find((f) => f.name.toLowerCase().endsWith('.shp')) || files[0])?.name || 'shapefile';
+      const timestamp = Date.now();
+      const newPolygons = polygonFeatures.map((feature, idx) => {
+        const props = feature.properties || {};
+        const featureName = props.NAME || props.name || props.Name || props.LABEL || props.label || '';
+        return {
+          id: `shp-${timestamp}-${idx}`,
+          name: featureName || `${sourceFileName.replace(/\.[^.]+$/, '')}${polygonFeatures.length > 1 ? ` #${idx + 1}` : ''}`,
+          createdAt: timestamp,
+          geometry: feature.geometry,
+          metadata: {
+            source: 'shapefile',
+            sourceFile: sourceFileName,
+            properties: props,
+          },
+        };
+      });
+
+      setAoiPolygons((prev) => {
+        const merged = [...prev, ...newPolygons];
+        return normalizeAoiPolygons(merged);
+      });
+      if (newPolygons.length > 0) {
+        setSelectedAoiId(newPolygons[0].id);
+      }
+      setPolygonDrawMode(false);
+      setIsPlaying(false);
+    } catch (err) {
+      console.error('Shapefile parse error:', err);
+      alert(`Failed to load shapefile: ${err.message || 'Unknown error'}`);
+    } finally {
+      setShapefileLoading(false);
+    }
+  }, []);
+
+  // ── Persist shapefile polygons to IndexedDB ────────────────────────
+  useEffect(() => {
+    if (!shapefileRestoredRef.current) return;
+    const shapePolygons = aoiPolygons.filter(
+      (p) => p.metadata?.source === 'shapefile'
+    );
+    shapefileDB.savePolygons(shapePolygons);
+  }, [aoiPolygons]);
+
+  // ── Restore shapefile polygons from IndexedDB on mount ────────────
+  useEffect(() => {
+    if (shapefileRestoredRef.current) return;
+    shapefileRestoredRef.current = true;
+    shapefileDB.loadPolygons().then((savedPolygons) => {
+      if (savedPolygons.length === 0) return;
+      setAoiPolygons((prev) => {
+        // Avoid duplicates if already restored by project
+        const existingIds = new Set(prev.map((p) => p.id));
+        const toAdd = savedPolygons.filter((p) => !existingIds.has(p.id));
+        if (toAdd.length === 0) return prev;
+        return normalizeAoiPolygons([...prev, ...toAdd]);
+      });
+    });
   }, []);
 
   const handleYearStartChange = useCallback((value) => {
@@ -2902,7 +3123,7 @@ function App() {
       <h3>Live Summary</h3>
       <div className="info-item">
         <span className="label">Date:</span>
-        <span className="value">{currentDate}</span>
+        <span className="value">{formatDisplayDate(currentDate)}</span>
       </div>
       <div className="info-item">
         <span className="label">Variable:</span>
@@ -3146,11 +3367,35 @@ function App() {
               <section className="setup-section" aria-labelledby="dataset-heading">
                 <div className="setup-section-heading">
                   <span className="setup-step">1</span>
-                  <div>
+                  <div style={{ flex: 1 }}>
                     <h3 id="dataset-heading">Data source</h3>
                     <p>Select the collection that will drive the map, variables, and time series.</p>
                   </div>
+                  <button
+                    type="button"
+                    className="dataset-path-inline-btn"
+                    onClick={() => setDatasetConfigModalOpen(true)}
+                    title="Configure or change database folder path"
+                  >
+                    📁 Change Folder
+                  </button>
                 </div>
+                {(datasets.length === 0 || datasets.every((d) => !d.ready)) && (
+                  <div className="dataset-empty-banner">
+                    <span className="warning-icon">⚠️</span>
+                    <div>
+                      <strong>No dataset files found in current database folder.</strong>
+                      <p>Please provide the path to your dataset folder containing parquet or geotiff files.</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="dataset-empty-action-btn"
+                      onClick={() => setDatasetConfigModalOpen(true)}
+                    >
+                      Locate Dataset Folder
+                    </button>
+                  </div>
+                )}
                 <div className="dataset-options">
                   {datasets.map((dataset) => (
                     <label
@@ -3466,6 +3711,29 @@ function App() {
               >
                 Code
               </button>
+              <button
+                type="button"
+                className="dashboard-code-toggle export-data-btn"
+                onClick={() => setExportModalOpen(true)}
+                title="Export data for this ROI (temporal CSV, spatial maps)"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" style={{ width: 15, height: 15, marginRight: 4, verticalAlign: 'middle' }}>
+                  <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" />
+                </svg>
+                Export
+              </button>
+              <button
+                type="button"
+                className={`dashboard-code-toggle dataset-path-btn ${datasetConfig?.is_empty ? 'has-warning' : ''}`}
+                onClick={() => setDatasetConfigModalOpen(true)}
+                title={datasetConfig?.is_empty ? 'Warning: No datasets found. Click to configure dataset path.' : 'Configure dataset folder path'}
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" style={{ width: 15, height: 15, marginRight: 4, verticalAlign: 'middle' }}>
+                  <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
+                </svg>
+                Data Folder
+                {datasetConfig?.is_empty && <span className="dataset-dot-warning" />}
+              </button>
             </div>
           )}
         </div>
@@ -3652,7 +3920,7 @@ function App() {
                 {stats.total_dates} dates
               </span>
             )}
-            <span className="mini-status"><b>{isOutcomeMode ? 'Layer' : 'Date'}</b> {isOutcomeMode ? outcomeMapTitle : (currentDate || 'Loading')}</span>
+            <span className="mini-status"><b>{isOutcomeMode ? 'Layer' : 'Date'}</b> {isOutcomeMode ? outcomeMapTitle : (formatDisplayDate(currentDate) || 'Loading')}</span>
             <span className="mini-status"><b>Points</b> {mapPointCount.toLocaleString()}</span>
           </div>
           {activeToolPanel && (
@@ -3774,6 +4042,8 @@ function App() {
                     aoiPolygons={aoiPolygons}
                     selectedAoiId={selectedAoiId}
                     onAoiSelect={setSelectedAoiId}
+                    onShapefileLoad={handleShapefileLoad}
+                    shapefileLoading={shapefileLoading}
                   />
                 </Suspense>
                 {(selectedAnalysisItems.length > 0 || glacierViewEnabled || focusLocations.length > 0 || aoiPolygons.length > 0 || selectedSubregionId) && (
@@ -3858,6 +4128,12 @@ function App() {
                                 title="Rename polygon"
                               />
                               {polygon.role === 'roi' && <div className="layer-meta">ROI</div>}
+                              {polygon.metadata?.source === 'shapefile' && (
+                                <div className="layer-meta">
+                                  <span className="aoi-source-badge shapefile">SHP</span>
+                                  <span className="aoi-source-badge saved">Saved</span>
+                                </div>
+                              )}
                             </div>
                             <button
                               type="button"
@@ -4113,6 +4389,33 @@ function App() {
           </>
         )}
       </div>
+      {exportModalOpen && (
+        <Suspense fallback={null}>
+          <ExportDataModal
+            open={exportModalOpen}
+            onClose={() => setExportModalOpen(false)}
+            variables={variables}
+            datasets={datasets}
+            datasetId={datasetId}
+            datasetLabel={datasets.find((d) => d.id === datasetId)?.label || datasetId}
+            yearRange={activeYearRange}
+            dates={dates}
+            selectedSubregionId={selectedSubregionId}
+            selectedSubregionLabel={selectedSubregion?.label || ''}
+            roiPolygon={roiPolygon}
+            elevRange={selectedElevRange}
+          />
+        </Suspense>
+      )}
+      {datasetConfigModalOpen && (
+        <Suspense fallback={null}>
+          <DatasetConfigModal
+            open={datasetConfigModalOpen}
+            onClose={() => setDatasetConfigModalOpen(false)}
+            onPathConfigured={handleDatasetPathConfigured}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

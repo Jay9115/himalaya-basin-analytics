@@ -39,34 +39,55 @@ echo Installing/Updating Python packages...
 pip install -q -r requirements.txt
 
 echo.
-echo [2/4] Checking Parquet files...
+echo [2/4] Checking dataset files...
 cd ..\
-set "ERA5_DIR=%cd%\Database\Full_Shape_ERA5"
-set "CMIP_DIR=%cd%\Database\Full_shape_CMIP6"
-set era5_count=0
-set cmip_count=0
-
-if exist "%ERA5_DIR%" (
-    for %%f in ("%ERA5_DIR%\*.parquet") do set /a era5_count+=1
+set "CURRENT_DATASET_DIR="
+if exist "dataset_path.txt" (
+    set /p CURRENT_DATASET_DIR=<"dataset_path.txt"
 )
-if exist "%CMIP_DIR%" (
-    for %%f in ("%CMIP_DIR%\*.parquet") do set /a cmip_count+=1
+if not defined CURRENT_DATASET_DIR (
+    if exist "backend\dataset_path.txt" (
+        set /p CURRENT_DATASET_DIR=<"backend\dataset_path.txt"
+    )
 )
 
-echo ERA5 parquet files: %era5_count%
-echo CMIP6 parquet files: %cmip_count%
+set "ACTIVE_DB_DIR=%cd%\Database"
+if defined CURRENT_DATASET_DIR (
+    if exist "%CURRENT_DATASET_DIR%" (
+        set "ACTIVE_DB_DIR=%CURRENT_DATASET_DIR%"
+    )
+)
 
-if %era5_count% equ 0 (
-    if %cmip_count% equ 0 (
-        echo [WARNING] No Parquet files found for ERA5 or CMIP6.
-        echo.
-        set /p continue="Convert ERA5 + CMIP6 CSV files to Parquet now? (y/n): "
-        if /i "%continue%"=="y" (
-            cd backend
-            python convert_csv_to_parquet.py --source-dir "%ERA5_DIR%"
-            python convert_csv_to_parquet.py --source-dir "%CMIP_DIR%"
-            cd ..
+set total_db_count=0
+if exist "%ACTIVE_DB_DIR%" (
+    for /r "%ACTIVE_DB_DIR%" %%f in (*.parquet *.tif *.tiff) do (
+        set /a total_db_count+=1
+    )
+)
+
+if %total_db_count% equ 0 (
+    echo [WARNING] No dataset files (.parquet / .tif) found in: %ACTIVE_DB_DIR%
+    echo.
+    echo If your dataset folder is in another directory, enter the path below
+    echo (or press Enter to skip and configure later in browser):
+    set /p USER_DB_PATH="Dataset Folder Path: "
+    if defined USER_DB_PATH (
+        set "USER_DB_PATH=%USER_DB_PATH:"=%"
+    )
+    if defined USER_DB_PATH (
+        if exist "%USER_DB_PATH%" (
+            echo %USER_DB_PATH%> dataset_path.txt
+            echo %USER_DB_PATH%> backend\dataset_path.txt
+            set "DATABASE_DIR=%USER_DB_PATH%"
+            echo Connected to: %USER_DB_PATH%
+        ) else (
+            echo [WARNING] Directory not found: %USER_DB_PATH%
         )
+    )
+) else (
+    echo Found %total_db_count% dataset files in: %ACTIVE_DB_DIR%
+    if defined CURRENT_DATASET_DIR (
+        set "DATABASE_DIR=%CURRENT_DATASET_DIR%"
     )
 )
 

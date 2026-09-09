@@ -1,6 +1,6 @@
 param(
     [string]$SourceRoot = (Split-Path -Parent $PSCommandPath),
-    [string]$PackageRoot = "D:\ISRO-SWOT\V5_webapp_packed",
+    [string]$PackageRoot = (Join-Path (Split-Path -Parent $PSCommandPath) "WebAPP_packed"),
     [string]$BuiltRuntime = "",
     [switch]$SkipFrontendBuild,
     [switch]$SkipBackendBuild,
@@ -53,7 +53,11 @@ function Ensure-EmptyDatabaseLayout {
         "Full_shape_CMIP6",
         "SPHY_Model",
         "MOD10A1_Monthly_GeoTIFF",
+        "MOD10A1_Parquet",
+        "CHIRPS",
+        "DEM",
         "Discharge_Geopar",
+        "Research_Ready",
         "Uploaded_NC\_uploads"
     )
     foreach ($folder in $folders) {
@@ -85,7 +89,16 @@ function Ensure-WorkspaceLayout {
         [Parameter(Mandatory = $true)][string]$Root
     )
 
-    Ensure-Folder -PathValue (Join-Path $Root "HBapi\workspace\custom_operations\jobs")
+    $folders = @(
+        "HBapi\workspace\archive",
+        "HBapi\workspace\custom_operations\jobs",
+        "HBapi\workspace\custom_operations\scripts",
+        "HBapi\workspace\exports",
+        "HBapi\workspace\projects"
+    )
+    foreach ($folder in $folders) {
+        Ensure-Folder -PathValue (Join-Path $Root $folder)
+    }
 }
 
 function Invoke-Checked {
@@ -108,11 +121,24 @@ function Ensure-BuilderPython {
         [Parameter()][string]$RequestedVenvPath = ""
     )
 
-    $venvPath = $RequestedVenvPath
-    if ([string]::IsNullOrWhiteSpace($venvPath)) {
-        $venvPath = Join-Path $BuildRootPath "builder_venv"
+    # 1. If explicit venv requested, check for python.exe
+    if (-not [string]::IsNullOrWhiteSpace($RequestedVenvPath)) {
+        $candidate = Join-Path $RequestedVenvPath "Scripts\python.exe"
+        if (Test-Path -LiteralPath $candidate) {
+            Write-Host "Using requested builder venv: $candidate" -ForegroundColor Cyan
+            return $candidate
+        }
     }
 
+    # 2. Check existing dedicated clean builder venv
+    $existingVenv = "D:\ISRO-SWOT\V5_webapp_packed\_build\builder_venv\Scripts\python.exe"
+    if (Test-Path -LiteralPath $existingVenv) {
+        Write-Host "Using dedicated builder venv: $existingVenv" -ForegroundColor Green
+        return $existingVenv
+    }
+
+    # 3. Otherwise create/use isolated builder venv in build root
+    $venvPath = Join-Path $BuildRootPath "builder_venv"
     $pythonExe = Join-Path $venvPath "Scripts\python.exe"
     if (-not (Test-Path -LiteralPath $pythonExe)) {
         Write-Host "Creating isolated build venv: $venvPath" -ForegroundColor Cyan
@@ -122,11 +148,11 @@ function Ensure-BuilderPython {
     Write-Host "Installing backend build dependencies in isolated venv..." -ForegroundColor Cyan
     Invoke-Checked -Command "`"$pythonExe`" -m pip install --upgrade pip setuptools wheel" -Label "Upgrade build venv pip tooling"
     try {
-        Invoke-Checked -Command "`"$pythonExe`" -m pip install -r `"$RequirementsFile`" pyinstaller==6.19.0" -Label "Install build dependencies"
+        Invoke-Checked -Command "`"$pythonExe`" -m pip install -r `"$RequirementsFile`" duckdb pyinstaller==6.19.0" -Label "Install build dependencies"
     }
     catch {
         Write-Host "Standard dependency resolution failed, using compatibility install fallback..." -ForegroundColor Yellow
-        Invoke-Checked -Command "`"$pythonExe`" -m pip install fastapi==0.104.1 uvicorn[standard]==0.24.0 pandas==2.1.3 pyarrow==14.0.1 python-multipart==0.0.6 netCDF4==1.7.4 geopandas==1.0.1 pyogrio==0.11.0 shapely==2.1.2 rasterio==1.4.3 pyinstaller==6.19.0" -Label "Install fallback dependencies"
+        Invoke-Checked -Command "`"$pythonExe`" -m pip install fastapi==0.104.1 uvicorn[standard]==0.24.0 pandas==2.1.3 pyarrow==14.0.1 python-multipart==0.0.6 netCDF4==1.7.4 geopandas==1.0.1 pyogrio==0.11.0 shapely==2.1.2 rasterio==1.4.3 duckdb pyinstaller==6.19.0" -Label "Install fallback dependencies"
         Invoke-Checked -Command "`"$pythonExe`" -m pip install xarray==2025.11.0 --no-deps" -Label "Install xarray fallback"
     }
 
@@ -137,16 +163,25 @@ function Get-PyInstallerCommonArgs {
     param(
         [Parameter(Mandatory = $true)][string]$DistPath,
         [Parameter(Mandatory = $true)][string]$WorkPath,
-        [Parameter(Mandatory = $true)][string]$SpecPath
+        [Parameter(Mandatory = $true)][string]$SpecPath,
+        [Parameter()][string]$BackendDir = ""
     )
 
-    return @(
+    $common = @(
         "--noconfirm",
         "--clean",
         "--onedir",
         "--distpath `"$DistPath`"",
         "--workpath `"$WorkPath`"",
         "--specpath `"$SpecPath`"",
+        "--exclude-module torch",
+        "--exclude-module tensorflow",
+        "--exclude-module tensorboard",
+        "--exclude-module keras",
+        "--exclude-module torchvision",
+        "--exclude-module torchaudio",
+        "--exclude-module onnxruntime",
+        "--exclude-module transformers",
         "--hidden-import xarray",
         "--hidden-import netCDF4",
         "--hidden-import cftime",
@@ -155,14 +190,38 @@ function Get-PyInstallerCommonArgs {
         "--hidden-import shapely",
         "--hidden-import rasterio",
         "--hidden-import custom_operations.runtime",
+        "--hidden-import custom_operations.router",
+        "--hidden-import custom_operations.data_access",
+        "--hidden-import custom_operations.schemas",
+        "--hidden-import export_data",
+        "--hidden-import export_data.router",
+        "--hidden-import export_data.worker",
+        "--hidden-import export_data.schemas",
+        "--hidden-import project_workspace",
+        "--hidden-import project_workspace.repository",
+        "--hidden-import project_workspace.schemas",
+        "--hidden-import research_studio",
+        "--hidden-import research_studio.router",
+        "--hidden-import research_studio.framework_router",
+        "--hidden-import research_studio.figures",
         "--collect-all pyarrow",
         "--collect-all pandas",
         "--collect-all pyogrio",
         "--collect-all rasterio",
         "--collect-all scipy",
         "--collect-all statsmodels",
-        "--collect-all matplotlib"
+        "--collect-all matplotlib",
+        "--collect-all duckdb",
+        "--collect-all export_data",
+        "--collect-all project_workspace",
+        "--collect-all research_studio"
     )
+
+    if (-not [string]::IsNullOrWhiteSpace($BackendDir)) {
+        $common += "--paths `"$BackendDir`""
+    }
+
+    return $common
 }
 
 function Invoke-PyInstallerBuild {
@@ -174,10 +233,11 @@ function Invoke-PyInstallerBuild {
         [Parameter(Mandatory = $true)][string]$WorkPath,
         [Parameter(Mandatory = $true)][string]$SpecPath,
         [Parameter()][string]$WorkingDirectory = "",
+        [Parameter()][string]$BackendDir = "",
         [Parameter()][string[]]$ExtraArgs = @()
     )
 
-    $commonArgs = Get-PyInstallerCommonArgs -DistPath $DistPath -WorkPath $WorkPath -SpecPath $SpecPath
+    $commonArgs = Get-PyInstallerCommonArgs -DistPath $DistPath -WorkPath $WorkPath -SpecPath $SpecPath -BackendDir $BackendDir
     $args = @(
         "`"$BuilderPy`" -m PyInstaller"
         ($commonArgs -join " ")
@@ -216,6 +276,7 @@ $frontendDir = Join-Path $SourceRoot "frontend"
 $frontendDist = Join-Path $frontendDir "dist"
 $mapHandleDir = Join-Path $SourceRoot "Map_handle"
 $glacierDir = Join-Path $SourceRoot "Glacier_shp"
+$himalayaShapeDir = Join-Path $SourceRoot "Himalaya_shape"
 
 Require-Path -PathValue $SourceRoot -Label "SourceRoot"
 Require-Path -PathValue $backendDir -Label "Backend folder"
@@ -247,7 +308,7 @@ if (-not $SkipFrontendBuild) {
 }
 
 if (-not $SkipBackendBuild) {
-    Write-Host "Building backend and sandbox worker executables (PyInstaller)..." -ForegroundColor Cyan
+    Write-Host "Building backend and worker executables (PyInstaller)..." -ForegroundColor Cyan
     New-Item -ItemType Directory -Force -Path $distRoot | Out-Null
     New-Item -ItemType Directory -Force -Path $workRoot | Out-Null
     New-Item -ItemType Directory -Force -Path $specRoot | Out-Null
@@ -261,34 +322,53 @@ if (-not $SkipBackendBuild) {
         -DistPath $distRoot `
         -WorkPath $workRoot `
         -SpecPath $specRoot `
-        -WorkingDirectory $SourceRoot
+        -WorkingDirectory $SourceRoot `
+        -BackendDir $backendDir
 
-    Invoke-PyInstallerBuild `
-        -BuilderPy $builderPy `
-        -Name "sandbox_worker" `
-        -EntryScript $sandboxWorkerEntry `
-        -DistPath $distRoot `
-        -WorkPath (Join-Path $workRoot "sandbox_worker") `
-        -SpecPath $specRoot `
-        -WorkingDirectory $customOpsDir `
-        -ExtraArgs @(
-            "--hidden-import worker",
-            "--collect-all numpy"
-        )
+    $builtSandbox = Join-Path $distRoot "sandbox_worker\sandbox_worker.exe"
+    $existingSandbox = Join-Path $runtimeOut "sandbox_worker\sandbox_worker.exe"
+    if (-not (Test-Path -LiteralPath $builtSandbox) -and (Test-Path -LiteralPath $existingSandbox)) {
+        Write-Host "Reusing existing sandbox_worker runtime from $runtimeOut..." -ForegroundColor Green
+        Ensure-Folder -PathValue (Join-Path $distRoot "sandbox_worker")
+        Sync-Folder -From (Join-Path $runtimeOut "sandbox_worker") -To (Join-Path $distRoot "sandbox_worker")
+    } elseif (-not (Test-Path -LiteralPath $builtSandbox)) {
+        Invoke-PyInstallerBuild `
+            -BuilderPy $builderPy `
+            -Name "sandbox_worker" `
+            -EntryScript $sandboxWorkerEntry `
+            -DistPath $distRoot `
+            -WorkPath (Join-Path $workRoot "sandbox_worker") `
+            -SpecPath $specRoot `
+            -WorkingDirectory $customOpsDir `
+            -BackendDir $backendDir `
+            -ExtraArgs @(
+                "--hidden-import worker",
+                "--collect-all numpy"
+            )
+    }
 
-    Invoke-PyInstallerBuild `
-        -BuilderPy $builderPy `
-        -Name "large_worker" `
-        -EntryScript $largeWorkerEntry `
-        -DistPath $distRoot `
-        -WorkPath (Join-Path $workRoot "large_worker") `
-        -SpecPath $specRoot `
-        -WorkingDirectory $customOpsDir `
-        -ExtraArgs @(
-            "--hidden-import worker",
-            "--collect-all numpy",
-            "--collect-all duckdb"
-        )
+    $builtLarge = Join-Path $distRoot "large_worker\large_worker.exe"
+    $existingLarge = Join-Path $runtimeOut "large_worker\large_worker.exe"
+    if (-not (Test-Path -LiteralPath $builtLarge) -and (Test-Path -LiteralPath $existingLarge)) {
+        Write-Host "Reusing existing large_worker runtime from $runtimeOut..." -ForegroundColor Green
+        Ensure-Folder -PathValue (Join-Path $distRoot "large_worker")
+        Sync-Folder -From (Join-Path $runtimeOut "large_worker") -To (Join-Path $distRoot "large_worker")
+    } elseif (-not (Test-Path -LiteralPath $builtLarge)) {
+        Invoke-PyInstallerBuild `
+            -BuilderPy $builderPy `
+            -Name "large_worker" `
+            -EntryScript $largeWorkerEntry `
+            -DistPath $distRoot `
+            -WorkPath (Join-Path $workRoot "large_worker") `
+            -SpecPath $specRoot `
+            -WorkingDirectory $customOpsDir `
+            -BackendDir $backendDir `
+            -ExtraArgs @(
+                "--hidden-import worker",
+                "--collect-all numpy",
+                "--collect-all duckdb"
+            )
+    }
 }
 
 Require-Path -PathValue $BuiltRuntime -Label "Built runtime"
@@ -320,19 +400,29 @@ else {
     Ensure-Folder -PathValue (Join-Path $runtimeOut "Glacier_shp")
 }
 
-Write-Host "Creating empty Database layout..." -ForegroundColor Cyan
+if (Test-Path -LiteralPath $himalayaShapeDir) {
+    Write-Host "Syncing Himalaya_shape assets..." -ForegroundColor Cyan
+    Sync-Folder -From $himalayaShapeDir -To (Join-Path $runtimeOut "Himalaya_shape")
+}
+
+Write-Host "Creating empty Database layout (without dataset payloads)..." -ForegroundColor Cyan
 Ensure-EmptyDatabaseLayout -Root (Join-Path $runtimeOut "Database")
 
 Write-Host "Creating empty Outcomes layout..." -ForegroundColor Cyan
 Ensure-EmptyOutcomesLayout -Root (Join-Path $runtimeOut "Outcomes")
 
-Write-Host "Creating custom operations workspace layout..." -ForegroundColor Cyan
+Write-Host "Creating custom operations & workspace layout..." -ForegroundColor Cyan
 Ensure-WorkspaceLayout -Root $runtimeOut
 
-$startBat = @"
+$startBat = @'
 @echo off
-setlocal
-cd /d "%~dp0webapp_backend"
+setlocal enabledelayedexpansion
+title Himalaya Basin Analytics Launcher
+
+set "ROOT_DIR=%~dp0"
+set "BACKEND_DIR=%ROOT_DIR%webapp_backend"
+
+cd /d "%BACKEND_DIR%"
 if not exist "webapp_backend.exe" (
   echo ERROR: webapp_backend.exe not found.
   pause
@@ -348,63 +438,139 @@ if not exist "large_worker\large_worker.exe" (
   pause
   exit /b 1
 )
-start "Himalaya Backend" "webapp_backend.exe"
+
+REM Check existing configured dataset path
+set "CURRENT_DATASET_DIR="
+if exist "%ROOT_DIR%dataset_path.txt" (
+  set /p CURRENT_DATASET_DIR=<"%ROOT_DIR%dataset_path.txt"
+)
+if not defined CURRENT_DATASET_DIR (
+  if exist "%BACKEND_DIR%\dataset_path.txt" (
+    set /p CURRENT_DATASET_DIR=<"%BACKEND_DIR%\dataset_path.txt"
+  )
+)
+
+REM Check whether current dataset path or default Database folder has files
+set "DATASET_COUNT=0"
+if defined CURRENT_DATASET_DIR (
+  if exist "!CURRENT_DATASET_DIR!" (
+    for /r "!CURRENT_DATASET_DIR!" %%f in (*.parquet *.tif *.tiff) do (
+      set /a DATASET_COUNT+=1
+      goto :found_files
+    )
+  )
+)
+
+if exist "%BACKEND_DIR%\Database" (
+  for /r "%BACKEND_DIR%\Database" %%f in (*.parquet *.tif *.tiff) do (
+    set /a DATASET_COUNT+=1
+    goto :found_files
+  )
+)
+
+:found_files
+if !DATASET_COUNT! equ 0 (
+  echo.
+  echo ================================================================
+  echo   Himalaya Basin Analytics - Dataset Setup
+  echo ================================================================
+  echo  No dataset files (.parquet / .tif) were detected in the
+  echo  default Database directory.
+  echo.
+  echo  If you have your datasets on another drive or folder, please
+  echo  enter the full path below (e.g. D:\ISRO-SWOT\Database):
+  echo.
+  echo  Or press [ENTER] to skip and configure it later in the WebApp.
+  echo ----------------------------------------------------------------
+  set /p USER_PATH="Enter Dataset Path: "
+  if defined USER_PATH (
+    set "USER_PATH=!USER_PATH:"=!"
+  )
+  if defined USER_PATH (
+    if exist "!USER_PATH!" (
+      echo [OK] Valid path entered: !USER_PATH!
+      echo !USER_PATH!> "%ROOT_DIR%dataset_path.txt"
+      echo !USER_PATH!> "%BACKEND_DIR%\dataset_path.txt"
+      set "DATABASE_DIR=!USER_PATH!"
+      echo Configured successfully.
+    ) else (
+      echo [WARNING] Directory not found: !USER_PATH!
+      echo Starting with default settings (configure anytime in browser).
+      timeout /t 3 >nul
+    )
+  ) else (
+    echo Starting with default settings (configure anytime in browser).
+  )
+  echo.
+) else (
+  if defined CURRENT_DATASET_DIR (
+    set "DATABASE_DIR=!CURRENT_DATASET_DIR!"
+  )
+)
+
+echo Starting backend services...
+start "Himalaya Basin Analytics" "webapp_backend.exe"
 timeout /t 4 >nul
 start "" "http://127.0.0.1:8000"
-echo App started at http://127.0.0.1:8000
+echo =======================================================
+echo  Himalaya Basin Analytics WebApp is running!
+echo  URL: http://127.0.0.1:8000
+echo  Press any key or run STOP_APP.bat to stop the app.
+echo =======================================================
 pause
-"@
+'@
 
 $stopBat = @"
 @echo off
+echo Stopping Himalaya Basin Analytics WebApp...
 taskkill /IM webapp_backend.exe /F >nul 2>&1
 taskkill /IM sandbox_worker.exe /F >nul 2>&1
 taskkill /IM large_worker.exe /F >nul 2>&1
 echo App stopped.
+timeout /t 2 >nul
 "@
 
 $readmeTxt = @"
-Himalaya Basin Analytics V5 - Offline Portable Bundle
-=====================================================
+Himalaya Basin Analytics - Offline Portable Bundle
+===================================================
 
-Run:
+This packed directory contains the complete standalone Himalaya Basin Analytics WebApp
+including the compiled FastAPI backend, worker engines, full frontend bundle, offline
+map/PMTiles assets, and workspace directories.
+
+HOW TO RUN:
   1) Double-click START_APP.bat
-  2) Browser opens http://127.0.0.1:8000
-  3) Use STOP_APP.bat to close the app
+  2) The backend will start automatically and launch http://127.0.0.1:8000 in your browser.
+  3) To stop the application, double-click STOP_APP.bat.
 
-Included:
-  - Compiled backend executable and runtime
-  - Monaco sandbox worker executables (sandbox_worker, large_worker)
-  - Built frontend files
-  - Offline map assets from Map_handle
-  - Glacier_shp assets when present in source build
-  - Empty Database and Outcomes folders for later data copy
+FEATURES INCLUDED:
+  - Basin-wide temperature, precipitation & discharge visualization
+  - MapView with India Admin & Upper Indus PMTiles basemaps
+  - Export Data module (Temporal CSV, Spatial GeoTIFF/CSV, dataset switcher, variable selector)
+  - Custom Operations (Monaco Editor Python code execution via sandbox & large workers)
+  - Research Studio & Project Workspace management
+  - Shapefile upload & ROI clipping
 
-Not included:
-  - Dataset parquet/geotiff payloads (copy into webapp_backend\Database)
-  - Precomputed outcome payloads (copy into webapp_backend\Outcomes)
+DATABASE / DATASET PAYLOADS:
+  This portable bundle is packed without the multi-gigabyte dataset files.
+  To enable full data queries for specific datasets, copy their parquet/geotiff files into:
+    webapp_backend\Database\
+      - Full_Shape_ERA5\        (ERA5 Parquet files)
+      - Full_shape_CMIP6\       (CMIP6 Parquet files)
+      - SPHY_Model\             (SPHY Model Parquet files)
+      - CHIRPS\                 (CHIRPS Precipitation Parquet files)
+      - MOD10A1_Parquet\        (MOD10A1 Parquet files)
+      - Discharge_Geopar\       (River network GeoParquet files)
+      - Uploaded_NC\            (NetCDF custom uploaded datasets)
 
-Folder structure:
-  webapp_backend\
-    webapp_backend.exe
-    sandbox_worker\sandbox_worker.exe
-    large_worker\large_worker.exe
-    frontend_dist\
-    Map_handle\
-    Glacier_shp\
-    Database\
-    Outcomes\
-    HBapi\workspace\custom_operations\
-
-Notes:
-  - No Python/Node installation is required on target Windows machine.
-  - Keep runtime folders together with webapp_backend.exe.
-  - Custom Python code from the Monaco editor runs through the bundled worker executables.
+NO INSTALLATION REQUIRED:
+  - No Python or Node.js installation is required on the target machine.
+  - All runtimes, DLLs, and dependencies are bundled within webapp_backend\.
 "@
 
 Set-Content -Path (Join-Path $PackageRoot "START_APP.bat") -Value $startBat -Encoding ASCII
 Set-Content -Path (Join-Path $PackageRoot "STOP_APP.bat") -Value $stopBat -Encoding ASCII
-Set-Content -Path (Join-Path $PackageRoot "README_OFFLINE.txt") -Value $readmeTxt -Encoding ASCII
+Set-Content -Path (Join-Path $PackageRoot "README.txt") -Value $readmeTxt -Encoding ASCII
 
 if (-not $KeepBuildArtifacts) {
     if (Test-Path -LiteralPath $buildRoot) {

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { formatDisplayDate, formatDisplayDateTime } from '../utils/dateUtils';
 import './SnapshotLayout.css';
 
 const PAGE_SIZES = {
@@ -66,7 +67,7 @@ const parseCustomVariables = (source) => Object.fromEntries(
 
 const buildExpressionVariables = (settings, metadata = {}) => ({
   ...parseCustomVariables(settings.customVariables),
-  date: metadata.currentDate || '',
+  date: formatDisplayDate(metadata.currentDate) || '',
   variable: metadata.variableLabel || '',
   points: Number(metadata.pointCount || 0).toLocaleString(),
   min: Number(metadata.legendRange?.min ?? 0).toFixed(2),
@@ -75,7 +76,7 @@ const buildExpressionVariables = (settings, metadata = {}) => ({
   page: metadata.page || 1,
   pages: metadata.pages || 1,
   scale: metadata.scaleInfo?.label || '',
-  now: new Date().toLocaleDateString(),
+  now: formatDisplayDate(new Date()),
 });
 
 const resolveTemplate = (template, variables) => String(template || '').replace(
@@ -455,7 +456,7 @@ async function composeLayout(sourceCanvas, settings, metadata, preview = false) 
   }
   if (settings.timestamp) {
     context.textAlign = 'right';
-    context.fillText(`Created ${new Date().toLocaleString()}`, canvas.width - margin, footerY);
+    context.fillText(`Created ${formatDisplayDateTime(new Date())}`, canvas.width - margin, footerY);
   }
   return canvas;
 }
@@ -510,7 +511,7 @@ async function composeMetadataPage(settings, metadata) {
   context.strokeRect(margin, margin, canvas.width - (margin * 2), canvas.height - (margin * 2));
   context.fillStyle = '#6b7280';
   context.font = `500 ${Math.round(2.7 * unit)}px system-ui, sans-serif`;
-  context.fillText(`Generated ${new Date().toLocaleString()} · Page ${metadata.page || 1} of ${metadata.pages || 1}`, margin, canvas.height - margin + (2 * unit));
+  context.fillText(`Generated ${formatDisplayDateTime(new Date())} · Page ${metadata.page || 1} of ${metadata.pages || 1}`, margin, canvas.height - margin + (2 * unit));
   return canvas;
 }
 

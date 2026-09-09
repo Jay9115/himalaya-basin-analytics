@@ -480,6 +480,50 @@ class APIService {
     return `${base}${path}`;
   }
 
+  // ── Export Data ──────────────────────────────────────────────
+
+  async startExport(payload) {
+    const response = await this.client.post('/export/start', payload, { timeout: 0 });
+    return response.data;
+  }
+
+  async getExportStatus(jobId) {
+    const response = await this.client.get(`/export/status/${encodeURIComponent(jobId)}`);
+    return response.data;
+  }
+
+  async cancelExport(jobId) {
+    const response = await this.client.post(`/export/cancel/${encodeURIComponent(jobId)}`);
+    return response.data;
+  }
+
+  getExportDownloadUrl(jobId) {
+    if (!jobId) return '';
+    const base = this.client.defaults.baseURL.replace(/\/+$/, '');
+    return `${base}/export/download/${encodeURIComponent(jobId)}`;
+  }
+
+  async getExportFiles(jobId) {
+    const response = await this.client.get(`/export/files/${encodeURIComponent(jobId)}`);
+    return response.data;
+  }
+
+  getExportFileUrl(jobId, filePath) {
+    if (!jobId || !filePath) return '';
+    const base = this.client.defaults.baseURL.replace(/\/+$/, '');
+    return `${base}/export/file/${encodeURIComponent(jobId)}?file_path=${encodeURIComponent(filePath)}`;
+  }
+
+  async getDatasetConfig() {
+    const response = await this.client.get('/dataset-config');
+    return response.data;
+  }
+
+  async setDatasetPath(path) {
+    const response = await this.client.post('/dataset-config/set-path', { path });
+    return response.data;
+  }
+
   clearCache() {
     this.cache.clear();
     this.cacheWeight = 0;

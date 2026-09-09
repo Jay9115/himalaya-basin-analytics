@@ -1,10 +1,11 @@
-import React, { lazy, Suspense, useMemo, useRef, useState, useCallback, useEffect } from 'react';
+import React, { lazy, Suspense, useMemo, useRef, useState, useCallback, useEffect, useImperativeHandle } from 'react';
 import DeckGL from '@deck.gl/react';
 import { GeoJsonLayer, IconLayer, ScatterplotLayer } from '@deck.gl/layers';
 import { Map, Marker } from 'react-map-gl/maplibre';
 import maplibregl from 'maplibre-gl';
 import { Protocol } from 'pmtiles';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import { formatDisplayDate } from '../utils/dateUtils';
 
 const SnapshotLayout = lazy(() => import('./SnapshotLayout'));
 
@@ -372,6 +373,8 @@ function MapView({
   aoiPolygons = [],
   selectedAoiId = '',
   onAoiSelect,
+  onShapefileLoad,
+  shapefileLoading = false,
 }) {
   const lightStyleOverride = import.meta.env.VITE_MAP_STYLE_LIGHT;
   const darkStyleOverride = import.meta.env.VITE_MAP_STYLE_DARK;
@@ -418,6 +421,7 @@ function MapView({
   const [glacierGeoJson, setGlacierGeoJson] = useState(null);
   const [glacierMeta, setGlacierMeta] = useState(null);
   const [draftAoiPoints, setDraftAoiPoints] = useState([]);
+  const shapefileInputRef = useRef(null);
   const glacierAbortRef = useRef(null);
   const viewStateRef = useRef(viewState);
   const atlasOriginalViewRef = useRef(null);
@@ -1262,7 +1266,7 @@ function MapView({
             </div>
             <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; font-size: 13px;">
               <span style="color: var(--text-muted);">Date:</span>
-              <span>${props.date || currentDate}</span>
+              <span>${formatDisplayDate(props.date || currentDate)}</span>
               <span style="color: var(--text-muted);">${variableLabel || props.variable || 'Value'}:</span>
               <span style="font-weight: bold;">${Number.isFinite(value) ? value.toFixed(2) : 'N/A'}</span>
               <span style="color: var(--text-muted);">Coordinates:</span>
@@ -1343,7 +1347,7 @@ function MapView({
           </div>
           <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; font-size: 13px;">
             <span style="color: var(--text-muted);">Date:</span>
-            <span>${currentDate}</span>
+            <span>${formatDisplayDate(currentDate)}</span>
             
             <span style="color: var(--text-muted);">${variableLabel || 'Value'}:</span>
             <span style="color: var(--text); font-weight: bold;">
@@ -1777,6 +1781,31 @@ function MapView({
           </svg>
           <span>{polygonDrawEnabled ? 'Cancel' : 'Polygon'}</span>
         </button>
+        <button
+          type="button"
+          className={`map-aoi-button map-aoi-shapefile ${shapefileLoading ? 'loading' : ''}`}
+          onClick={() => shapefileInputRef.current?.click()}
+          title="Load polygon boundary from a Shapefile (.shp/.zip)"
+          disabled={shapefileLoading}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Zm-1 2 5 5h-5V4ZM9 13l3-3 3 3m-3-3v9" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span>{shapefileLoading ? 'Loading…' : 'Shapefile'}</span>
+        </button>
+        <input
+          ref={shapefileInputRef}
+          type="file"
+          accept=".shp,.dbf,.prj,.shx,.zip,.geojson,.json"
+          multiple
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            if (e.target.files?.length) {
+              onShapefileLoad?.(e.target.files);
+            }
+            e.target.value = '';
+          }}
+        />
         {polygonDrawEnabled && (
           <div className="map-aoi-instruction">
             {draftAoiPoints.length < 3
@@ -1870,7 +1899,7 @@ function MapView({
         zIndex: 11,
         pointerEvents: 'none',
       }}>
-        {analysisMode === 'hotspot' ? 'Hotspot Analysis' : `${currentDate}`}
+        {analysisMode === 'hotspot' ? 'Hotspot Analysis' : formatDisplayDate(currentDate)}
       </div>}
 
       {!selectionOnly && snapshotOpen && (

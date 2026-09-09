@@ -32,6 +32,17 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
+def format_timestamp_indian(iso_str: Optional[str]) -> Optional[str]:
+    if not iso_str:
+        return None
+    try:
+        clean = str(iso_str).replace("Z", "+00:00")
+        dt = datetime.fromisoformat(clean)
+        return dt.strftime("%d-%m-%Y %H:%M:%S")
+    except Exception:
+        return str(iso_str)
+
+
 class ProjectRepository:
     """Small, atomic, filesystem-backed repository.
 
@@ -95,7 +106,14 @@ class ProjectRepository:
         metadata_path = project_dir / "project.json"
         if not metadata_path.exists():
             raise ProjectNotFoundError(project_dir.name)
-        return self._read_json(metadata_path)
+        data = self._read_json(metadata_path)
+        if "created_at" in data:
+            data["created_at_display"] = format_timestamp_indian(data.get("created_at"))
+        if "updated_at" in data:
+            data["updated_at_display"] = format_timestamp_indian(data.get("updated_at"))
+        if "last_opened_at" in data:
+            data["last_opened_at_display"] = format_timestamp_indian(data.get("last_opened_at"))
+        return data
 
     @staticmethod
     def _project_file(project_dir: Path, value: Any, fallback: str) -> Path:

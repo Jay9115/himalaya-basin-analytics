@@ -1,0 +1,43 @@
+{
+  "layer": "DISTRICT_HQ",
+  "conversion_timestamp_utc": "2026-07-13T13:58:15.496557+00:00",
+  "source": {
+    "file": "D:\\ISRO-SWOT\\Map_handle_backup\\India_Shape_downloaded\\DISTRICT_HQ.shp",
+    "total_size_bytes": 307168
+  },
+  "output": {
+    "parquet_file": "D:\\ISRO-SWOT\\Webapp\\himalaya-basin-analytics\\Map_handle\\Indian_Map_Geopar\\DISTRICT_HQ.parquet",
+    "parquet_size_bytes": 87202,
+    "compression": "snappy",
+    "geometry_encoding": "WKB",
+    "xml_sidecar_copied": true
+  },
+  "verification": {
+    "row_count": 651,
+    "columns": [
+      "OBJECTID",
+      "AREA",
+      "PERIMETER",
+      "INDIADPT_",
+      "INDIADPT_I",
+      "HQ",
+      "TOWN",
+      "STATE",
+      "TALUK",
+      "DISTRICT",
+      "geometry"
+    ],
+    "crs": "{\"$schema\": \"https://proj.org/schemas/v0.7/projjson.schema.json\", \"type\": \"ProjectedCRS\", \"name\": \"LCC_WGS84\", \"base_crs\": {\"name\": \"WGS 84\", \"datum\": {\"type\": \"GeodeticReferenceFrame\", \"name\": \"World Geodetic System 1984\", \"ellipsoid\": {\"name\": \"WGS 84\", \"semi_major_axis\": 6378137, \"inverse_flattening\": 298.257223563}, \"id\": {\"authority\": \"EPSG\", \"code\": 6326}}, \"coordinate_system\": {\"subtype\": \"ellipsoidal\", \"axis\": [{\"name\": \"Longitude\", \"abbreviation\": \"lon\", \"direction\": \"east\", \"unit\": {\"type\": \"AngularUnit\", \"name\": \"Degree\", \"conversion_factor\": 0.0174532925199433}}, {\"name\": \"Latitude\", \"abbreviation\": \"lat\", \"direction\": \"north\", \"unit\": {\"type\": \"AngularUnit\", \"name\": \"Degree\", \"conversion_factor\": 0.0174532925199433}}]}}, \"conversion\": {\"name\": \"unnamed\", \"method\": {\"name\": \"Lambert Conic Conformal (2SP)\", \"id\": {\"authority\": \"EPSG\", \"code\": 9802}}, \"parameters\": [{\"name\": \"Latitude of false origin\", \"value\": 24, \"unit\": {\"type\": \"AngularUnit\", \"name\": \"Degree\", \"conversion_factor\": 0.0174532925199433}, \"id\": {\"authority\": \"EPSG\", \"code\": 8821}}, {\"name\": \"Longitude of false origin\", \"value\": 80, \"unit\": {\"type\": \"AngularUnit\", \"name\": \"Degree\", \"conversion_factor\": 0.0174532925199433}, \"id\": {\"authority\": \"EPSG\", \"code\": 8822}}, {\"name\": \"Latitude of 1st standard parallel\", \"value\": 12.472944, \"unit\": {\"type\": \"AngularUnit\", \"name\": \"Degree\", \"conversion_factor\": 0.0174532925199433}, \"id\": {\"authority\": \"EPSG\", \"code\": 8823}}, {\"name\": \"Latitude of 2nd standard parallel\", \"value\": 35.172806, \"unit\": {\"type\": \"AngularUnit\", \"name\": \"Degree\", \"conversion_factor\": 0.0174532925199433}, \"id\": {\"authority\": \"EPSG\", \"code\": 8824}}, {\"name\": \"Easting at false origin\", \"value\": 4000000, \"unit\": \"metre\", \"id\": {\"authority\": \"EPSG\", \"code\": 8826}}, {\"name\": \"Northing at false origin\", \"value\": 4000000, \"unit\": \"metre\", \"id\": {\"authority\": \"EPSG\", \"code\": 8827}}]}, \"coordinate_system\": {\"subtype\": \"Cartesian\", \"axis\": [{\"name\": \"Easting\", \"abbreviation\": \"\", \"direction\": \"east\", \"unit\": \"metre\"}, {\"name\": \"Northing\", \"abbreviation\": \"\", \"direction\": \"north\", \"unit\": \"metre\"}]}}",
+    "geometry_types": [
+      "Point"
+    ],
+    "bounds": {
+      "minx": -1.7976931348623157e+308,
+      "miny": -1.7976931348623157e+308,
+      "maxx": 5620530.793711118,
+      "maxy": 5161682.463394288
+    },
+    "null_geometries": 0,
+    "all_checks_passed": true
+  }
+}

@@ -53,13 +53,24 @@ def _quote_string(value: str) -> str:
     return "'" + str(value).replace("'", "''") + "'"
 
 
+def _parse_flexible_date(value: str) -> datetime:
+    raw = str(value or "").strip()
+    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(raw, fmt)
+        except ValueError:
+            pass
+    return datetime.strptime(raw, "%Y-%m-%d")
+
+
 def _date_start(value: str) -> str:
-    return datetime.strptime(value, "%Y-%m-%d").strftime("%Y-%m-%d 00:00:00")
+    return _parse_flexible_date(value).strftime("%Y-%m-%d 00:00:00")
 
 
 def _date_after(value: str) -> str:
-    parsed = datetime.strptime(value, "%Y-%m-%d") + timedelta(days=1)
+    parsed = _parse_flexible_date(value) + timedelta(days=1)
     return parsed.strftime("%Y-%m-%d 00:00:00")
+
 
 
 def _points_in_ring(lons: np.ndarray, lats: np.ndarray, ring: np.ndarray) -> np.ndarray:

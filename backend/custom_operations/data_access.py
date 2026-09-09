@@ -13,10 +13,13 @@ from .schemas import OperationSelection
 def _parse_date(value: Optional[str], field_name: str) -> Optional[str]:
     if value is None:
         return None
-    try:
-        return datetime.strptime(value, "%Y-%m-%d").strftime("%Y-%m-%d")
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=f"{field_name} must use YYYY-MM-DD format") from exc
+    raw = value.strip()
+    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(raw, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            pass
+    raise HTTPException(status_code=400, detail=f"{field_name} must use DD-MM-YYYY or YYYY-MM-DD format")
 
 
 def _unique_preserve_order(values: List[str]) -> List[str]:

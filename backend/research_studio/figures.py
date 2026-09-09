@@ -49,8 +49,10 @@ class FigureService:
         self.boundary_path = self.app_root / "Himalaya_shape" / "him_watershed.shp"
         self.dem_path = self.app_root / "Database" / "DEM" / "Himalaya_SRTM_DEM-0000000000-0000000000.parquet"
         self.countries_path = self.app_root / "Map_handle" / "ne_110m_admin_0_countries.zip"
-        workspace = self.app_root.parents[1]
+        workspace = self.app_root.parents[1] if len(self.app_root.parents) > 1 else self.app_root
         self.glacier_paths = [
+            self.app_root / "Glacier_shp" / "RGI2000-v7.0-G-14_south_asia_west" / "RGI2000-v7.0-G-14_south_asia_west.shp",
+            self.app_root / "Glacier_shp" / "RGI2000-v7.0-G-15_south_asia_east" / "RGI2000-v7.0-G-15_south_asia_east.shp",
             workspace / "Map_handle_backup" / "Glacier_shp" / "RGI2000-v7.0-G-14_south_asia_west" / "RGI2000-v7.0-G-14_south_asia_west.shp",
             workspace / "Map_handle_backup" / "Glacier_shp" / "RGI2000-v7.0-G-15_south_asia_east" / "RGI2000-v7.0-G-15_south_asia_east.shp",
         ]

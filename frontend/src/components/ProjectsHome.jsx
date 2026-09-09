@@ -1,14 +1,11 @@
 import React, { useMemo, useState } from 'react';
+import { formatDisplayDateTime } from '../utils/dateUtils';
 
 const formatUpdated = (value) => {
   if (!value) return 'Not saved yet';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(date);
+  return formatDisplayDateTime(value, false);
 };
+
 
 function ProjectsHome({
   projects,

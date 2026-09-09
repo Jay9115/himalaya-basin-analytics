@@ -10,6 +10,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { formatDisplayDate, formatDateRange } from '../utils/dateUtils';
 import './TempGraph.css';
 
 const SERIES_COLORS = [
@@ -206,7 +207,7 @@ function TempGraph({ data, currentDate, variableLabel, series = [], showPointSta
 
     return (
       <div className="custom-tooltip">
-        <p className="tooltip-date">{tooltipDate}</p>
+        <p className="tooltip-date">{formatDisplayDate(tooltipDate)}</p>
         {payload.map((item) => {
           const seriesItem = chartSeries.find((seriesItem) => seriesItem.key === item.dataKey);
           const rawValue = point[item.dataKey];
@@ -244,7 +245,7 @@ function TempGraph({ data, currentDate, variableLabel, series = [], showPointSta
         <div className="graph-title-block">
           <h3>{hasMultipleSeries ? 'Basin Mean Variable Comparison' : `Basin Mean ${label} Over Time`}</h3>
           <span className="graph-subtitle">
-            {zoomRange ? `${zoomRange.start} to ${zoomRange.end}` : `${visibleData.length} days`}
+            {zoomRange ? formatDateRange(zoomRange.start, zoomRange.end) : `${visibleData.length} days`}
           </span>
         </div>
         <div className="graph-actions">
@@ -329,6 +330,7 @@ function TempGraph({ data, currentDate, variableLabel, series = [], showPointSta
           <CartesianGrid strokeDasharray="2 4" stroke="var(--plot-grid)" vertical={false} />
           <XAxis
             dataKey="date"
+            tickFormatter={formatDisplayDate}
             stroke="var(--plot-axis)"
             tick={{ fill: 'var(--plot-axis)', fontSize: 11 }}
             tickLine={{ stroke: 'var(--plot-axis)' }}

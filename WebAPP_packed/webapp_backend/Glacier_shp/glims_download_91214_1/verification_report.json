@@ -1,0 +1,62 @@
+[
+  {
+    "layer": "glims_images",
+    "source": "D:\\ISRO-SWOT\\Webapp\\himalaya-basin-analytics\\Glacier_shp\\glims_download_91214\\glims_images.shp",
+    "output": "D:\\ISRO-SWOT\\Webapp\\himalaya-basin-analytics\\Glacier_shp\\glims_download_91214_1\\glims_images.parquet",
+    "rows": 796,
+    "same_rows": true,
+    "same_columns": true,
+    "source_crs": "EPSG:4326",
+    "output_crs_equivalent_to_source": true,
+    "same_bounds": true,
+    "same_geometry_wkb": true,
+    "same_attribute_values_as_strings": true,
+    "source_shp_size_bytes": 28756,
+    "output_parquet_size_bytes": 18899
+  },
+  {
+    "layer": "glims_lines",
+    "source": "D:\\ISRO-SWOT\\Webapp\\himalaya-basin-analytics\\Glacier_shp\\glims_download_91214\\glims_lines.shp",
+    "output": "D:\\ISRO-SWOT\\Webapp\\himalaya-basin-analytics\\Glacier_shp\\glims_download_91214_1\\glims_lines.parquet",
+    "rows": 0,
+    "same_rows": true,
+    "same_columns": true,
+    "source_crs": "EPSG:4326",
+    "output_crs_equivalent_to_source": true,
+    "same_bounds": true,
+    "same_geometry_wkb": true,
+    "same_attribute_values_as_strings": true,
+    "source_shp_size_bytes": 100,
+    "output_parquet_size_bytes": 13201
+  },
+  {
+    "layer": "glims_points",
+    "source": "D:\\ISRO-SWOT\\Webapp\\himalaya-basin-analytics\\Glacier_shp\\glims_download_91214\\glims_points.shp",
+    "output": "D:\\ISRO-SWOT\\Webapp\\himalaya-basin-analytics\\Glacier_shp\\glims_download_91214_1\\glims_points.parquet",
+    "rows": 138301,
+    "same_rows": true,
+    "same_columns": true,
+    "source_crs": "EPSG:4326",
+    "output_crs_equivalent_to_source": true,
+    "same_bounds": true,
+    "same_geometry_wkb": true,
+    "same_attribute_values_as_strings": true,
+    "source_shp_size_bytes": 4978936,
+    "output_parquet_size_bytes": 1534765
+  },
+  {
+    "layer": "glims_polygons",
+    "source": "D:\\ISRO-SWOT\\Webapp\\himalaya-basin-analytics\\Glacier_shp\\glims_download_91214\\glims_polygons.shp",
+    "output": "D:\\ISRO-SWOT\\Webapp\\himalaya-basin-analytics\\Glacier_shp\\glims_download_91214_1\\glims_polygons.parquet",
+    "rows": 291402,
+    "same_rows": true,
+    "same_columns": true,
+    "source_crs": "EPSG:4326",
+    "output_crs_equivalent_to_source": true,
+    "same_bounds": true,
+    "same_geometry_wkb": true,
+    "same_attribute_values_as_strings": true,
+    "source_shp_size_bytes": 530769832,
+    "output_parquet_size_bytes": 454804794
+  }
+]

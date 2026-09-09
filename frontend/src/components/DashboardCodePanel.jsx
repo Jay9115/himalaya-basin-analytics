@@ -12,6 +12,7 @@ import * as monaco from 'monaco-editor';
 import apiService from '../services/api';
 import llmService from '../services/llmService';
 import OperationChartRenderer from './OperationChartRenderer';
+import { formatDisplayDate } from '../utils/dateUtils';
 import './DashboardCodePanel.css';
 
 loader.config({ monaco });
@@ -727,9 +728,12 @@ function DashboardCodePanel({
                   <tbody>
                     {(output.rows || []).slice(0, 100).map((row, rowIndex) => (
                       <tr key={rowIndex}>
-                        {(output.columns || []).map((column) => (
-                          <td key={column}>{String(tableValue(output.columns, row, column) ?? '')}</td>
-                        ))}
+                        {(output.columns || []).map((column) => {
+                          const val = tableValue(output.columns, row, column);
+                          const colLower = String(column || '').toLowerCase();
+                          const displayVal = (colLower === 'date' || colLower.endsWith('_date')) ? formatDisplayDate(val) : String(val ?? '');
+                          return <td key={column}>{displayVal}</td>;
+                        })}
                       </tr>
                     ))}
                   </tbody>
@@ -782,7 +786,7 @@ function DashboardCodePanel({
       <div className="dashboard-code-note">
         <div>
           <strong>{panelMode === 'code' ? 'HB Code' : 'HB Chatbot'}</strong>
-          <span>{datasetLabel || datasetId} | {selectedVariable || 'variable'} | {currentDate || 'date'}</span>
+          <span>{datasetLabel || datasetId} | {selectedVariable || 'variable'} | {formatDisplayDate(currentDate) || 'date'}</span>
           {selectedSubregionLabel && <span>{selectedSubregionLabel}</span>}
         </div>
         <div className="dashboard-code-note-actions">
@@ -862,10 +866,10 @@ function DashboardCodePanel({
                 {dateMode === 'range' && (
                   <div className="dashboard-code-range">
                     <select value={rangeStartDate} onChange={(event) => setRangeStartDate(event.target.value)}>
-                      {(dates || []).map((item) => <option key={item} value={item}>{item}</option>)}
+                      {(dates || []).map((item) => <option key={item} value={item}>{formatDisplayDate(item)}</option>)}
                     </select>
                     <select value={rangeEndDate} onChange={(event) => setRangeEndDate(event.target.value)}>
-                      {(dates || []).map((item) => <option key={item} value={item}>{item}</option>)}
+                      {(dates || []).map((item) => <option key={item} value={item}>{formatDisplayDate(item)}</option>)}
                     </select>
                   </div>
                 )}
