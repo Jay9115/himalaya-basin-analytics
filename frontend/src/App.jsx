@@ -341,7 +341,6 @@ const parseCoordinates = (text) => {
   return null;
 };
 
-const MAX_POLYGON_VERTICES = 500;
 const GLACIER_LAYER_VARIABLE = '__glacier_outlines__';
 const GRAPH_FETCH_CONCURRENCY = 2;
 
@@ -352,7 +351,7 @@ const normalizeAoiPolygon = (polygon, index = 0) => {
     .slice(0, -1)
     .map((coord) => [Number(coord?.[0]), Number(coord?.[1])])
     .filter(([lon, lat]) => Number.isFinite(lon) && Number.isFinite(lat));
-  if (vertices.length < 3 || vertices.length > MAX_POLYGON_VERTICES) return null;
+  if (vertices.length < 3) return null;
   const closedRing = [...vertices, vertices[0]];
   const normalized = {
     id: String(polygon.id || `aoi-${Date.now()}-${index}`),
@@ -437,10 +436,10 @@ const analyzeAoiGeometry = (aoi) => {
     perimeterKm,
     centroid,
     bounds: {
-      minLat: Math.min(...lats),
-      maxLat: Math.max(...lats),
-      minLon: Math.min(...lons),
-      maxLon: Math.max(...lons),
+      minLat: lats.reduce((min, value) => Math.min(min, value), Infinity),
+      maxLat: lats.reduce((max, value) => Math.max(max, value), -Infinity),
+      minLon: lons.reduce((min, value) => Math.min(min, value), Infinity),
+      maxLon: lons.reduce((max, value) => Math.max(max, value), -Infinity),
     },
     geometryType: aoi?.geometry?.type || 'Polygon',
     focus,
@@ -1369,7 +1368,9 @@ function App() {
           const restoredEnd = Number(restoredRange?.end);
           const hasRestoredSelection = Number.isInteger(restoredStart) && Number.isInteger(restoredEnd);
           const hasExistingSelection = Number.isInteger(prev.start) && Number.isInteger(prev.end);
-          const currentStart = hasRestoredSelection ? restoredStart : hasExistingSelection ? prev.start : minYear;
+          // Load one year initially; the hosted backend may need to fetch its
+          // parquet files on a cold request. Users can expand the range later.
+          const currentStart = hasRestoredSelection ? restoredStart : hasExistingSelection ? prev.start : defaultEndYear;
           const currentEnd = hasRestoredSelection ? restoredEnd : hasExistingSelection ? prev.end : defaultEndYear;
           const nextStart = Math.min(Math.max(currentStart, minYear), maxYear);
           const nextEnd = Math.min(Math.max(currentEnd, minYear), maxYear);
@@ -1475,7 +1476,7 @@ function App() {
 
       } catch (err) {
         console.error('Initialization error:', err);
-        setError('Failed to connect to backend. Please ensure the FastAPI server is running on port 8000.');
+        setError('Failed to load dataset data from the backend. Please retry in a moment.');
         setLoading(false);
       }
     };

@@ -7,13 +7,15 @@ const isLocalBrowser = typeof window !== 'undefined'
 const DEFAULT_API_BASE_URL = (import.meta.env.DEV || isLocalBrowser)
   ? 'http://127.0.0.1:8000'
   : 'https://jay9115-himalaya-web-backend.hf.space';
-const API_BASE_URL = import.meta.env.VITE_API_URL || DEFAULT_API_BASE_URL;
+const API_BASE_URL = (import.meta.env.VITE_API_URL || DEFAULT_API_BASE_URL).replace(/\/+$/, '');
+const AOI_POST_ENDPOINTS = new Set(['/data', '/basin-mean']);
 
 class APIService {
   constructor() {
     this.client = axios.create({
       baseURL: API_BASE_URL,
-      timeout: 60000,
+      // A cold hosted dataset can take over a minute to download and index.
+      timeout: 180000,
     });
 
     this.cache = new Map();
@@ -114,7 +116,17 @@ class APIService {
     }
 
     const generation = this.cacheGeneration;
-    const request = this.client.get(endpoint, { params, ...requestConfig })
+    const aoiGeojson = AOI_POST_ENDPOINTS.has(endpoint) ? params.aoi_geojson : undefined;
+    const requestParams = aoiGeojson
+      ? Object.fromEntries(Object.entries(params).filter(([key]) => key !== 'aoi_geojson'))
+      : params;
+    const request = (aoiGeojson
+      ? this.client.post(
+        endpoint,
+        { aoi_geojson: JSON.parse(aoiGeojson) },
+        { params: requestParams, ...requestConfig }
+      )
+      : this.client.get(endpoint, { params: requestParams, ...requestConfig }))
       .then((response) => {
         if (shouldUseCache && generation === this.cacheGeneration) {
           this.writeCache(cacheKey, response.data, cacheTtlMs);

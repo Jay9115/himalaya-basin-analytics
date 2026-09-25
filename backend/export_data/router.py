@@ -63,23 +63,25 @@ def build_export_router(
                 status_code=400,
                 detail="Select at least one export type (temporal CSV or spatial maps).",
             )
-        if not request.variables:
+        resolved_ds_vars = request.resolve_dataset_variables(default_dataset=request.dataset or "")
+        if not resolved_ds_vars:
             raise HTTPException(
                 status_code=400,
                 detail="Select at least one variable to export.",
             )
 
-        # Light validation — ensure dataset + variables exist before spawning
+        # Light validation — ensure all referenced datasets + variables exist before spawning
         year_start, year_end = hooks.normalize_year_range(
             request.year_start, request.year_end
         )
-        state = hooks.ensure_dataset_loaded(
-            request.dataset, year_start=year_start, year_end=year_end
-        )
-        all_known = set(state.get("variables", [])).union(state.get("all_columns", []))
-        for variable in request.variables:
-            if variable not in all_known:
-                hooks.validate_variable(state, variable)
+        for ds_id, var_list in resolved_ds_vars.items():
+            state = hooks.ensure_dataset_loaded(
+                ds_id, year_start=year_start, year_end=year_end
+            )
+            all_known = set(state.get("variables", [])).union(state.get("all_columns", []))
+            for variable in var_list:
+                if variable not in all_known:
+                    hooks.validate_variable(state, variable)
 
         job_id = await run_in_threadpool(
             run_export, request, hooks, workspace_root

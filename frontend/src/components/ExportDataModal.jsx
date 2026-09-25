@@ -43,13 +43,15 @@ function ExportDataModal({
   // ── State ─────────────────────────────────────────────────────
   const [allDatasets, setAllDatasets] = useState(datasets || []);
   const [currentDatasetId, setCurrentDatasetId] = useState(datasetId || '');
+  const [datasetMetaCache, setDatasetMetaCache] = useState({});
   const [currentVariables, setCurrentVariables] = useState(variables || []);
   const [currentDates, setCurrentDates] = useState(dates || []);
   const [loadingDataset, setLoadingDataset] = useState(false);
-  const [customVars, setCustomVars] = useState([]);
+  const [customVarsMap, setCustomVarsMap] = useState({});
   const [customVarInput, setCustomVarInput] = useState('');
 
-  const [selectedVars, setSelectedVars] = useState([]);
+  // selectedItems: array of { id, datasetId, variable, label, datasetLabel, isCustom }
+  const [selectedItems, setSelectedItems] = useState([]);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [exportTemporal, setExportTemporal] = useState(true);
@@ -79,7 +81,14 @@ function ExportDataModal({
 
   const supportsDirPicker = typeof window !== 'undefined' && 'showDirectoryPicker' in window;
 
-  // ── Derived ───────────────────────────────────────────────────
+  // ── Helpers & Derived ──────────────────────────────────────────
+  const getDatasetLabel = useCallback((dId) => {
+    const ds = allDatasets.find((d) => d.id === dId);
+    if (ds?.label) return ds.label;
+    if (dId === datasetId && datasetLabel) return datasetLabel;
+    return dId || 'Dataset';
+  }, [allDatasets, datasetId, datasetLabel]);
+
   const roiLabel = useMemo(() => {
     if (roiPolygon) return roiPolygon.name || roiPolygon.label || 'Custom ROI';
     if (selectedSubregionLabel) return selectedSubregionLabel;
@@ -87,25 +96,52 @@ function ExportDataModal({
     return 'Full Basin';
   }, [roiPolygon, selectedSubregionLabel, selectedSubregionId]);
 
+  const currentDatasetLabel = useMemo(
+    () => getDatasetLabel(currentDatasetId),
+    [getDatasetLabel, currentDatasetId]
+  );
+
   const displayedVars = useMemo(() => {
     const list = [...currentVariables];
-    for (const cv of customVars) {
+    const customForCurrent = customVarsMap[currentDatasetId] || [];
+    for (const cv of customForCurrent) {
       if (!list.includes(cv)) list.push(cv);
     }
     return list;
-  }, [currentVariables, customVars]);
+  }, [currentVariables, customVarsMap, currentDatasetId]);
 
-  const minDate = useMemo(() => currentDates.length ? currentDates[0] : '', [currentDates]);
-  const maxDate = useMemo(() => currentDates.length ? currentDates[currentDates.length - 1] : '', [currentDates]);
+  const selectedItemIds = useMemo(
+    () => new Set(selectedItems.map((i) => i.id)),
+    [selectedItems]
+  );
 
-  const currentDatasetLabel = useMemo(() => {
-    const ds = allDatasets.find((d) => d.id === currentDatasetId);
-    if (ds?.label) return ds.label;
-    if (currentDatasetId === datasetId && datasetLabel) return datasetLabel;
-    return currentDatasetId || 'Dataset';
-  }, [allDatasets, currentDatasetId, datasetId, datasetLabel]);
+  const selectedDatasetIds = useMemo(
+    () => new Set(selectedItems.map((i) => i.datasetId)),
+    [selectedItems]
+  );
 
-  const canExport = selectedVars.length > 0
+  const selectedDatasetCount = selectedDatasetIds.size;
+
+  const { minDate, maxDate } = useMemo(() => {
+    const datesArr = [];
+    if (selectedDatasetIds.size > 0) {
+      for (const dsId of selectedDatasetIds) {
+        if (datasetMetaCache[dsId]?.dates?.length) {
+          datesArr.push(datasetMetaCache[dsId].dates[0]);
+          datesArr.push(datasetMetaCache[dsId].dates[datasetMetaCache[dsId].dates.length - 1]);
+        }
+      }
+    }
+    if (datesArr.length === 0 && currentDates.length) {
+      datesArr.push(currentDates[0]);
+      datesArr.push(currentDates[currentDates.length - 1]);
+    }
+    if (datesArr.length === 0) return { minDate: '', maxDate: '' };
+    datesArr.sort();
+    return { minDate: datesArr[0], maxDate: datesArr[datesArr.length - 1] };
+  }, [selectedDatasetIds, datasetMetaCache, currentDates]);
+
+  const canExport = selectedItems.length > 0
     && startDate && endDate
     && (exportTemporal || exportSpatial)
     && !jobId;
@@ -118,11 +154,19 @@ function ExportDataModal({
   useEffect(() => {
     if (!open) return;
     closedRef.current = false;
-    setCurrentDatasetId(datasetId || '');
+    const initialDs = datasetId || '';
+    setCurrentDatasetId(initialDs);
     setCurrentVariables(variables || []);
     setCurrentDates(dates || []);
-    setCustomVars([]);
+    setCustomVarsMap({});
     setCustomVarInput('');
+
+    if (initialDs) {
+      setDatasetMetaCache((prev) => ({
+        ...prev,
+        [initialDs]: { variables: variables || [], dates: dates || [] },
+      }));
+    }
 
     if (datasets && datasets.length) {
       setAllDatasets(datasets);
@@ -134,14 +178,24 @@ function ExportDataModal({
     }).catch(() => {});
 
     // Pre-select first variable and set date range
-    if (variables.length > 0 && selectedVars.length === 0) {
-      setSelectedVars([variables[0]]);
+    if (variables.length > 0 && selectedItems.length === 0) {
+      const v0 = variables[0];
+      setSelectedItems([
+        {
+          id: `${initialDs}:${v0}`,
+          datasetId: initialDs,
+          variable: v0,
+          label: formatVariableLabel(v0),
+          datasetLabel: datasetLabel || initialDs,
+          isCustom: false,
+        },
+      ]);
     }
     const dStart = dates.length ? dates[0] : '';
     const dEnd = dates.length ? dates[dates.length - 1] : '';
     if (dStart) setStartDate(toInputDate(dStart));
     if (dEnd) setEndDate(toInputDate(dEnd));
-  }, [open, datasetId, variables, dates, datasets]);
+  }, [open, datasetId, variables, dates, datasets, datasetLabel]);
 
   // ── Dataset Switch Handler ────────────────────────────────────
   const handleDatasetChange = useCallback(async (newId) => {
@@ -149,15 +203,22 @@ function ExportDataModal({
     setCurrentDatasetId(newId);
     setError('');
 
+    // Instant switch if metadata is already cached in-memory
+    if (datasetMetaCache[newId]) {
+      const cached = datasetMetaCache[newId];
+      setCurrentVariables(cached.variables || []);
+      setCurrentDates(cached.dates || []);
+      return;
+    }
+
     if (newId === datasetId) {
-      // Reverted to current dashboard dataset
-      setCurrentVariables(variables);
-      setCurrentDates(dates);
-      setSelectedVars(variables.length ? [variables[0]] : []);
-      if (dates.length) {
-        setStartDate(toInputDate(dates[0]));
-        setEndDate(toInputDate(dates[dates.length - 1]));
-      }
+      // Current active dashboard dataset
+      setCurrentVariables(variables || []);
+      setCurrentDates(dates || []);
+      setDatasetMetaCache((prev) => ({
+        ...prev,
+        [newId]: { variables: variables || [], dates: dates || [] },
+      }));
       return;
     }
 
@@ -173,15 +234,10 @@ function ExportDataModal({
 
       setCurrentVariables(fetchedVars);
       setCurrentDates(fetchedDates);
-      setSelectedVars(fetchedVars.length ? [fetchedVars[0]] : []);
-
-      if (fetchedDates.length) {
-        setStartDate(toInputDate(fetchedDates[0]));
-        setEndDate(toInputDate(fetchedDates[fetchedDates.length - 1]));
-      } else {
-        setStartDate('');
-        setEndDate('');
-      }
+      setDatasetMetaCache((prev) => ({
+        ...prev,
+        [newId]: { variables: fetchedVars, dates: fetchedDates },
+      }));
     } catch (err) {
       console.error('Failed to load dataset metadata:', err);
       const detail = err.response?.data?.detail || err.message || 'Failed to load dataset metadata';
@@ -189,48 +245,94 @@ function ExportDataModal({
     } finally {
       setLoadingDataset(false);
     }
-  }, [currentDatasetId, datasetId, variables, dates]);
+  }, [currentDatasetId, datasetId, variables, dates, datasetMetaCache]);
+
+  // ── Variable toggle ───────────────────────────────────────────
+  const toggleVar = useCallback((dsId, varName, isCustom = false) => {
+    const id = `${dsId}:${varName}`;
+    setSelectedItems((prev) => {
+      const exists = prev.some((item) => item.id === id);
+      if (exists) {
+        return prev.filter((item) => item.id !== id);
+      }
+      const label = formatVariableLabel(varName);
+      const dsLabel = getDatasetLabel(dsId);
+      return [
+        ...prev,
+        {
+          id,
+          datasetId: dsId,
+          variable: varName,
+          label,
+          datasetLabel: dsLabel,
+          isCustom,
+        },
+      ];
+    });
+  }, [getDatasetLabel]);
+
+  const selectAllVarsForCurrentDataset = useCallback(() => {
+    const currentVars = displayedVars;
+    if (currentVars.length === 0) return;
+
+    const allCurrentSelected = currentVars.every((v) =>
+      selectedItemIds.has(`${currentDatasetId}:${v}`)
+    );
+
+    if (allCurrentSelected) {
+      // Deselect only variables belonging to currentDatasetId
+      setSelectedItems((prev) =>
+        prev.filter((item) => item.datasetId !== currentDatasetId)
+      );
+    } else {
+      // Add all missing variables from currentDatasetId
+      setSelectedItems((prev) => {
+        const existingIds = new Set(prev.map((i) => i.id));
+        const newItems = [...prev];
+        const dsLabel = getDatasetLabel(currentDatasetId);
+        const customForCurrent = customVarsMap[currentDatasetId] || [];
+
+        for (const v of currentVars) {
+          const id = `${currentDatasetId}:${v}`;
+          if (!existingIds.has(id)) {
+            newItems.push({
+              id,
+              datasetId: currentDatasetId,
+              variable: v,
+              label: formatVariableLabel(v),
+              datasetLabel: dsLabel,
+              isCustom: customForCurrent.includes(v),
+            });
+            existingIds.add(id);
+          }
+        }
+        return newItems;
+      });
+    }
+  }, [displayedVars, selectedItemIds, currentDatasetId, getDatasetLabel, customVarsMap]);
 
   // ── Custom Variable Handlers ──────────────────────────────────
   const handleAddCustomVar = useCallback(() => {
     const trimmed = customVarInput.trim();
     if (!trimmed) return;
-    if (!displayedVars.includes(trimmed)) {
-      setCustomVars((prev) => [...prev, trimmed]);
-    }
-    if (!selectedVars.includes(trimmed)) {
-      setSelectedVars((prev) => [...prev, trimmed]);
-    }
+    setCustomVarsMap((prev) => {
+      const currentList = prev[currentDatasetId] || [];
+      if (!currentList.includes(trimmed)) {
+        return { ...prev, [currentDatasetId]: [...currentList, trimmed] };
+      }
+      return prev;
+    });
+    toggleVar(currentDatasetId, trimmed, true);
     setCustomVarInput('');
-  }, [customVarInput, displayedVars, selectedVars]);
+  }, [customVarInput, currentDatasetId, toggleVar]);
 
-  const handleRemoveCustomVar = useCallback((varName) => {
-    setCustomVars((prev) => prev.filter((v) => v !== varName));
-    setSelectedVars((prev) => prev.filter((v) => v !== varName));
+  const handleRemoveCustomVar = useCallback((dsId, varName) => {
+    setCustomVarsMap((prev) => {
+      const currentList = prev[dsId] || [];
+      return { ...prev, [dsId]: currentList.filter((v) => v !== varName) };
+    });
+    setSelectedItems((prev) => prev.filter((i) => i.id !== `${dsId}:${varName}`));
   }, []);
-
-  // ── Cleanup on close ──────────────────────────────────────────
-  useEffect(() => {
-    if (!open) {
-      closedRef.current = true;
-      if (pollRef.current) clearInterval(pollRef.current);
-    }
-  }, [open]);
-
-  // ── Variable toggle ───────────────────────────────────────────
-  const toggleVar = useCallback((varName) => {
-    setSelectedVars((prev) =>
-      prev.includes(varName)
-        ? prev.filter((v) => v !== varName)
-        : [...prev, varName]
-    );
-  }, []);
-
-  const selectAllVars = useCallback(() => {
-    setSelectedVars((prev) =>
-      prev.length === displayedVars.length ? [] : [...displayedVars]
-    );
-  }, [displayedVars]);
 
   // ── Direct Folder Writing (Option A) ───────────────────────────
   const saveFilesToDirHandle = useCallback(async (targetJobId, handle) => {
@@ -379,13 +481,24 @@ function ExportDataModal({
     setDirectSaveStatus({ saving: false, currentFile: '', count: 0, total: 0, done: false, error: '' });
     directSaveTriggeredRef.current = false;
 
+    const datasetVariables = {};
+    const variablesList = [];
+    for (const item of selectedItems) {
+      if (!datasetVariables[item.datasetId]) {
+        datasetVariables[item.datasetId] = [];
+      }
+      datasetVariables[item.datasetId].push(item.variable);
+      variablesList.push(`${item.datasetId}:${item.variable}`);
+    }
+
     const payload = {
       dataset: currentDatasetId || datasetId || undefined,
-      variables: selectedVars,
+      variables: variablesList,
+      dataset_variables: datasetVariables,
       start_date: startDate,
       end_date: endDate,
-      year_start: currentDatasetId === datasetId ? (yearRange?.start ?? undefined) : undefined,
-      year_end: currentDatasetId === datasetId ? (yearRange?.end ?? undefined) : undefined,
+      year_start: undefined,
+      year_end: undefined,
       elev_min: elevRange.min,
       elev_max: elevRange.max,
       subregion_id: roiPolygon ? undefined : (selectedSubregionId || undefined),
@@ -413,7 +526,7 @@ function ExportDataModal({
       setError(detail);
     }
   }, [
-    currentDatasetId, datasetId, selectedVars, startDate, endDate, yearRange,
+    selectedItems, currentDatasetId, datasetId, startDate, endDate,
     elevRange, selectedSubregionId, roiPolygon,
     exportTemporal, exportSpatial, spatialFormat, spatialAggregation,
     dirHandle, destinationPath, startPolling,
@@ -481,13 +594,48 @@ function ExportDataModal({
           {/* Dataset Selection */}
           <div className="export-section">
             <div className="export-section-header">
-              <span className="export-section-title">Dataset</span>
-              {currentDatasetId !== datasetId && (
+              <span className="export-section-title">Datasets &amp; Sources</span>
+              {selectedDatasetCount > 1 ? (
+                <span className="export-cross-dataset-badge">
+                  ✓ Cross-Dataset Export ({selectedDatasetCount} Datasets)
+                </span>
+              ) : currentDatasetId !== datasetId ? (
                 <span className="export-alt-dataset-badge">
                   Alternate Dataset
                 </span>
-              )}
+              ) : null}
             </div>
+
+            {/* Quick Dataset Selector Tabs/Pills */}
+            {allDatasets.length > 1 && (
+              <div className="export-dataset-pills-row">
+                {allDatasets.map((ds) => {
+                  const isCur = ds.id === currentDatasetId;
+                  const dsSelCount = selectedItems.filter((i) => i.datasetId === ds.id).length;
+                  return (
+                    <button
+                      type="button"
+                      key={ds.id}
+                      className={`export-dataset-pill${isCur ? ' active' : ''}${dsSelCount > 0 ? ' has-selected' : ''}`}
+                      onClick={() => handleDatasetChange(ds.id)}
+                      disabled={isRunning || loadingDataset}
+                      title={`Browse variables in ${ds.label || ds.id}`}
+                    >
+                      <span className="export-pill-label">{ds.label || ds.id}</span>
+                      {ds.id === datasetId && (
+                        <span className="export-pill-star" title="Active dashboard dataset">★</span>
+                      )}
+                      {dsSelCount > 0 && (
+                        <span className="export-pill-count" title={`${dsSelCount} variables selected`}>
+                          {dsSelCount}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             <div className="export-dataset-select-row">
               <select
                 className="export-dataset-select"
@@ -495,11 +643,14 @@ function ExportDataModal({
                 onChange={(e) => handleDatasetChange(e.target.value)}
                 disabled={isRunning || loadingDataset}
               >
-                {allDatasets.map((ds) => (
-                  <option key={ds.id} value={ds.id}>
-                    {ds.label || ds.id} {ds.id === datasetId ? '★ (Dashboard Active)' : ''}
-                  </option>
-                ))}
+                {allDatasets.map((ds) => {
+                  const dsSelCount = selectedItems.filter((i) => i.datasetId === ds.id).length;
+                  return (
+                    <option key={ds.id} value={ds.id}>
+                      {ds.label || ds.id} {ds.id === datasetId ? '★ (Dashboard Active)' : ''} {dsSelCount > 0 ? `(${dsSelCount} selected)` : ''}
+                    </option>
+                  );
+                })}
               </select>
               {loadingDataset && (
                 <div className="export-dataset-spinner" title="Loading dataset variables & dates...">
@@ -511,31 +662,31 @@ function ExportDataModal({
                 </div>
               )}
             </div>
-            {currentDatasetId !== datasetId ? (
-              <div className="export-dataset-note">
-                <span>💡</span>
-                <span>
-                  Exporting from <strong>{currentDatasetLabel}</strong>. The active ROI region will be queried on this dataset.
-                </span>
-              </div>
-            ) : (
-              <div className="export-dataset-note-dim">
-                <span>Active dashboard dataset: <strong>{datasetLabel || datasetId}</strong></span>
-              </div>
-            )}
+
+            <div className="export-dataset-note">
+              <span>💡</span>
+              <span>
+                Browsing variables in <strong>{currentDatasetLabel}</strong>. Variables selected across different datasets will all be exported together in this single job.
+              </span>
+            </div>
           </div>
 
           {/* Variable Selection */}
           <div className="export-section">
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span className="export-section-title" style={{ flex: 1 }}>Variables</span>
+              <span className="export-section-title" style={{ flex: 1 }}>
+                Variables in {currentDatasetLabel}
+              </span>
               <button
                 type="button"
                 className="export-var-select-all"
-                onClick={selectAllVars}
+                onClick={selectAllVarsForCurrentDataset}
                 disabled={loadingDataset || displayedVars.length === 0}
               >
-                {selectedVars.length === displayedVars.length && displayedVars.length > 0 ? 'Deselect All' : 'Select All'}
+                {displayedVars.length > 0 &&
+                displayedVars.every((v) => selectedItemIds.has(`${currentDatasetId}:${v}`))
+                  ? 'Deselect Dataset Variables'
+                  : 'Select All in Dataset'}
               </button>
             </div>
 
@@ -554,14 +705,15 @@ function ExportDataModal({
             ) : (
               <div className="export-var-grid">
                 {displayedVars.map((v) => {
-                  const isCustom = customVars.includes(v);
+                  const isChecked = selectedItemIds.has(`${currentDatasetId}:${v}`);
+                  const isCustom = (customVarsMap[currentDatasetId] || []).includes(v);
                   return (
                     <div key={v} className={`export-var-item${isCustom ? ' is-custom' : ''}`}>
                       <label className="export-var-label">
                         <input
                           type="checkbox"
-                          checked={selectedVars.includes(v)}
-                          onChange={() => toggleVar(v)}
+                          checked={isChecked}
+                          onChange={() => toggleVar(currentDatasetId, v, isCustom)}
                         />
                         <span title={v}>{formatVariableLabel(v)}</span>
                       </label>
@@ -569,7 +721,7 @@ function ExportDataModal({
                         <button
                           type="button"
                           className="export-remove-var-btn"
-                          onClick={() => handleRemoveCustomVar(v)}
+                          onClick={() => handleRemoveCustomVar(currentDatasetId, v)}
                           title="Remove custom variable"
                         >
                           ×
@@ -586,7 +738,7 @@ function ExportDataModal({
               <input
                 type="text"
                 className="export-custom-var-input"
-                placeholder="Enter other variable name (e.g. tmin, GMel, precip)..."
+                placeholder={`Add custom variable to ${currentDatasetLabel} (e.g. tmin, GMel, precip)...`}
                 value={customVarInput}
                 onChange={(e) => setCustomVarInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -612,52 +764,52 @@ function ExportDataModal({
               <div className="export-selected-summary-header">
                 <div className="export-selected-summary-title">
                   <span>Selected for Export</span>
-                  <span className="export-selected-count-badge">{selectedVars.length}</span>
+                  <span className="export-selected-count-badge">{selectedItems.length}</span>
+                  {selectedDatasetCount > 1 && (
+                    <span className="export-selected-ds-count">({selectedDatasetCount} datasets)</span>
+                  )}
                 </div>
-                {selectedVars.length > 0 && (
+                {selectedItems.length > 0 && (
                   <button
                     type="button"
                     className="export-clear-selection-btn"
-                    onClick={() => setSelectedVars([])}
+                    onClick={() => setSelectedItems([])}
                     title="Deselect all variables"
                   >
-                    Clear Selection
+                    Clear All
                   </button>
                 )}
               </div>
 
-              {selectedVars.length === 0 ? (
+              {selectedItems.length === 0 ? (
                 <div className="export-selected-empty-hint">
                   <span>⚠️</span>
-                  <span>No variables selected. Check boxes above or add custom variables.</span>
+                  <span>No variables selected. Check boxes above or switch datasets to add cross-dataset variables.</span>
                 </div>
               ) : (
                 <div className="export-selected-chips-wrap">
-                  {selectedVars.map((v) => {
-                    const isCustom = customVars.includes(v);
-                    const label = formatVariableLabel(v);
-                    return (
-                      <span
-                        key={v}
-                        className={`export-selected-chip${isCustom ? ' is-custom' : ''}`}
-                        title={`Variable identifier: ${v}${isCustom ? ' (Custom / Unlisted)' : ''}`}
-                      >
-                        <span className="export-chip-text">
-                          {label}
-                          {label !== v && <span className="export-chip-code">({v})</span>}
-                        </span>
-                        {isCustom && <span className="export-chip-type-tag">Custom</span>}
-                        <button
-                          type="button"
-                          className="export-chip-remove-btn"
-                          onClick={() => toggleVar(v)}
-                          title={`Remove ${v} from export`}
-                        >
-                          ×
-                        </button>
+                  {selectedItems.map((item) => (
+                    <span
+                      key={item.id}
+                      className={`export-selected-chip${item.isCustom ? ' is-custom' : ''}`}
+                      title={`Dataset: ${item.datasetLabel} (${item.datasetId}) | Identifier: ${item.variable}`}
+                    >
+                      <span className="export-chip-dataset-tag">{item.datasetLabel || item.datasetId}</span>
+                      <span className="export-chip-text">
+                        {item.label}
+                        {item.label !== item.variable && <span className="export-chip-code">({item.variable})</span>}
                       </span>
-                    );
-                  })}
+                      {item.isCustom && <span className="export-chip-type-tag">Custom</span>}
+                      <button
+                        type="button"
+                        className="export-chip-remove-btn"
+                        onClick={() => toggleVar(item.datasetId, item.variable, item.isCustom)}
+                        title={`Remove ${item.variable} from export`}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
                 </div>
               )}
             </div>
@@ -699,7 +851,7 @@ function ExportDataModal({
                 />
                 <div>
                   <div className="export-toggle-label">Temporal Graphs (CSV)</div>
-                  <div className="export-toggle-desc">Basin-mean time series per variable</div>
+                  <div className="export-toggle-desc">Basin time series per variable (ROI sum for precipitation/snowfall, mean for others)</div>
                 </div>
               </label>
               <label className="export-toggle-row">

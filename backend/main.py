@@ -15,6 +15,7 @@ import logging
 import os
 import re
 import sys
+import threading
 import warnings
 from contextlib import asynccontextmanager
 
@@ -47,6 +48,7 @@ from project_workspace import build_project_workspace_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+DATASET_INDEX_LOCK = threading.RLock()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -613,10 +615,6 @@ def _parse_aoi_geojson(aoi_geojson: Optional[str]) -> Optional[Dict[str, Any]]:
     ):
         raise HTTPException(status_code=400, detail="ROI polygon coordinates are out of WGS84 bounds.")
 
-    vertex_count = sum(max(0, int(poly["outer"].shape[0]) - 1) for poly in polygons)
-    if vertex_count > 2000:
-        raise HTTPException(status_code=400, detail="ROI polygon is too complex. Use 2000 vertices or fewer.")
-
     return {
         "id": str(properties.get("id") or "custom_aoi"),
         "label": str(properties.get("label") or properties.get("name") or "ROI"),
@@ -626,6 +624,22 @@ def _parse_aoi_geojson(aoi_geojson: Optional[str]) -> Optional[Dict[str, Any]]:
         "geometry": geometry,
         "properties": properties,
     }
+
+
+async def _aoi_geojson_for_request(request: Request, query_value: Optional[str]) -> Optional[str]:
+    """Read AOI GeoJSON from a POST body, retaining query support for older clients."""
+    if request.method != "POST":
+        return query_value
+
+    try:
+        payload = await request.json()
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid ROI polygon request body.") from exc
+
+    aoi = payload.get("aoi_geojson") if isinstance(payload, dict) else None
+    if not isinstance(aoi, dict):
+        raise HTTPException(status_code=400, detail="Request body must contain an ROI GeoJSON object.")
+    return json.dumps(aoi, separators=(",", ":"))
 
 
 def _safe_float(value: Any) -> Optional[float]:
@@ -1944,6 +1958,21 @@ def pick_column(columns: List[str], candidates: List[str], field_name: str) -> s
     raise HTTPException(status_code=500, detail=f"Could not detect {field_name} column in dataset schema")
 
 
+def is_sum_variable(var_name: Optional[str]) -> bool:
+    """
+    Return True if variable should be aggregated by sum across ROI (snowfall/precipitation)
+    instead of spatial mean.
+    """
+    if not var_name:
+        return False
+    v = var_name.lower().strip()
+    if any(k in v for k in ("precip", "snowfall", "rainfall")):
+        if any(x in v for x in ("fraction", "days", "entropy")):
+            return False
+        return True
+    return v in {"pr", "tp", "sf", "rain"}
+
+
 def choose_default_variable(variables: List[str]) -> Optional[str]:
     preferred = [
         "temperature_C",
@@ -2676,10 +2705,12 @@ def calculate_geotiff_basin_mean(
                 logger.error("[%s] Error in GeoTIFF basin mean for %s: %s", state["id"], file_path, exc)
 
         if value_count > 0:
+            agg_val = value_sum if is_sum_variable(variable) else (value_sum / value_count)
             results.append(
                 {
                     "date": date_str,
-                    "mean_value": value_sum / value_count,
+                    "mean_value": float(agg_val),
+                    "value": float(agg_val),
                     "pixel_count": value_count,
                 }
             )
@@ -3007,7 +3038,10 @@ def ensure_dataset_loaded(
     year_end: Optional[int] = None,
 ) -> Dict:
     state = ensure_dataset(dataset)
-    load_dataset_index(state, year_start=year_start, year_end=year_end)
+    # A Space serves concurrent requests with shared dataset state. Serialize
+    # cold indexing so /variables, /dates and /stats do not repeat downloads.
+    with DATASET_INDEX_LOCK:
+        load_dataset_index(state, year_start=year_start, year_end=year_end)
     if not state["loaded"]:
         storage = state.get("storage", PARQUET_STORAGE)
         if storage == GEOTIFF_STORAGE:
@@ -3293,10 +3327,12 @@ def calculate_geoparquet_basin_mean(
         values = pd.to_numeric(combined[variable], errors="coerce").dropna()
         if values.empty:
             continue
+        agg_val = float(values.sum()) if is_sum_variable(variable) else float(values.mean())
         results.append(
             {
                 "date": date_key,
-                "mean_value": float(values.mean()),
+                "mean_value": agg_val,
+                "value": agg_val,
                 "pixel_count": int(values.count()),
             }
         )
@@ -3496,20 +3532,23 @@ def calculate_basin_mean(
             if not mask.any():
                 continue
 
+            agg_func = "sum" if is_sum_variable(variable) else "mean"
             grouped = (
                 df.loc[mask, [date_col, variable]]
                 .groupby(date_col, as_index=False)
-                .agg(mean_value=(variable, "mean"), pixel_count=(variable, "count"))
+                .agg(val=(variable, agg_func), pixel_count=(variable, "count"))
             )
             grouped[date_col] = grouped[date_col].dt.strftime("%Y-%m-%d")
 
             for row in grouped.itertuples(index=False):
                 raw_date = getattr(row, date_col)
+                val = float(row.val)
                 results.append(
                     {
                         "date": raw_date,
                         "date_display": format_date_indian(raw_date),
-                        "mean_value": float(row.mean_value),
+                        "mean_value": val,
+                        "value": val,
                         "pixel_count": int(row.pixel_count),
                     }
                 )
@@ -3875,7 +3914,7 @@ async def head_india_admin_pmtiles(request: Request):
 
 
 @app.get("/datasets")
-async def get_datasets():
+def get_datasets():
     return JSONResponse(
         content={
             "default_dataset": DEFAULT_DATASET_ID,
@@ -3889,7 +3928,7 @@ class SetDatasetPathRequest(BaseModel):
 
 
 @app.get("/dataset-config")
-async def get_dataset_config():
+def get_dataset_config():
     summary = get_datasets_summary()
     total_files = sum(d["parquet_files"] + d["geotiff_files"] + d["csv_files"] for d in summary)
     ready_count = sum(1 for d in summary if d["ready"])
@@ -4221,7 +4260,7 @@ async def get_long_term_hotspot_difference(
 
 
 @app.get("/years")
-async def get_available_years(dataset: Optional[str] = Query(None, description="Dataset id")):
+def get_available_years(dataset: Optional[str] = Query(None, description="Dataset id")):
     state = ensure_dataset(dataset)
     if is_geotiff_dataset(state):
         geotiff_files = get_geotiff_files(state)
@@ -4292,7 +4331,7 @@ async def get_available_years(dataset: Optional[str] = Query(None, description="
 
 
 @app.get("/dates")
-async def get_available_dates(
+def get_available_dates(
     dataset: Optional[str] = Query(None, description="Dataset id"),
     year_start: Optional[int] = Query(None, description="Inclusive start year"),
     year_end: Optional[int] = Query(None, description="Inclusive end year"),
@@ -4331,7 +4370,7 @@ async def get_available_dates(
 
 
 @app.get("/variables")
-async def get_available_variables(
+def get_available_variables(
     dataset: Optional[str] = Query(None, description="Dataset id"),
     year_start: Optional[int] = Query(None, description="Inclusive start year"),
     year_end: Optional[int] = Query(None, description="Inclusive end year"),
@@ -4351,7 +4390,7 @@ async def get_available_variables(
 
 
 @app.get("/elevation-range")
-async def get_elevation_range(
+def get_elevation_range(
     dataset: Optional[str] = Query(None, description="Dataset id"),
     year_start: Optional[int] = Query(None, description="Inclusive start year"),
     year_end: Optional[int] = Query(None, description="Inclusive end year"),
@@ -4764,8 +4803,10 @@ async def upload_nc_dataset(
             pass
 
 
+@app.post("/data")
 @app.get("/data")
 async def get_data(
+    request: Request,
     date: str = Query(..., description="Date in YYYY-MM-DD format"),
     elev_min: Optional[float] = Query(None, description="Minimum elevation"),
     elev_max: Optional[float] = Query(None, description="Maximum elevation"),
@@ -4776,13 +4817,14 @@ async def get_data(
     year_end: Optional[int] = Query(None, description="Inclusive end year"),
     aoi_geojson: Optional[str] = Query(None, description="Optional ROI Polygon/MultiPolygon GeoJSON"),
 ):
+    aoi_geojson = await _aoi_geojson_for_request(request, aoi_geojson)
     try:
         date = parse_and_normalize_date(date)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid date format. Use DD-MM-YYYY or YYYY-MM-DD") from exc
 
     year_start, year_end = normalize_year_range(year_start, year_end)
-    state = ensure_dataset_loaded(dataset, year_start=year_start, year_end=year_end)
+    state = await run_in_threadpool(ensure_dataset_loaded, dataset, year_start, year_end)
     var_name = validate_variable(state, variable)
     elev_min, elev_max = resolve_elevation_bounds(state, elev_min, elev_max)
     subregion = resolve_query_subregion(subregion_id, aoi_geojson)
@@ -4827,8 +4869,10 @@ async def get_data(
     )
 
 
+@app.post("/basin-mean")
 @app.get("/basin-mean")
 async def get_basin_mean(
+    request: Request,
     start_date: str = Query(..., description="Start date (YYYY-MM-DD)"),
     end_date: str = Query(..., description="End date (YYYY-MM-DD)"),
     elev_min: Optional[float] = Query(None, description="Minimum elevation"),
@@ -4840,6 +4884,7 @@ async def get_basin_mean(
     year_end: Optional[int] = Query(None, description="Inclusive end year"),
     aoi_geojson: Optional[str] = Query(None, description="Optional ROI Polygon/MultiPolygon GeoJSON"),
 ):
+    aoi_geojson = await _aoi_geojson_for_request(request, aoi_geojson)
     try:
         start_date = parse_and_normalize_date(start_date)
         end_date = parse_and_normalize_date(end_date)
@@ -4847,7 +4892,7 @@ async def get_basin_mean(
         raise HTTPException(status_code=400, detail="Invalid date format. Use DD-MM-YYYY or YYYY-MM-DD") from exc
 
     year_start, year_end = normalize_year_range(year_start, year_end)
-    state = ensure_dataset_loaded(dataset, year_start=year_start, year_end=year_end)
+    state = await run_in_threadpool(ensure_dataset_loaded, dataset, year_start, year_end)
     var_name = validate_variable(state, variable)
     elev_min, elev_max = resolve_elevation_bounds(state, elev_min, elev_max)
     subregion = resolve_query_subregion(subregion_id, aoi_geojson)
@@ -4867,9 +4912,10 @@ async def get_basin_mean(
     )
     query_time = (datetime.now() - start_time).total_seconds() * 1000
 
+    agg_type = "sum" if is_sum_variable(var_name) else "mean"
     subregion_log = f", subregion={subregion['id']}" if subregion else ""
     logger.info(
-        f"[{state['id']}] Basin mean [{start_date} to {end_date}] [{elev_min}-{elev_max}m] {var_name}: "
+        f"[{state['id']}] Basin {agg_type} [{start_date} to {end_date}] [{elev_min}-{elev_max}m] {var_name}: "
         f"{len(data)} days in {query_time:.0f}ms{subregion_log}"
     )
     return JSONResponse(
@@ -4883,6 +4929,7 @@ async def get_basin_mean(
             "elev_min": elev_min,
             "elev_max": elev_max,
             "variable": var_name,
+            "aggregation": agg_type,
             "subregion_id": subregion["id"] if subregion else None,
             "subregion_label": subregion["label"] if subregion else None,
             "bounds": subregion["bounds"] if subregion else None,
@@ -4909,7 +4956,7 @@ async def get_hotspot_trends(
     aoi_geojson: Optional[str] = Query(None, description="Optional ROI Polygon/MultiPolygon GeoJSON"),
 ):
     year_start, year_end = normalize_year_range(year_start, year_end)
-    state = ensure_dataset_loaded(dataset, year_start=year_start, year_end=year_end)
+    state = await run_in_threadpool(ensure_dataset_loaded, dataset, year_start, year_end)
     var_name = validate_variable(state, variable)
     elev_min, elev_max = resolve_elevation_bounds(state, elev_min, elev_max)
     subregion = resolve_query_subregion(subregion_id, aoi_geojson)
@@ -4984,7 +5031,7 @@ async def get_hotspot_trends(
 
 
 @app.get("/stats")
-async def get_stats(
+def get_stats(
     dataset: Optional[str] = Query(None, description="Dataset id"),
     year_start: Optional[int] = Query(None, description="Inclusive start year"),
     year_end: Optional[int] = Query(None, description="Inclusive end year"),

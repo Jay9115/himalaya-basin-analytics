@@ -49,10 +49,16 @@ class FigureService:
         self.boundary_path = self.app_root / "Himalaya_shape" / "him_watershed.shp"
         self.dem_path = self.app_root / "Database" / "DEM" / "Himalaya_SRTM_DEM-0000000000-0000000000.parquet"
         self.countries_path = self.app_root / "Map_handle" / "ne_110m_admin_0_countries.zip"
+        # App-provided authoritative Indian administrative boundary.  This is
+        # deliberately preferred to the small-scale international locator
+        # layer, whose India outline is unsuitable for a journal figure.
+        self.india_admin_path = self.app_root / "Map_handle" / "Indian_Map_Geopar_ds" / "STATE_BOUNDARY.parquet"
         workspace = self.app_root.parents[1] if len(self.app_root.parents) > 1 else self.app_root
         self.glacier_paths = [
+            self.app_root / "Glacier_shp" / "RGI2000-v7.0-G-13_central_asia" / "RGI2000-v7.0-G-13_central_asia.shp",
             self.app_root / "Glacier_shp" / "RGI2000-v7.0-G-14_south_asia_west" / "RGI2000-v7.0-G-14_south_asia_west.shp",
             self.app_root / "Glacier_shp" / "RGI2000-v7.0-G-15_south_asia_east" / "RGI2000-v7.0-G-15_south_asia_east.shp",
+            workspace / "Map_handle_backup" / "Glacier_shp" / "RGI2000-v7.0-G-13_central_asia" / "RGI2000-v7.0-G-13_central_asia.shp",
             workspace / "Map_handle_backup" / "Glacier_shp" / "RGI2000-v7.0-G-14_south_asia_west" / "RGI2000-v7.0-G-14_south_asia_west.shp",
             workspace / "Map_handle_backup" / "Glacier_shp" / "RGI2000-v7.0-G-15_south_asia_east" / "RGI2000-v7.0-G-15_south_asia_east.shp",
         ]
@@ -144,14 +150,27 @@ class FigureService:
             return gpd.GeoDataFrame(geometry=[], crs=4326)
         return gpd.read_file(f"zip://{self.countries_path}").to_crs(4326)
 
-    def _glaciers(self, bounds: Iterable[float]) -> gpd.GeoDataFrame:
+    def _official_india(self) -> gpd.GeoDataFrame:
+        if not self.india_admin_path.exists():
+            return gpd.GeoDataFrame(geometry=[], crs=4326)
+        return gpd.read_parquet(self.india_admin_path).to_crs(4326)
+
+    def _glaciers(self, study_domain: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         layers = []
-        bbox = tuple(float(value) for value in bounds)
+        domain = study_domain.to_crs(4326)
+        bbox = tuple(float(value) for value in domain.total_bounds)
+        domain_geometry = domain.geometry.union_all()
         for path in self.glacier_paths:
             if path.exists():
-                layer = gpd.read_file(path, bbox=bbox)
+                layer = gpd.read_file(path, bbox=bbox).to_crs(4326)
+                # The initial bbox read is fast but includes adjacent Tibetan
+                # and Central Asian glaciers. Keep only whole outlines within
+                # the analysis polygon: this is a conservative, exact-domain
+                # display rule that prevents an external outline from leaking
+                # into the figure without geometrically splitting source data.
+                layer = layer.loc[layer.within(domain_geometry)]
                 if not layer.empty:
-                    layers.append(layer.to_crs(4326)[["geometry"]])
+                    layers.append(layer[["geometry"]])
         if not layers:
             return gpd.GeoDataFrame(geometry=[], crs=4326)
         return gpd.GeoDataFrame(geometry=pd.concat([layer.geometry for layer in layers], ignore_index=True), crs=4326)
@@ -190,37 +209,40 @@ class FigureService:
             path_effects=[pe.withStroke(linewidth=2.2, foreground="white")], zorder=27,
         )
 
-    @staticmethod
-    def _panel(ax: plt.Axes, label: str) -> None:
-        ax.text(
-            0.012, 0.975, label, transform=ax.transAxes, ha="left", va="top",
-            fontsize=11, fontweight="bold", color="white",
-            bbox=dict(boxstyle="round,pad=0.2", fc=INK, ec="none", alpha=0.96), zorder=50,
-        )
-
     def _study_region(self, title: str | None) -> plt.Figure:
-        basins, countries = self._basins(), self._countries()
+        basins, countries, official_india = self._basins(), self._countries(), self._official_india()
         bounds, region = basins.total_bounds, basins.dissolve()
         fig = plt.figure(figsize=(13.2, 6.2))
-        grid = fig.add_gridspec(1, 2, width_ratios=[1.05, 3.85], wspace=0.04)
+        # Keep a generous gutter: the main-panel latitude title must never
+        # collide with the locator panel's right-hand latitude ticks.
+        grid = fig.add_gridspec(1, 2, width_ratios=[0.98, 3.92], wspace=0.16)
         locator, ax = fig.add_subplot(grid[0, 0]), fig.add_subplot(grid[0, 1])
 
         locator.set_facecolor(OCEAN)
         if not countries.empty:
-            countries.plot(ax=locator, facecolor="#f4f1e9", edgecolor="#7d8589", linewidth=0.38, zorder=1)
+            # Draw neighbouring countries from Natural Earth only. India is
+            # replaced below by the project's official administrative layer.
+            neighbours = countries.loc[~countries["ADMIN"].eq("India")]
+            neighbours.plot(ax=locator, facecolor="#f4f1e9", edgecolor="#7d8589", linewidth=0.38, zorder=1)
+        if not official_india.empty:
+            official_india.plot(ax=locator, facecolor="#f4f1e9", edgecolor="#687278", linewidth=0.34, zorder=2)
         region.plot(ax=locator, facecolor="#c43c39", edgecolor="white", linewidth=0.55, zorder=4)
-        locator.set(xlim=(63, 107), ylim=(19, 42), xlabel="Longitude (°E)", ylabel="Latitude (°N)")
+        locator.set(xlim=(63, 107), ylim=(19, 42), xlabel="Longitude (°E)")
         locator.set_aspect(1 / np.cos(np.deg2rad(30)))
         locator.set_xticks([70, 80, 90, 100]); locator.set_yticks([20, 30, 40])
         locator.grid(color=GRID, linewidth=0.4, linestyle=(0, (2, 3)), zorder=0)
         locator.set_title("Regional location", fontsize=10.5, pad=7)
-        self._panel(locator, "a")
 
         self._geo_axes(ax, bounds)
         if not countries.empty:
-            countries.cx[bounds[0]-1:bounds[2]+1, bounds[1]-1:bounds[3]+1].boundary.plot(
+            neighbours = countries.loc[~countries["ADMIN"].eq("India")]
+            neighbours.cx[bounds[0]-1:bounds[2]+1, bounds[1]-1:bounds[3]+1].boundary.plot(
                 ax=ax, color="#858c90", linewidth=0.55, linestyle=(0, (4, 3)), zorder=1
             )
+        if not official_india.empty:
+            # The dissolved edge provides India's official exterior boundary
+            # without introducing state-line clutter under the sub-basins.
+            official_india.dissolve().boundary.plot(ax=ax, color="#59666c", linewidth=0.62, zorder=2)
         colors = {"Western (<80°E)": WEST, "Central (80–88°E)": CENTRAL, "Eastern (≥88°E)": EAST}
         for sector, color in colors.items():
             basins.loc[basins["sector"] == sector].plot(
@@ -230,13 +252,20 @@ class FigureService:
         region.boundary.plot(ax=ax, color="#0d1519", linewidth=1.15, zorder=8)
         for meridian in [80, 88]:
             ax.axvline(meridian, color="#424b50", lw=0.7, ls=(0, (5, 4)), alpha=0.8, zorder=4)
+        # A polygon centroid can lie outside a narrow or concave sub-basin.
+        # Representative points are guaranteed to be inside their own polygon,
+        # so every label remains geographically unambiguous in the publication
+        # figure. No display offsets are applied.
         for row in basins.itertuples():
+            basin_id = int(row.Subbasin)
+            point = row.geometry.representative_point()
             ax.text(
-                float(row.Long_), float(row.Lat), str(int(row.Subbasin)), ha="center", va="center",
-                fontsize=6.1, fontweight="bold", color=INK,
-                path_effects=[pe.withStroke(linewidth=1.8, foreground="white")], zorder=12,
+                float(point.x), float(point.y), str(basin_id), ha="center", va="center", fontsize=6.2,
+                fontweight="bold", color=INK,
+                path_effects=[pe.withStroke(linewidth=2.0, foreground="white")],
+                zorder=12,
             )
-        self._scale_bar(ax); self._north_arrow(ax); self._panel(ax, "b")
+        self._scale_bar(ax); self._north_arrow(ax)
         ax.set_title("Himalayan study domain and 27 analysis sub-basins", pad=9)
         fig.legend(
             handles=[Patch(facecolor=color, label=sector) for sector, color in colors.items()]
@@ -246,7 +275,7 @@ class FigureService:
         fig.suptitle(title or "Study region across the Himalayan arc", fontsize=15, fontweight="bold", y=0.985)
         fig.text(
             0.995, 0.012,
-            "Boundary: project Himalayan watershed layer  |  Locator: Natural Earth 1:110m  |  CRS: WGS 84",
+            "Boundary: project Himalayan watershed layer  |  India: project official administrative boundary  |  CRS: WGS 84",
             ha="right", fontsize=7.2, color=MUTED,
         )
         return fig
@@ -276,28 +305,47 @@ class FigureService:
     def _elevation(self, title: str | None, include_glaciers: bool) -> plt.Figure:
         if not self.dem_path.exists():
             raise FileNotFoundError("SRTM overview layer is unavailable")
-        basins, countries, dem = self._basins(), self._countries(), gpd.read_parquet(self.dem_path).to_crs(4326)
-        bounds = basins.total_bounds
-        glaciers = self._glaciers(bounds) if include_glaciers else gpd.GeoDataFrame(geometry=[], crs=4326)
+        basins, countries, official_india, dem = (
+            self._basins(), self._countries(), self._official_india(), gpd.read_parquet(self.dem_path).to_crs(4326)
+        )
+        bounds, domain = basins.total_bounds, basins.dissolve()
+        glaciers = self._glaciers(domain) if include_glaciers else gpd.GeoDataFrame(geometry=[], crs=4326)
         x, y, z = self._dem_grid(dem)
         shade = self._hillshade(z, float(np.mean(y)))
         valid = np.isfinite(z)
         nearest = ndimage.distance_transform_edt(~valid, return_distances=False, return_indices=True)
         contour_z = ndimage.gaussian_filter(z[tuple(nearest)], sigma=2.0); contour_z[~valid] = np.nan
+        # Muted, monotonically lightening hypsometry avoids the visual false
+        # boundaries and saturated colours that are undesirable in a Q1 map.
+        # Lowlands retain cool teal; high Himalayan terrain resolves into warm
+        # rock tones and a restrained neutral snow cap.
         cmap = LinearSegmentedColormap.from_list(
-            "himalaya_elevation",
-            ["#2d7f5e", "#62a968", "#b8c979", "#d9c486", "#b78a5c", "#8a6650", "#b6aaa1", "#e7e3df", "#ffffff"],
+            "himalaya_scientific_hypsometry",
+            [
+                (0.00, "#1f6f78"),
+                (0.08, "#3f8f7a"),
+                (0.20, "#78a76b"),
+                (0.36, "#b8b66b"),
+                (0.52, "#c9a56a"),
+                (0.68, "#aa7f63"),
+                (0.82, "#877b75"),
+                (0.93, "#c9c9c5"),
+                (1.00, "#f7f7f4"),
+            ],
         )
         fig, ax = plt.subplots(figsize=(13.2, 6.2))
         self._geo_axes(ax, bounds)
         if not countries.empty:
-            countries.cx[bounds[0]-1:bounds[2]+1, bounds[1]-1:bounds[3]+1].boundary.plot(
+            neighbours = countries.loc[~countries["ADMIN"].eq("India")]
+            neighbours.cx[bounds[0]-1:bounds[2]+1, bounds[1]-1:bounds[3]+1].boundary.plot(
                 ax=ax, color="#757d82", linewidth=0.5, linestyle=(0, (4, 3)), zorder=1
             )
+        if not official_india.empty:
+            official_india.dissolve().boundary.plot(ax=ax, color="#59666c", linewidth=0.62, zorder=1.5)
         mesh = ax.pcolormesh(x, y, z, cmap=cmap, norm=Normalize(0, 7500), shading="nearest", rasterized=True, zorder=2)
         ax.imshow(
             shade, extent=[x.min(), x.max(), y.min(), y.max()], origin="lower", cmap="gray",
-            alpha=np.where(np.isfinite(shade), 0.27, 0), interpolation="bilinear", zorder=3,
+            alpha=np.where(np.isfinite(shade), 0.21, 0), interpolation="bilinear", zorder=3,
         )
         ax.contour(x, y, contour_z, levels=[1500, 3000, 4500], colors="#3b4449", linewidths=0.36, linestyles="--", alpha=0.56, zorder=5)
         if not glaciers.empty:
@@ -318,7 +366,7 @@ class FigureService:
         ax.set_title(title or "Elevation and topographic structure of the Himalayan study region", pad=9)
         fig.text(
             0.995, 0.012,
-            "Terrain: project SRTM overview (~3 km display grid; source manifest retained)  |  CRS: WGS 84",
+            "Terrain: project SRTM overview (~3 km display grid)  |  India: project official administrative boundary  |  CRS: WGS 84",
             ha="right", fontsize=7.2, color=MUTED,
         )
         return fig

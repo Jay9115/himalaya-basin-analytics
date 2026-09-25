@@ -19,7 +19,7 @@ import time
 import uuid
 import zipfile
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -31,6 +31,11 @@ from custom_operations.data_access import OperationBackendHooks
 from .schemas import ExportProgress, ExportRequest
 
 logger = logging.getLogger(__name__)
+
+
+def _now_iso() -> str:
+    """Return current UTC timestamp in ISO 8601 format."""
+    return datetime.now(timezone.utc).isoformat()
 
 
 # ---------------------------------------------------------------------------
@@ -54,7 +59,7 @@ def _register_job(job_id: str, request: ExportRequest) -> Dict[str, Any]:
         "download_ready": False,
         "download_path": None,
         "error": None,
-        "created_at": datetime.utcnow().isoformat(),
+        "created_at": _now_iso(),
         "thread": None,
         "cancel_event": threading.Event(),
         "relative_files": [],
@@ -194,22 +199,22 @@ def _year_key(date_str: str) -> str:
 def _export_temporal_csv(
     hooks: OperationBackendHooks,
     request: ExportRequest,
+    resolved_ds_vars: Dict[str, List[str]],
     output_dir: Path,
     job: Dict[str, Any],
     progress_offset: int,
     progress_total: int,
 ) -> List[str]:
     """
-    Export basin-mean time series CSV for each selected variable.
+    Export basin-mean time series CSV for each selected variable across datasets.
     Reuses the existing calculate_basin_mean path through hooks.query_data.
+    Reduces redundancy by removing the duplicate date_display column and moving
+    static/repeated pixel counts into the metadata header.
     """
     start_date = _parse_date(request.start_date)
     end_date = _parse_date(request.end_date)
     year_start, year_end = hooks.normalize_year_range(
         request.year_start, request.year_end
-    )
-    state = hooks.ensure_dataset_loaded(
-        request.dataset, year_start=year_start, year_end=year_end
     )
 
     # Resolve subregion / AOI
@@ -220,72 +225,154 @@ def _export_temporal_csv(
     elif request.subregion_id:
         subregion = hooks.get_subregion(request.subregion_id)
 
-    elev_min, elev_max = hooks.resolve_elevation_bounds(
-        state, request.elev_min, request.elev_max
-    )
-
     generated_files: List[str] = []
-    n_vars = len(request.variables)
     csv_dir = output_dir / "temporal_csv"
     csv_dir.mkdir(parents=True, exist_ok=True)
 
-    for var_idx, variable in enumerate(request.variables):
+    total_vars = sum(len(vl) for vl in resolved_ds_vars.values())
+    processed_vars = 0
+    multi_dataset = len(resolved_ds_vars) > 1
+
+    multi_variable_series: Dict[str, Dict[str, Any]] = defaultdict(dict)
+    all_var_col_names: List[str] = []
+
+    for ds_id, vars_list in resolved_ds_vars.items():
         if job["cancel_event"].is_set():
             break
 
-        all_known = set(state.get("variables", [])).union(state.get("all_columns", []))
-        if variable in all_known:
-            var_name = variable
-        else:
-            var_name = hooks.validate_variable(state, variable)
-        _update_job(
-            job,
-            message=f"Exporting temporal CSV: {var_name} ({var_idx + 1}/{n_vars})",
+        # Load dataset state ONCE per dataset to maintain high performance
+        state = hooks.ensure_dataset_loaded(
+            ds_id, year_start=year_start, year_end=year_end
+        )
+        elev_min, elev_max = hooks.resolve_elevation_bounds(
+            state, request.elev_min, request.elev_max
         )
 
-        # Collect basin mean for date range
-        from main import calculate_basin_mean, snapshot_dataset_state
+        from main import calculate_basin_mean, snapshot_dataset_state, is_sum_variable
         query_state = snapshot_dataset_state(state)
-        data = calculate_basin_mean(
-            query_state,
-            start_date,
-            end_date,
-            elev_min,
-            elev_max,
-            var_name,
-            subregion=subregion,
-        )
+        all_known = set(state.get("variables", [])).union(state.get("all_columns", []))
 
-        # Write CSV
-        safe_var = _safe_filename(var_name)
-        csv_path = csv_dir / f"{safe_var}_{start_date}_to_{end_date}.csv"
-        with open(csv_path, "w", newline="", encoding="utf-8") as fh:
-            # Metadata header
-            fh.write(f"# Export: Temporal Basin Mean Time Series\n")
-            fh.write(f"# Dataset: {state.get('id', 'unknown')} — {state.get('label', '')}\n")
-            fh.write(f"# Variable: {var_name}\n")
-            fh.write(f"# Date Range: {_format_date_indian(start_date)} to {_format_date_indian(end_date)}\n")
-            fh.write(f"# Elevation Range: {elev_min}m to {elev_max}m\n")
+        for variable in vars_list:
+            if job["cancel_event"].is_set():
+                break
+
+            if variable in all_known:
+                var_name = variable
+            else:
+                var_name = hooks.validate_variable(state, variable)
+
+            processed_vars += 1
+            _update_job(
+                job,
+                message=f"Exporting temporal CSV: [{state.get('label', ds_id)}] {var_name} ({processed_vars}/{total_vars})",
+            )
+
+            data = calculate_basin_mean(
+                query_state,
+                start_date,
+                end_date,
+                elev_min,
+                elev_max,
+                var_name,
+                subregion=subregion,
+            )
+
+            # Analyze pixel counts to eliminate redundancy
+            pixel_counts = [
+                r["pixel_count"] for r in data
+                if "pixel_count" in r and r["pixel_count"] is not None
+            ]
+            unique_pixel_counts = set(pixel_counts)
+            is_constant_pixel = (len(unique_pixel_counts) <= 1)
+            pixel_val = pixel_counts[0] if pixel_counts else None
+
+            is_sum = is_sum_variable(var_name)
+            agg_name = "Sum" if is_sum else "Mean"
+            val_col = "sum_value" if is_sum else "mean_value"
+
+            safe_ds = _safe_filename(ds_id)
+            safe_var = _safe_filename(var_name)
+            if multi_dataset:
+                csv_filename = f"{safe_ds}_{safe_var}_{start_date}_to_{end_date}.csv"
+                col_key = f"{safe_ds}__{safe_var}"
+            else:
+                csv_filename = f"{safe_var}_{start_date}_to_{end_date}.csv"
+                col_key = safe_var
+            all_var_col_names.append(col_key)
+
+            csv_path = csv_dir / csv_filename
+            with open(csv_path, "w", newline="", encoding="utf-8") as fh:
+                # Metadata header
+                fh.write(f"# Export: Temporal Basin {agg_name} Time Series\n")
+                fh.write(f"# Dataset: {state.get('id', ds_id)} — {state.get('label', '')}\n")
+                fh.write(f"# Variable: {var_name}\n")
+                fh.write(f"# Aggregation: {agg_name} across ROI\n")
+                fh.write(f"# Date Range: {start_date} to {end_date}\n")
+                fh.write(f"# Elevation Range: {elev_min}m to {elev_max}m\n")
+                if subregion:
+                    fh.write(f"# ROI: {subregion.get('label', subregion.get('id', 'Custom'))}\n")
+                if is_constant_pixel and pixel_val is not None:
+                    fh.write(f"# Pixel Count: {pixel_val} (constant across all timesteps)\n")
+                elif pixel_counts:
+                    fh.write(f"# Pixel Count: min={min(pixel_counts)}, max={max(pixel_counts)}, median={int(np.median(pixel_counts))}\n")
+                fh.write(f"# Exported: {_now_iso()}Z\n")
+                fh.write(f"# Generator: Himalayan Basin Analytics\n")
+                fh.write("#\n")
+
+                # If pixel count is constant across all timesteps (typical case),
+                # do not redundantly repeat the same number on every line.
+                # date_display is omitted as it is identical/redundant to ISO date.
+                if is_constant_pixel:
+                    writer = csv.DictWriter(fh, fieldnames=["date", val_col])
+                    writer.writeheader()
+                    for row in data:
+                        writer.writerow({
+                            "date": row["date"],
+                            val_col: row.get("value", row.get("mean_value", "")),
+                        })
+                else:
+                    writer = csv.DictWriter(fh, fieldnames=["date", val_col, "pixel_count"])
+                    writer.writeheader()
+                    for row in data:
+                        writer.writerow({
+                            "date": row["date"],
+                            val_col: row.get("value", row.get("mean_value", "")),
+                            "pixel_count": row.get("pixel_count", ""),
+                        })
+
+            generated_files.append(str(csv_path))
+
+            for row in data:
+                d = row["date"]
+                multi_variable_series[d][col_key] = row.get("value", row.get("mean_value", ""))
+
+            pct = progress_offset + int(processed_vars / max(total_vars, 1) * progress_total)
+            _update_job(job, progress_percent=pct, files_generated=len(generated_files))
+            logger.info("[export] Wrote temporal CSV: %s (%d rows)", csv_path.name, len(data))
+
+    # Also generate a merged multi-variable time series CSV if >1 variable was exported
+    if total_vars > 1 and multi_variable_series and not job["cancel_event"].is_set():
+        combined_csv_path = csv_dir / f"combined_temporal_timeseries_{start_date}_to_{end_date}.csv"
+        with open(combined_csv_path, "w", newline="", encoding="utf-8") as fh:
+            fh.write(f"# Export: Combined Multi-Variable Basin Time Series\n")
+            fh.write(f"# Datasets: {', '.join(resolved_ds_vars.keys())}\n")
+            fh.write(f"# Variables: {', '.join(all_var_col_names)}\n")
+            fh.write(f"# Date Range: {start_date} to {end_date}\n")
             if subregion:
                 fh.write(f"# ROI: {subregion.get('label', subregion.get('id', 'Custom'))}\n")
-            fh.write(f"# Exported: {datetime.utcnow().isoformat()}Z\n")
+            fh.write(f"# Exported: {_now_iso()}Z\n")
             fh.write(f"# Generator: Himalayan Basin Analytics\n")
             fh.write("#\n")
-
-            writer = csv.DictWriter(fh, fieldnames=["date", "date_display", "mean_value", "pixel_count"])
+            fieldnames = ["date"] + all_var_col_names
+            writer = csv.DictWriter(fh, fieldnames=fieldnames)
             writer.writeheader()
-            for row in data:
-                writer.writerow({
-                    "date": row["date"],
-                    "date_display": row.get("date_display", _format_date_indian(row["date"])),
-                    "mean_value": row.get("mean_value", ""),
-                    "pixel_count": row.get("pixel_count", ""),
-                })
-
-        generated_files.append(str(csv_path))
-        pct = progress_offset + int((var_idx + 1) / max(n_vars, 1) * progress_total)
-        _update_job(job, progress_percent=pct, files_generated=len(generated_files))
-        logger.info("[export] Wrote temporal CSV: %s (%d rows)", csv_path.name, len(data))
+            for d in sorted(multi_variable_series.keys()):
+                row_dict = {"date": d}
+                for k in all_var_col_names:
+                    row_dict[k] = multi_variable_series[d].get(k, "")
+                writer.writerow(row_dict)
+        generated_files.append(str(combined_csv_path))
+        logger.info("[export] Wrote combined temporal CSV: %s (%d rows)", combined_csv_path.name, len(multi_variable_series))
 
     return generated_files
 
@@ -297,6 +384,7 @@ def _export_temporal_csv(
 def _export_spatial_maps(
     hooks: OperationBackendHooks,
     request: ExportRequest,
+    resolved_ds_vars: Dict[str, List[str]],
     output_dir: Path,
     job: Dict[str, Any],
     progress_offset: int,
@@ -304,15 +392,12 @@ def _export_spatial_maps(
 ) -> List[str]:
     """
     Export spatial raster maps (daily) and then optionally aggregate to
-    monthly / yearly multi-band files.
+    monthly / yearly multi-band files. Supports variables across multiple datasets.
     """
     start_date = _parse_date(request.start_date)
     end_date = _parse_date(request.end_date)
     year_start, year_end = hooks.normalize_year_range(
         request.year_start, request.year_end
-    )
-    state = hooks.ensure_dataset_loaded(
-        request.dataset, year_start=year_start, year_end=year_end
     )
 
     subregion = None
@@ -322,20 +407,8 @@ def _export_spatial_maps(
     elif request.subregion_id:
         subregion = hooks.get_subregion(request.subregion_id)
 
-    elev_min, elev_max = hooks.resolve_elevation_bounds(
-        state, request.elev_min, request.elev_max
-    )
-
-    # Determine dates in range
-    date_index = state.get("date_index", {})
-    dates_in_range = sorted(d for d in date_index if start_date <= d <= end_date)
-
-    n_vars = len(request.variables)
     is_geotiff = request.spatial_format == "geotiff"
     aggregation = request.spatial_aggregation
-
-    # Work out total work units for progress
-    total_daily_tasks = len(dates_in_range) * n_vars
     generated_files: List[str] = []
 
     if is_geotiff:
@@ -345,78 +418,104 @@ def _export_spatial_maps(
     spatial_dir.mkdir(parents=True, exist_ok=True)
 
     from main import snapshot_dataset_state
-    query_state = snapshot_dataset_state(state)
 
-    # For geotiff aggregation, we collect daily data keyed by group
-    # group_key -> [ (date, array_2d, transform, crs_wkt) ]
+    # Estimate total tasks across all datasets
+    total_daily_tasks = 0
+    ds_state_cache: Dict[str, Dict[str, Any]] = {}
+    for ds_id, vars_list in resolved_ds_vars.items():
+        state = hooks.ensure_dataset_loaded(ds_id, year_start=year_start, year_end=year_end)
+        ds_state_cache[ds_id] = state
+        date_index = state.get("date_index", {})
+        ds_dates = [d for d in date_index if start_date <= d <= end_date]
+        total_daily_tasks += len(ds_dates) * len(vars_list)
+
+    multi_dataset = len(resolved_ds_vars) > 1
     daily_geotiff_groups: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
-
     task_counter = 0
-    for var_idx, variable in enumerate(request.variables):
+
+    for ds_id, vars_list in resolved_ds_vars.items():
         if job["cancel_event"].is_set():
             break
-        all_known = set(state.get("variables", [])).union(state.get("all_columns", []))
-        if variable in all_known:
-            var_name = variable
-        else:
-            var_name = hooks.validate_variable(state, variable)
-        safe_var = _safe_filename(var_name)
 
-        for date_idx, query_date in enumerate(dates_in_range):
+        state = ds_state_cache.get(ds_id) or hooks.ensure_dataset_loaded(
+            ds_id, year_start=year_start, year_end=year_end
+        )
+        elev_min, elev_max = hooks.resolve_elevation_bounds(
+            state, request.elev_min, request.elev_max
+        )
+        query_state = snapshot_dataset_state(state)
+        date_index = state.get("date_index", {})
+        dates_in_range = sorted(d for d in date_index if start_date <= d <= end_date)
+
+        all_known = set(state.get("variables", [])).union(state.get("all_columns", []))
+        safe_ds = _safe_filename(ds_id)
+
+        for variable in vars_list:
             if job["cancel_event"].is_set():
                 break
 
-            task_counter += 1
-            pct = progress_offset + int(task_counter / max(total_daily_tasks, 1) * progress_total)
-            _update_job(
-                job,
-                message=f"Processing spatial {var_name}: {query_date} ({task_counter}/{total_daily_tasks})",
-                progress_percent=pct,
-            )
-
-            # Query spatial data for this date + variable
-            records = hooks.query_data(
-                query_state,
-                query_date,
-                elev_min,
-                elev_max,
-                var_name,
-                subregion,
-            )
-
-            if not records:
-                continue
-
-            if is_geotiff:
-                _write_daily_geotiff_or_collect(
-                    records=records,
-                    variable=var_name,
-                    query_date=query_date,
-                    state=state,
-                    subregion=subregion,
-                    elev_min=elev_min,
-                    elev_max=elev_max,
-                    spatial_dir=spatial_dir,
-                    aggregation=aggregation,
-                    daily_groups=daily_geotiff_groups,
-                    generated_files=generated_files,
-                    safe_var=safe_var,
-                )
+            if variable in all_known:
+                var_name = variable
             else:
-                _write_spatial_csv(
-                    records=records,
-                    variable=var_name,
-                    query_date=query_date,
-                    state=state,
-                    subregion=subregion,
-                    elev_min=elev_min,
-                    elev_max=elev_max,
-                    spatial_dir=spatial_dir,
-                    generated_files=generated_files,
-                    safe_var=safe_var,
+                var_name = hooks.validate_variable(state, variable)
+            safe_var = _safe_filename(var_name)
+            prefix = f"{safe_ds}_{safe_var}" if multi_dataset else safe_var
+
+            for date_idx, query_date in enumerate(dates_in_range):
+                if job["cancel_event"].is_set():
+                    break
+
+                task_counter += 1
+                pct = progress_offset + int(task_counter / max(total_daily_tasks, 1) * progress_total)
+                _update_job(
+                    job,
+                    message=f"Processing spatial [{state.get('label', ds_id)}] {var_name}: {query_date} ({task_counter}/{total_daily_tasks})",
+                    progress_percent=pct,
                 )
 
-            _update_job(job, files_generated=len(generated_files))
+                # Query spatial data for this date + variable
+                records = hooks.query_data(
+                    query_state,
+                    query_date,
+                    elev_min,
+                    elev_max,
+                    var_name,
+                    subregion,
+                )
+
+                if not records:
+                    continue
+
+                if is_geotiff:
+                    _write_daily_geotiff_or_collect(
+                        records=records,
+                        variable=var_name,
+                        query_date=query_date,
+                        state=state,
+                        subregion=subregion,
+                        elev_min=elev_min,
+                        elev_max=elev_max,
+                        spatial_dir=spatial_dir,
+                        aggregation=aggregation,
+                        daily_groups=daily_geotiff_groups,
+                        generated_files=generated_files,
+                        safe_var=prefix,
+                    )
+                else:
+                    _write_spatial_csv(
+                        records=records,
+                        variable=var_name,
+                        query_date=query_date,
+                        state=state,
+                        subregion=subregion,
+                        elev_min=elev_min,
+                        elev_max=elev_max,
+                        spatial_dir=spatial_dir,
+                        generated_files=generated_files,
+                        safe_var=prefix,
+                    )
+
+                _update_job(job, files_generated=len(generated_files))
 
     # Aggregate if monthly/yearly geotiff
     if is_geotiff and aggregation in ("monthly", "yearly") and daily_geotiff_groups:
@@ -532,7 +631,7 @@ def _write_daily_geotiff_or_collect(
         "ELEVATION_RANGE": f"{elev_min}-{elev_max}m",
         "CRS": "EPSG:4326",
         "ROI": subregion.get("label", subregion.get("id", "Custom")) if subregion else "Full Basin",
-        "EXPORT_TIME": datetime.utcnow().isoformat() + "Z",
+        "EXPORT_TIME": _now_iso() + "Z",
         "GENERATOR": "Himalayan Basin Analytics",
     }
 
@@ -669,7 +768,7 @@ def _write_spatial_csv(
         fh.write(f"# CRS: EPSG:4326\n")
         if subregion:
             fh.write(f"# ROI: {subregion.get('label', subregion.get('id', 'Custom'))}\n")
-        fh.write(f"# Exported: {datetime.utcnow().isoformat()}Z\n")
+        fh.write(f"# Exported: {_now_iso()}Z\n")
         fh.write("#\n")
 
         writer = csv.DictWriter(
@@ -710,11 +809,13 @@ def _package_zip(output_dir: Path, workspace_root: Path) -> str:
 # Main export orchestrator
 # ---------------------------------------------------------------------------
 
-def _estimate_total_files(request: ExportRequest, date_count: int) -> int:
+def _estimate_total_files(request: ExportRequest, date_count: int, total_vars: Optional[int] = None) -> int:
     total = 0
-    n_vars = len(request.variables)
+    n_vars = total_vars if total_vars is not None else len(request.variables)
     if request.export_temporal_csv:
         total += n_vars
+        if n_vars > 1:
+            total += 1  # combined timeseries CSV
     if request.export_spatial_maps:
         if request.spatial_aggregation == "daily":
             total += date_count * n_vars
@@ -748,13 +849,24 @@ def run_export(
             year_start, year_end = hooks.normalize_year_range(
                 request.year_start, request.year_end
             )
+
+            # Resolve cross-dataset variables
+            resolved_ds_vars = request.resolve_dataset_variables(
+                default_dataset=request.dataset or ""
+            )
+            total_var_count = sum(len(v) for v in resolved_ds_vars.values())
+
+            # Load primary state for overall metadata
+            primary_ds = request.dataset or next(iter(resolved_ds_vars.keys()))
             state = hooks.ensure_dataset_loaded(
-                request.dataset, year_start=year_start, year_end=year_end
+                primary_ds, year_start=year_start, year_end=year_end
             )
             date_index = state.get("date_index", {})
             dates_in_range = sorted(d for d in date_index if start_date <= d <= end_date)
 
-            total_est = _estimate_total_files(request, len(dates_in_range))
+            total_est = _estimate_total_files(
+                request, len(dates_in_range), total_vars=total_var_count
+            )
             _update_job(job, total_files_expected=total_est)
 
             # Create output directory
@@ -763,11 +875,15 @@ def run_export(
 
             # Write export metadata JSON
             meta_path = output_dir / "export_metadata.json"
+            all_export_vars = [
+                f"{ds}:{v}" for ds, vl in resolved_ds_vars.items() for v in vl
+            ]
             export_meta = {
                 "job_id": job_id,
-                "dataset": state.get("id"),
-                "dataset_label": state.get("label"),
-                "variables": request.variables,
+                "datasets": list(resolved_ds_vars.keys()),
+                "dataset_variables": resolved_ds_vars,
+                "primary_dataset": request.dataset,
+                "variables": all_export_vars,
                 "start_date": start_date,
                 "end_date": end_date,
                 "elevation_range": [request.elev_min, request.elev_max],
@@ -778,7 +894,7 @@ def run_export(
                 "spatial_format": request.spatial_format,
                 "spatial_aggregation": request.spatial_aggregation,
                 "dates_in_range": len(dates_in_range),
-                "exported_at": datetime.utcnow().isoformat() + "Z",
+                "exported_at": _now_iso() + "Z",
             }
             with open(meta_path, "w", encoding="utf-8") as fh:
                 json.dump(export_meta, fh, indent=2)
@@ -793,7 +909,7 @@ def run_export(
             # 1) Temporal CSV export
             if request.export_temporal_csv and not job["cancel_event"].is_set():
                 csv_files = _export_temporal_csv(
-                    hooks, request, output_dir, job,
+                    hooks, request, resolved_ds_vars, output_dir, job,
                     progress_offset=0,
                     progress_total=temporal_pct,
                 )
@@ -802,7 +918,7 @@ def run_export(
             # 2) Spatial map export
             if request.export_spatial_maps and not job["cancel_event"].is_set():
                 map_files = _export_spatial_maps(
-                    hooks, request, output_dir, job,
+                    hooks, request, resolved_ds_vars, output_dir, job,
                     progress_offset=temporal_pct,
                     progress_total=spatial_pct,
                 )

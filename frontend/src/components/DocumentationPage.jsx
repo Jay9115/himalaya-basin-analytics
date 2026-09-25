@@ -17,6 +17,7 @@ const sections = [
   { id: 'doc-science-use', title: '13. Scientific Interpretation Guide' },
   { id: 'doc-limitations', title: '14. Assumptions, Limitations, and Reproducibility' },
   { id: 'doc-references', title: '15. Reference Sources' },
+  { id: 'doc-credits', title: 'Project Credits' },
 ];
 
 const workflowRows = [
@@ -966,6 +967,40 @@ b = intercept`}</pre>
             <code>LLM_service/README.md</code> for the advanced analysis surfaces.
           </p>
           <a className="docs-top-link" href="#doc-top">Back to top</a>
+        </section>
+
+        <section id="doc-credits" className="docs-credits-section">
+          <p className="docs-hero-kicker">Space Applications Centre · ISRO</p>
+          <h2>Project Credits</h2>
+          <div className="docs-credits-grid">
+            <div className="docs-credit-card">
+              <div className="docs-credit-label">Project Guidance</div>
+              <h3>Dr. Amit Kumar Dubey</h3>
+              <p className="docs-credit-role">Scientist/Engineer ‘SF’</p>
+              <p>
+                Land Hydrology Division (LHD)<br />
+                Cryosphere and Hydrology Sciences and Applications Group (CHSAG)<br />
+                Earth &amp; Planetary Sciences and Applications Area (EPSA)<br />
+                Space Applications Centre (SAC), ISRO<br />
+                Department of Space, Government of India
+              </p>
+            </div>
+            <div className="docs-credit-card docs-credit-developer">
+              <div className="docs-credit-label">Project Development &amp; Implementation</div>
+              <h3>Jay R. Patel</h3>
+              <p className="docs-credit-role">Research Intern</p>
+              <p>
+                <a
+                  className="docs-repository-link"
+                  href="https://github.com/Jay9115/himalaya-basin-analytics"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  GitHub Repository <span aria-hidden="true">↗</span>
+                </a>
+              </p>
+            </div>
+          </div>
         </section>
       </article>
     </div>

@@ -132,6 +132,105 @@
   border: 1px solid rgba(244, 162, 97, 0.35);
 }
 
+.export-cross-dataset-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  padding: 2.5px 8px;
+  border-radius: 12px;
+  background: rgba(42, 157, 143, 0.18);
+  color: #2a9d8f;
+  border: 1px solid rgba(42, 157, 143, 0.4);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  animation: exportFadeIn 0.2s ease-out;
+}
+
+.export-dataset-pills-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.export-dataset-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border, #34404b);
+  border-radius: 16px;
+  background: var(--input-bg, #252d35);
+  color: var(--text-muted, #a7b2bd);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.export-dataset-pill:hover:not(:disabled) {
+  border-color: var(--accent, #3b82c4);
+  color: var(--text, #f4f7fa);
+  background: var(--hover-bg, #303a43);
+}
+
+.export-dataset-pill.active {
+  border-color: var(--accent, #3b82c4);
+  background: rgba(59, 130, 196, 0.16);
+  color: var(--accent, #3b82c4);
+  font-weight: 650;
+  box-shadow: 0 0 0 1px rgba(59, 130, 196, 0.3);
+}
+
+.export-dataset-pill.has-selected:not(.active) {
+  border-color: rgba(42, 157, 143, 0.5);
+  color: var(--text, #f4f7fa);
+}
+
+.export-pill-star {
+  color: #f4a261;
+  font-size: 11px;
+}
+
+.export-pill-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent, #3b82c4);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.export-dataset-pill.has-selected:not(.active) .export-pill-count {
+  background: #2a9d8f;
+}
+
+.export-selected-ds-count {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted, #a7b2bd);
+  text-transform: none;
+}
+
+.export-chip-dataset-tag {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(59, 130, 196, 0.25);
+  color: var(--accent, #3b82c4);
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+}
+
 .export-dataset-select-row {
   display: flex;
   align-items: center;
