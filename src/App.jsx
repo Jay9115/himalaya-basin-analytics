@@ -341,7 +341,6 @@ const parseCoordinates = (text) => {
   return null;
 };
 
-const MAX_POLYGON_VERTICES = 500;
 const GLACIER_LAYER_VARIABLE = '__glacier_outlines__';
 const GRAPH_FETCH_CONCURRENCY = 2;
 
@@ -352,7 +351,7 @@ const normalizeAoiPolygon = (polygon, index = 0) => {
     .slice(0, -1)
     .map((coord) => [Number(coord?.[0]), Number(coord?.[1])])
     .filter(([lon, lat]) => Number.isFinite(lon) && Number.isFinite(lat));
-  if (vertices.length < 3 || vertices.length > MAX_POLYGON_VERTICES) return null;
+  if (vertices.length < 3) return null;
   const closedRing = [...vertices, vertices[0]];
   const normalized = {
     id: String(polygon.id || `aoi-${Date.now()}-${index}`),
@@ -437,10 +436,10 @@ const analyzeAoiGeometry = (aoi) => {
     perimeterKm,
     centroid,
     bounds: {
-      minLat: Math.min(...lats),
-      maxLat: Math.max(...lats),
-      minLon: Math.min(...lons),
-      maxLon: Math.max(...lons),
+      minLat: lats.reduce((min, value) => Math.min(min, value), Infinity),
+      maxLat: lats.reduce((max, value) => Math.max(max, value), -Infinity),
+      minLon: lons.reduce((min, value) => Math.min(min, value), Infinity),
+      maxLon: lons.reduce((max, value) => Math.max(max, value), -Infinity),
     },
     geometryType: aoi?.geometry?.type || 'Polygon',
     focus,
@@ -1355,14 +1354,12 @@ function App() {
         if (years.length === 0) {
           setSelectedYearRange({ start: null, end: null });
           setYearRangeError(`No years found for dataset '${datasetId}'.`);
-          setLoading(false);
           return;
         }
 
         const minYear = Number.isInteger(response.min_year) ? response.min_year : years[0];
         const maxYear = Number.isInteger(response.max_year) ? response.max_year : years[years.length - 1];
         const defaultEndYear = maxYear;
-        const defaultStartYear = Math.max(minYear, defaultEndYear - 1);
 
         setSelectedYearRange((prev) => {
           const restoredDashboard = projectRestoreSnapshotRef.current?.workspace?.dashboard || {};
@@ -1371,7 +1368,9 @@ function App() {
           const restoredEnd = Number(restoredRange?.end);
           const hasRestoredSelection = Number.isInteger(restoredStart) && Number.isInteger(restoredEnd);
           const hasExistingSelection = Number.isInteger(prev.start) && Number.isInteger(prev.end);
-          const currentStart = hasRestoredSelection ? restoredStart : hasExistingSelection ? prev.start : defaultStartYear;
+          // Load one year initially; the hosted backend may need to fetch its
+          // parquet files on a cold request. Users can expand the range later.
+          const currentStart = hasRestoredSelection ? restoredStart : hasExistingSelection ? prev.start : defaultEndYear;
           const currentEnd = hasRestoredSelection ? restoredEnd : hasExistingSelection ? prev.end : defaultEndYear;
           const nextStart = Math.min(Math.max(currentStart, minYear), maxYear);
           const nextEnd = Math.min(Math.max(currentEnd, minYear), maxYear);
@@ -1386,7 +1385,6 @@ function App() {
         setYearOptions([]);
         setSelectedYearRange({ start: null, end: null });
         setYearRangeError('Failed to load available years for selected dataset.');
-        setLoading(false);
       } finally {
         if (isActive) {
           setYearRangeLoading(false);
@@ -1402,12 +1400,7 @@ function App() {
 
   // Initialize: Load dates and elevation range
   useEffect(() => {
-    if (!datasetReady || !datasetId || !activeYearRange) {
-      if (!activeYearRange) {
-        setLoading(false);
-      }
-      return;
-    }
+    if (!datasetReady || !datasetId || !activeYearRange) return;
 
     const initialize = async () => {
       const contextKey = `${datasetId}:${activeYearRange.start}-${activeYearRange.end}`;
@@ -1483,7 +1476,7 @@ function App() {
 
       } catch (err) {
         console.error('Initialization error:', err);
-        setError('Failed to connect to backend. Please ensure the FastAPI server is running on port 8000.');
+        setError('Failed to load dataset data from the backend. Please retry in a moment.');
         setLoading(false);
       }
     };

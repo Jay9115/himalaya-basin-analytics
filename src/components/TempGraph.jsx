@@ -37,10 +37,23 @@ const getDefaultPixels = (point) => (
   point?.pixel_count ?? point?.count ?? point?.pixels
 );
 
+const isSumVariable = (name) => {
+  if (!name) return false;
+  const n = String(name).toLowerCase();
+  return (
+    (n.includes('precip') || n.includes('snowfall') || n.includes('rainfall') || n === 'pr' || n === 'tp' || n === 'sf' || n === 'rain') &&
+    !n.includes('fraction') &&
+    !n.includes('days') &&
+    !n.includes('entropy')
+  );
+};
+
 function TempGraph({ data, currentDate, variableLabel, series = [], showPointStats, pointStatsLabel }) {
   const dangerColor = 'var(--danger)';
   const label = variableLabel || 'Value';
   const pointsLabel = pointStatsLabel || 'Data points/day';
+  const isSum = isSumVariable(label);
+  const aggLabel = isSum ? 'Sum' : 'Mean';
   const [cutMode, setCutMode] = useState(false);
   const [cutStart, setCutStart] = useState(null);
   const [cutEnd, setCutEnd] = useState(null);
@@ -159,7 +172,8 @@ function TempGraph({ data, currentDate, variableLabel, series = [], showPointSta
         .filter((value) => Number.isFinite(value));
       if (values.length === 0) return null;
 
-      const mean = values.reduce((a, b) => a + b, 0) / values.length;
+      const sum = values.reduce((a, b) => a + b, 0);
+      const mean = sum / values.length;
       const min = Math.min(...values);
       const max = Math.max(...values);
       const pointValues = visibleData
@@ -169,7 +183,7 @@ function TempGraph({ data, currentDate, variableLabel, series = [], showPointSta
         ? pointValues.reduce((a, b) => a + b, 0) / pointValues.length
         : null;
 
-      return { ...item, mean, min, max, avgPoints };
+      return { ...item, mean, sum, min, max, avgPoints };
     }).filter(Boolean);
   }, [visibleData, chartSeries]);
 
@@ -231,7 +245,7 @@ function TempGraph({ data, currentDate, variableLabel, series = [], showPointSta
   if (chartData.length === 0) {
     return (
       <div className="temp-graph">
-        <h3>Basin Mean {label}</h3>
+        <h3>Basin {aggLabel} {label}</h3>
         <div className="no-data">
           No data available for the selected elevation range
         </div>
@@ -243,7 +257,7 @@ function TempGraph({ data, currentDate, variableLabel, series = [], showPointSta
     <div className="temp-graph">
       <div className="graph-header">
         <div className="graph-title-block">
-          <h3>{hasMultipleSeries ? 'Basin Mean Variable Comparison' : `Basin Mean ${label} Over Time`}</h3>
+          <h3>{hasMultipleSeries ? 'Basin Variable Comparison' : `Basin ${aggLabel} ${label} Over Time`}</h3>
           <span className="graph-subtitle">
             {zoomRange ? formatDateRange(zoomRange.start, zoomRange.end) : `${visibleData.length} days`}
           </span>
@@ -287,18 +301,27 @@ function TempGraph({ data, currentDate, variableLabel, series = [], showPointSta
         </div>
         {stats.length > 0 && (
           <div className={`graph-stats ${hasMultipleSeries ? 'multi' : ''}`}>
-            {stats.map((item) => (
-              <span className="stat" key={item.key}>
-                <span className="stat-swatch" style={{ background: item.color }} />
-                <span className="stat-label">{hasMultipleSeries ? item.label : 'Mean'}:</span>
-                <span className="stat-value">{item.mean.toFixed(2)}</span>
-                {hasMultipleSeries && (
-                  <span className="stat-range">
-                    {item.min.toFixed(2)} to {item.max.toFixed(2)}
-                  </span>
-                )}
-              </span>
-            ))}
+            {stats.map((item) => {
+              const itemIsSum = isSumVariable(item.label || item.key);
+              const statLabel = hasMultipleSeries ? item.label : (itemIsSum ? 'Total' : 'Mean');
+              return (
+                <span className="stat" key={item.key}>
+                  <span className="stat-swatch" style={{ background: item.color }} />
+                  <span className="stat-label">{statLabel}:</span>
+                  <span className="stat-value">{itemIsSum ? item.sum.toFixed(2) : item.mean.toFixed(2)}</span>
+                  {itemIsSum && !hasMultipleSeries && (
+                    <span className="stat-range" style={{ marginLeft: '6px' }} title="Average daily ROI sum">
+                      (Daily avg: {item.mean.toFixed(2)})
+                    </span>
+                  )}
+                  {hasMultipleSeries && (
+                    <span className="stat-range">
+                      {item.min.toFixed(2)} to {item.max.toFixed(2)}
+                    </span>
+                  )}
+                </span>
+              );
+            })}
             {!hasMultipleSeries && (
               <>
                 <span className="stat">

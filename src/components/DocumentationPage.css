@@ -134,6 +134,95 @@
   color: var(--text-muted);
 }
 
+.docs-credits-section {
+  margin-top: 8px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(77, 171, 247, 0.08), var(--bg-panel));
+}
+
+.docs-credits-section .docs-hero-kicker {
+  margin-bottom: 8px;
+}
+
+.docs-credits-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(220px, 1fr);
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.docs-credit-card {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+}
+
+.docs-credit-label {
+  display: inline-flex;
+  margin: 0 0 12px;
+  padding: 6px 9px;
+  border: 1px solid rgba(77, 171, 247, 0.35);
+  border-radius: 6px;
+  background: rgba(77, 171, 247, 0.12);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+.docs-credit-card h3 {
+  margin: 0 0 4px;
+  color: var(--text);
+  font-size: 17px;
+}
+
+.docs-credit-card p {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.docs-credit-card .docs-credit-role {
+  margin-top: 0;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.docs-credit-card .docs-repository-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  border-bottom: 2px solid var(--accent);
+  padding-bottom: 3px;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.docs-credit-card .docs-repository-link span {
+  color: var(--accent);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.docs-credit-card .docs-repository-link:hover {
+  color: var(--accent);
+  border-color: var(--text);
+}
+
+.docs-credit-developer {
+  align-self: start;
+}
+
 .docs-callout {
   margin: 14px 0 12px;
   padding: 14px 16px;
@@ -263,6 +352,10 @@
   }
 
   .docs-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .docs-credits-grid {
     grid-template-columns: 1fr;
   }
 }

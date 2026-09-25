@@ -6,7 +6,6 @@ import maplibregl from 'maplibre-gl';
 import { Protocol } from 'pmtiles';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { formatDisplayDate } from '../utils/dateUtils';
-import { API_BASE_URL } from '../services/api';
 
 const SnapshotLayout = lazy(() => import('./SnapshotLayout'));
 
@@ -384,7 +383,14 @@ function MapView({
     if (explicitApiUrl) {
       return trimTrailingSlash(explicitApiUrl);
     }
-    return API_BASE_URL;
+    // In local Vite dev, frontend runs on a different port than FastAPI.
+    if (import.meta.env.DEV) {
+      return 'http://127.0.0.1:8000';
+    }
+    if (typeof window !== 'undefined' && window.location?.origin) {
+      return trimTrailingSlash(window.location.origin);
+    }
+    return 'http://127.0.0.1:8000';
   }, []);
 
   const pmtilesUrl = useMemo(
