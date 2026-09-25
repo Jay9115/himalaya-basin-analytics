@@ -1012,6 +1012,7 @@ function App() {
   }, [theme]);
 
   useEffect(() => {
+    if (homeModule !== 'dashboard' && !datasetReady) return undefined;
     const warmVisualizationModules = () => {
       Promise.allSettled([
         import('./components/MapView'),
@@ -1025,7 +1026,7 @@ function App() {
     }
     const timer = window.setTimeout(warmVisualizationModules, 250);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [homeModule, datasetReady]);
 
   useEffect(() => {
     localStorage.setItem('bottomPanelHeight', String(bottomPanelHeight));
@@ -1142,19 +1143,28 @@ function App() {
   const loadHomeOptions = useCallback(async () => {
     try {
       setDatasetLoading(true);
-      const [datasetsResponse, outcomesResponse, projectsResponse, configResponse] = await Promise.all([
-        apiService.getDatasets(),
-        apiService.getOutcomes().catch(() => ({ outcomes: [] })),
-        apiService.getProjects().catch((projectError) => {
-          console.warn('Could not load saved projects:', projectError);
-          setProjectsError('Saved projects are unavailable from this backend.');
-          return { projects: [] };
-        }),
-        apiService.getDatasetConfig().catch(() => null),
-      ]);
+      const outcomesPromise = apiService.getOutcomes().catch(() => ({ outcomes: [] }));
+      const projectsPromise = apiService.getProjects().catch((projectError) => {
+        console.warn('Could not load saved projects:', projectError);
+        setProjectsError('Saved projects are unavailable from this backend.');
+        return { projects: [] };
+      });
+      const configPromise = apiService.getDatasetConfig().catch(() => null);
+      // The dataset picker only needs /datasets. Show it as soon as that
+      // request finishes instead of waiting for optional home metadata.
+      const datasetsResponse = await apiService.getDatasets();
       const list = datasetsResponse.datasets || [];
-      const outcomeList = outcomesResponse.outcomes || [];
       setDatasets(list);
+      const preferred = list.find((d) => d.id === datasetsResponse.default_dataset && d.ready);
+      const firstReady = list.find((d) => d.ready);
+      const firstAny = list[0];
+      setDatasetId((preferred || firstReady || firstAny)?.id || '');
+      setDatasetLoading(false);
+
+      const [outcomesResponse, projectsResponse, configResponse] = await Promise.all([
+        outcomesPromise, projectsPromise, configPromise,
+      ]);
+      const outcomeList = outcomesResponse.outcomes || [];
       setOutcomes(outcomeList);
       setProjects(projectsResponse.projects || []);
       if (configResponse) {
@@ -1164,11 +1174,6 @@ function App() {
         const firstOutcome = outcomeList.find((item) => item.ready) || outcomeList[0];
         setSelectedOutcomeId(firstOutcome.id);
       }
-      const preferred = list.find((d) => d.id === datasetsResponse.default_dataset && d.ready);
-      const firstReady = list.find((d) => d.ready);
-      const firstAny = list[0];
-      setDatasetId((preferred || firstReady || firstAny)?.id || '');
-
       // If dataset is found empty / almost empty, open the dataset path configuration modal
       const isDbEmpty = !firstReady || (configResponse && (configResponse.is_empty || configResponse.ready_datasets === 0));
       if (isDbEmpty) {
